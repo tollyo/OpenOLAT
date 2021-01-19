@@ -20,6 +20,7 @@
 package org.olat.resource.accesscontrol.provider.paypalcheckout;
 
 import java.util.List;
+import java.util.Locale;
 
 import org.olat.core.id.Identity;
 import org.olat.resource.accesscontrol.OfferAccess;
@@ -27,6 +28,9 @@ import org.olat.resource.accesscontrol.Order;
 import org.olat.resource.accesscontrol.OrderPart;
 import org.olat.resource.accesscontrol.model.PSPTransaction;
 import org.olat.resource.accesscontrol.provider.paypalcheckout.model.CheckoutRequest;
+import org.olat.resource.accesscontrol.provider.paypalcheckout.model.CreateSmartOrder;
+
+import com.paypal.payments.Capture;
 
 /**
  * 
@@ -40,6 +44,43 @@ public interface PaypalCheckoutManager {
 	
 	public void updateTransaction(String uuid);
 	
+	/**
+	 * Create an order in OpenOlat and in Paypal, reserve the access
+	 * if needed.
+	 * 
+	 * @param delivery The identity which buy the access
+	 * @param offerAccess The offer
+	 * @return The order id or null if the reservation fails
+	 */
+	public CreateSmartOrder createOrder(Identity delivery, OfferAccess offerAccess);
+	
+	/**
+	 * 
+	 * @param paypalOrderId The order id of the Paypal order.
+	 */
+	public void approveTransaction(String paypalOrderId);
+	
+	/**
+	 * This will complete the transaction successfully. Method to use
+	 * for deferred capture, if the capture is done manually on the PayPal
+	 * dashboard.
+	 * 
+	 * @param paypalAuthorizationId The authorization ID
+	 */
+	public void approveAuthorization(String paypalAuthorizationId, Capture capture);
+	
+	/**
+	 * 
+	 * @param paypalOrderId The order id of the Paypal order.
+	 */
+	public void cancelTransaction(String paypalOrderId);
+	
+	/**
+	 * 
+	 * @param paypalOrderId The order id of the Paypal order.
+	 */
+	public void errorTransaction(String paypalOrderId);
+	
 
 	public PaypalCheckoutTransaction loadTransaction(Order order, OrderPart part);
 	
@@ -50,5 +91,8 @@ public interface PaypalCheckoutManager {
 	public Order getOrder(PaypalCheckoutTransaction trx);
 	
 	public List<PaypalCheckoutTransaction> searchTransactions(String id);
+	
+	
+	public String getPreferredLocale(Locale locale);
 	
 }

@@ -38,7 +38,6 @@ import org.olat.course.nodes.SurveyCourseNode;
 import org.olat.course.nodes.survey.SurveyManager;
 import org.olat.course.nodes.survey.SurveyRunSecurityCallback;
 import org.olat.course.run.userview.UserCourseEnvironment;
-import org.olat.modules.card2brain.manager.Card2BrainManagerImpl;
 import org.olat.modules.forms.EvaluationFormParticipation;
 import org.olat.modules.forms.EvaluationFormSession;
 import org.olat.modules.forms.EvaluationFormSurvey;
@@ -56,7 +55,7 @@ import org.springframework.beans.factory.annotation.Autowired;
  */
 public class SurveyRunController extends BasicController {
 
-	private static final Logger log = Tracing.createLoggerFor(Card2BrainManagerImpl.class);
+	private static final Logger log = Tracing.createLoggerFor(SurveyRunController.class);
 	
 	private VelocityContainer mainVC;
 	private Link resetLink;
@@ -66,6 +65,7 @@ public class SurveyRunController extends BasicController {
 	private EvaluationFormExecutionController executionCtrl;
 	
 	private final UserCourseEnvironment userCourseEnv;
+	private final RepositoryEntry courseEntry;
 	private final SurveyCourseNode courseNode;
 	private final SurveyRunSecurityCallback secCallback;
 	private final EvaluationFormSurveyIdentifier surveyIdent;
@@ -80,7 +80,7 @@ public class SurveyRunController extends BasicController {
 		super(ureq, wControl);
 		this.userCourseEnv = userCourseEnv;
 		this.courseNode = courseNode;
-		RepositoryEntry courseEntry = userCourseEnv.getCourseEnvironment().getCourseGroupManager().getCourseEntry();
+		this.courseEntry = userCourseEnv.getCourseEnvironment().getCourseGroupManager().getCourseEntry();
 		this.surveyIdent = surveyManager.getSurveyIdentifier(courseNode, courseEntry);
 		this.secCallback = secCallback;
 
@@ -205,7 +205,7 @@ public class SurveyRunController extends BasicController {
 	private void doShowReporting(UserRequest ureq) {
 		removeAllComponents();
 		participation = loadOrCreateParticipation(ureq);
-		Controller reportingCtrl = new SurveyReportingController(ureq, getWindowControl(), survey);
+		Controller reportingCtrl = new SurveyReportingController(ureq, getWindowControl(), courseEntry, courseNode, survey);
 		mainVC.put("reporting", reportingCtrl.getInitialComponent());
 	}
 

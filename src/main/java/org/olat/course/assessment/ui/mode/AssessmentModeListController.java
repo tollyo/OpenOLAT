@@ -43,6 +43,7 @@ import org.olat.core.gui.components.stack.TooledStackedPanel;
 import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.Event;
 import org.olat.core.gui.control.WindowControl;
+import org.olat.core.gui.control.generic.closablewrapper.CloseableModalController;
 import org.olat.core.gui.control.generic.modal.DialogBoxController;
 import org.olat.core.gui.control.generic.modal.DialogBoxUIFactory;
 import org.olat.core.util.StringHelper;
@@ -55,6 +56,7 @@ import org.olat.course.assessment.AssessmentModeManager;
 import org.olat.course.assessment.AssessmentModeNotificationEvent;
 import org.olat.course.assessment.model.TransientAssessmentMode;
 import org.olat.course.assessment.ui.mode.AssessmentModeListModel.Cols;
+import org.olat.course.assessment.ui.tool.ConfirmStopAssessmentModeController;
 import org.olat.repository.RepositoryEntry;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -73,9 +75,10 @@ public class AssessmentModeListController extends FormBasicController implements
 	private final TooledStackedPanel toolbarPanel;
 	
 	private Controller editCtrl;
-	private DialogBoxController stopDialogBox;
+	private CloseableModalController cmc;
 	private DialogBoxController startDialogBox;
 	private DialogBoxController deleteDialogBox;
+	private ConfirmStopAssessmentModeController stopCtrl;
 	
 	private final RepositoryEntry entry;
 	private final AssessmentModeSecurityCallback secCallback;
@@ -137,6 +140,7 @@ public class AssessmentModeListController extends FormBasicController implements
 		}
 		if(secCallback.canEditAssessmentMode()) {
 			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel("edit", translate("edit"), "edit"));
+			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel("copy", translate("copy"), "copy"));
 		}
 		
 		model = new AssessmentModeListModel(columnsModel, getTranslator(), assessmentModeCoordinationService);
@@ -186,13 +190,23 @@ public class AssessmentModeListController extends FormBasicController implements
 				AssessmentMode row = (AssessmentMode)startDialogBox.getUserObject();
 				doStart(row);
 			}
-		} else if(stopDialogBox == source) {
-			if(DialogBoxUIFactory.isYesEvent(event) || DialogBoxUIFactory.isOkEvent(event)) {
-				AssessmentMode row = (AssessmentMode)stopDialogBox.getUserObject();
-				doStop(row);
+		} else if(stopCtrl == source) {
+			if(event == Event.DONE_EVENT) {
+				loadModel();
 			}
+			cmc.deactivate();
+			cleanUp();
+		} else if(cmc == source) {
+			cleanUp();
 		}
 		super.event(ureq, source, event);
+	}
+	
+	private void cleanUp() {
+		removeAsListenerAndDispose(stopCtrl);
+		removeAsListenerAndDispose(cmc);
+		stopCtrl = null;
+		cmc = null;
 	}
 
 	@Override
@@ -231,6 +245,8 @@ public class AssessmentModeListController extends FormBasicController implements
 				AssessmentMode row = model.getObject(se.getIndex());
 				if("edit".equals(cmd)) {
 					doEdit(ureq, row);
+				} else if("copy".equals(cmd)) {
+					doCopy(ureq, row);
 				} else if("start".equals(cmd)) {
 					doConfirmStart(ureq, row);
 				} else if("stop".equals(cmd)) {
@@ -286,6 +302,22 @@ public class AssessmentModeListController extends FormBasicController implements
 		tableEl.deselectAll();
 	}
 	
+	private void doCopy(UserRequest ureq, AssessmentMode mode) {
+		AssessmentMode modeToCopy = assessmentModeMgr.getAssessmentModeById(mode.getKey());
+		AssessmentMode newMode = assessmentModeMgr.createAssessmentMode(modeToCopy);
+		newMode.setName(translate("copy.name", new String[] { modeToCopy.getName() }));
+		
+		AssessmentModeEditController modeEditCtrl = new AssessmentModeEditController(ureq, getWindowControl(), entry.getOlatResource(), newMode);
+		modeEditCtrl.selectBusinessGroups(modeToCopy.getGroups());
+		modeEditCtrl.selectAreas(modeToCopy.getAreas());
+		modeEditCtrl.selectCurriculumElements(modeToCopy.getCurriculumElements());
+		
+		listenTo(modeEditCtrl);
+		toolbarPanel.pushController(newMode.getName(), modeEditCtrl);
+		
+		editCtrl = modeEditCtrl;
+	}
+	
 	private void doEdit(UserRequest ureq, AssessmentMode mode) {
 		removeAsListenerAndDispose(editCtrl);
 		
@@ -314,14 +346,14 @@ public class AssessmentModeListController extends FormBasicController implements
 	}
 	
 	private void doConfirmStop(UserRequest ureq, AssessmentMode mode) {
+		if(guardModalController(stopCtrl)) return;
+		
+		stopCtrl = new ConfirmStopAssessmentModeController(ureq, getWindowControl(), mode);
+		listenTo(stopCtrl);
+		
 		String title = translate("confirm.stop.title");
-		String text = translate("confirm.stop.text");
-		stopDialogBox = activateYesNoDialog(ureq, title, text, stopDialogBox);
-		stopDialogBox.setUserObject(mode);
-	}
-	
-	private void doStop(AssessmentMode mode) {
-		assessmentModeCoordinationService.stopAssessment(mode);
-		loadModel();
+		cmc = new CloseableModalController(getWindowControl(), "close", stopCtrl.getInitialComponent(), true, title, true);
+		cmc.activate();
+		listenTo(cmc);
 	}
 }

@@ -25,6 +25,8 @@
 */
 package org.olat.core.gui.components.form.flexible.impl.elements;
 
+import java.util.List;
+
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
 import org.olat.core.gui.components.form.flexible.elements.TextAreaElement;
@@ -52,9 +54,11 @@ public abstract class TextAreaElementImpl extends AbstractTextElement implements
 	 *          available space
 	 * @param isAutoHeightEnabled true: element expands to fit content height,
 	 *          (max 100 lines); false: specified rows used
+	 * @param fixedFontWidth
+	 * @param originalLineBreaks Try to maintain the original line breaks and prevent the browser to add its own
 	 */
-	public TextAreaElementImpl(String name, String predefinedValue, int rows, int cols, boolean isAutoHeightEnabled, boolean fixedFontWidth) {
-		this(name, rows, cols, isAutoHeightEnabled, fixedFontWidth);
+	public TextAreaElementImpl(String name, String predefinedValue, int rows, int cols, boolean isAutoHeightEnabled, boolean fixedFontWidth, boolean originalLineBreaks) {
+		this(name, rows, cols, isAutoHeightEnabled, fixedFontWidth, originalLineBreaks);
 		setValue(predefinedValue);
 	}
 
@@ -66,10 +70,12 @@ public abstract class TextAreaElementImpl extends AbstractTextElement implements
 	 *          available space
 	 * @param isAutoHeightEnabled true: element expands to fit content height,
 	 *          (max 100 lines); false: specified rows used
+	 * @param fixedFontWidth
+	 * @param originalLineBreaks Try to maintain the original line breaks and prevent the browser to add its own
 	 */
-	protected TextAreaElementImpl(String name, int rows, int cols, boolean isAutoHeightEnabled, boolean fixedFontWidth) {
+	protected TextAreaElementImpl(String name, int rows, int cols, boolean isAutoHeightEnabled, boolean fixedFontWidth, boolean originalLineBreaks) {
 		super(name);
-		component = new TextAreaElementComponent(this, rows, cols, isAutoHeightEnabled, fixedFontWidth);
+		component = new TextAreaElementComponent(this, rows, cols, isAutoHeightEnabled, fixedFontWidth, originalLineBreaks);
 	}
 
 	/**
@@ -100,6 +106,61 @@ public abstract class TextAreaElementImpl extends AbstractTextElement implements
 	@Override
 	public void setRows(int rows) {
 		component.setRows(rows);
+	}
+	
+	@Override
+	public boolean isLineNumbersEnabled() {
+		return component.isLineNumbersEnabled();
+	}
+	
+	@Override
+	public void setLineNumbersEnbaled(boolean lineNumbersEnabled) {
+		component.setLineNumbersEnabled(lineNumbersEnabled);		
+	}
+	
+	@Override
+	public boolean isStripedBackgroundEnabled() {
+		return component.isStripedBackgroundEnabled();
+	}
+	
+	@Override
+	public void setStripedBackgroundEnabled(boolean stripedBackgroundEnabled) {
+		component.setStripedBackgroundEnabled(stripedBackgroundEnabled);
+	}
+	
+	@Override
+	public boolean isOriginalLineBreaks() {
+		return component.isOriginalLineBreaks();
+	}
+	
+	@Override
+	public void setOriginalLineBreaks(boolean originalLineBreaks) {
+		component.setOriginalLineBreaks(originalLineBreaks);
+	}
+	
+	@Override
+	public boolean isFixedFontWidth() {
+		return component.isFixedFontWidth();
+	}
+	
+	@Override
+	public void setFixedFontWidth(boolean fixedFontWidth) {
+		component.setFixedFontWidth(fixedFontWidth);
+	}
+	
+	@Override
+	public void setErrors(List<Integer> rows) {
+		component.setErrors(rows);
+	}
+	
+	@Override
+	public List<Integer> getErrors() {
+		return component.getErrors();
+	}
+	
+	@Override
+	public String getErrorsAsString() {
+		return component.getErrorsAsString();
 	}
 
 	@Override

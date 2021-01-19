@@ -1,6 +1,7 @@
 /bin/
 /target/
 /cargo/
+/screenshots/
 /.settings/
 /.externalToolBuilders/
 
@@ -35,4 +36,8 @@ src/test/java/org/olat/selenium/SeleniumTest.java
 
 */.project
 .idea
+*.iml
 
+**/*/.sass-cache
+
+/.sts4-cache

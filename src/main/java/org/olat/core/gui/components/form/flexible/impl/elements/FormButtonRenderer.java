@@ -28,6 +28,7 @@ package org.olat.core.gui.components.form.flexible.impl.elements;
 import org.olat.core.gui.components.Component;
 import org.olat.core.gui.components.DefaultComponentRenderer;
 import org.olat.core.gui.components.form.flexible.impl.FormJSHelper;
+import org.olat.core.gui.components.form.flexible.impl.NameValuePair;
 import org.olat.core.gui.render.RenderResult;
 import org.olat.core.gui.render.Renderer;
 import org.olat.core.gui.render.StringOutput;
@@ -61,7 +62,14 @@ class FormButtonRenderer extends DefaultComponentRenderer {
 		} else if (fs.hasFocus()) {
 			sb.append(" autofocus");
 		}
-		sb.append(FormJSHelper.getRawJSFor(fs.getRootForm(), id, fs.getAction()));
+		
+		StringBuilder js;
+		if(fs.isNewWindowAfterDispatchUrl()) {
+			js = FormJSHelper.getRawJSFor(fs.getRootForm(), id, fs.getAction(), new NameValuePair("oo-opennewwindow-oo", "true"));
+		} else {
+			js = FormJSHelper.getRawJSFor(fs.getRootForm(), id, fs.getAction());
+		}
+		sb.append(js);
 		sb.append(" class=\"btn");
 		if (fsC.getIsSubmitAndValidate()) {
 			sb.append(" btn-primary");			
@@ -74,19 +82,23 @@ class FormButtonRenderer extends DefaultComponentRenderer {
 		if(StringHelper.containsNonWhitespace(fs.getElementCssClass())) {
 			sb.append(" ").append(fs.getElementCssClass());
 		}
+		if(fs.isNewWindowAfterDispatchUrl()) {
+			sb.append(" o_new_window");
+		}
 		
-		sb.append("\"><span>").append(fs.getTranslated()).append("</span></button>");
+		sb.append("\"><span>").append(fs.getTranslated()).append("</span>");
 		
 		if(source.isEnabled() && fsC.getIsSubmitAndValidate()){
 			//it is a submitting and validating button (e.g. FormSubmit)
-			sb.append("<script>\n /* <![CDATA[ */ \n");
+			sb.append("<script>\n");
 			sb.append(FormJSHelper.getJSSubmitRegisterFn(fs.getRootForm(),id));
 			if(!fs.getRootForm().isSubmittedAndValid()){
 				//mark as dirty, because form is not yet submitted or
 				//it was submitted but has errors.
 				sb.append(FormJSHelper.getSetFlexiFormDirtyFnCallOnly(fs.getRootForm()));
 			}
-			sb.append("\n/* ]]> */ \n</script>");
+			sb.append("</script>");
 		}
+		sb.append("</button>");
 	}
 }

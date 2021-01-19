@@ -25,7 +25,6 @@ import javax.persistence.Column;
 import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;
 import javax.persistence.Id;
-import javax.persistence.NamedQueries;
 import javax.persistence.NamedQuery;
 import javax.persistence.Table;
 
@@ -44,11 +43,9 @@ import org.olat.core.id.Persistable;
  */
 @Entity(name="bidentityshort")
 @Table(name="o_bs_identity_short_v")
-@NamedQueries({
-	@NamedQuery(name="selectAllIdentitiesShortUnordered", query="select ident from bidentityshort as ident"),
-	@NamedQuery(name="getIdentityShortById", query="select identity from bidentityshort as identity where identity.key=:identityKey")
-	
-})
+@NamedQuery(name="selectAllIdentitiesShortUnordered", query="select ident from bidentityshort as ident")
+@NamedQuery(name="getIdentityShortById", query="select identity from bidentityshort as identity where identity.key=:identityKey")
+@NamedQuery(name="getIdentityShortByKeys", query="select ident from bidentityshort as ident where ident.key in (:keys)")
 public class IdentityShort implements Persistable, IdentityNames {
 
 	private static final long serialVersionUID = -9039644291427632379L;
@@ -75,10 +72,14 @@ public class IdentityShort implements Persistable, IdentityNames {
 	private Date lastLogin;
 	@Column(name="id_status", nullable=true, unique=false, insertable=false, updatable=false)
 	private int status;
+	@Column(name="id_external", nullable=true, unique=false, insertable=false, updatable=false)
+	private String externalId;
 	@Column(name="first_name", nullable=true, unique=false, insertable=false, updatable=false)
 	private String firstName;
 	@Column(name="last_name", nullable=true, unique=false, insertable=false, updatable=false)
 	private String lastName;
+	@Column(name="nick_name", nullable=true, unique=false, insertable=false, updatable=false)
+	private String nickName;
 	@Column(name="email", nullable=true, unique=false, insertable=false, updatable=false)
 	private String email;
 
@@ -94,6 +95,10 @@ public class IdentityShort implements Persistable, IdentityNames {
 	@Override
 	public String getName() {
 		return name;
+	}
+
+	public String getExternalId() {
+		return externalId;
 	}
 
 	public Date getLastLogin() {
@@ -112,6 +117,10 @@ public class IdentityShort implements Persistable, IdentityNames {
 	@Override
 	public String getLastName() {
 		return lastName;
+	}
+
+	public String getNickName() {
+		return nickName;
 	}
 
 	public String getEmail() {

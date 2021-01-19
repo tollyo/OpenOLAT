@@ -55,6 +55,7 @@ import org.olat.core.id.Identity;
 import org.olat.core.id.context.BusinessControlFactory;
 import org.olat.core.logging.AssertException;
 import org.olat.core.logging.Tracing;
+import org.olat.core.util.DateUtils;
 import org.olat.core.util.Util;
 import org.olat.core.util.nodes.INode;
 import org.olat.course.CourseFactory;
@@ -228,7 +229,7 @@ public class AssessmentNotificationsHandler implements NotificationsHandler {
 
 		CourseGroupManager grpMan = course.getCourseEnvironment().getCourseGroupManager();
 		boolean isLearnResourceManager = organisationService.hasRole(ident, OrganisationRoles.learnresourcemanager);
-		return isLearnResourceManager || grpMan.isIdentityCourseAdministrator(ident) || grpMan.isIdentityCourseCoach(ident) || grpMan.hasRight(ident, CourseRights.RIGHT_ASSESSMENT);
+		return isLearnResourceManager || grpMan.isIdentityCourseAdministrator(ident) || grpMan.isIdentityCourseCoach(ident) || grpMan.hasRight(ident, CourseRights.RIGHT_ASSESSMENT, null);
 	}
 
 	/**
@@ -324,7 +325,7 @@ public class AssessmentNotificationsHandler implements NotificationsHandler {
 					// course admins or users with the course right to have full access to
 					// the assessment tool will have full access to user tests
 					CourseGroupManager cgm = course.getCourseEnvironment().getCourseGroupManager();
-					final boolean hasFullAccess = cgm.isIdentityCourseAdministrator(identity) || cgm.hasRight(identity, CourseRights.RIGHT_ASSESSMENT);
+					final boolean hasFullAccess = cgm.isIdentityCourseAdministrator(identity) || cgm.hasRight(identity, CourseRights.RIGHT_ASSESSMENT, null);
 					final Set<Identity> coachedUsers = new HashSet<>();
 					if (!hasFullAccess) {
 						// initialize list of users, only when user has not full access
@@ -351,9 +352,9 @@ public class AssessmentNotificationsHandler implements NotificationsHandler {
 					for (CourseNode test:testNodes) {
 						List<AssessmentEntry> assessments = courseNodeAssessmentDao.loadAssessmentEntryBySubIdent(cgm.getCourseEntry(), test.getIdent());
 						for(AssessmentEntry assessment:assessments) {
-							Date modDate = assessment.getLastModified();
+							Date modDate = DateUtils.getLater(assessment.getLastUserModified(), assessment.getLastCoachModified());
 							Identity assessedIdentity = assessment.getIdentity();
-							if (modDate.after(compareDate) && (hasFullAccess || coachedUsers.contains(assessedIdentity))) {
+							if (modDate != null && modDate.after(compareDate) && (hasFullAccess || coachedUsers.contains(assessedIdentity))) {
 								BigDecimal score = assessment.getScore();
 								if(test instanceof ScormCourseNode) {
 									ScormCourseNode scormTest = (ScormCourseNode)test;

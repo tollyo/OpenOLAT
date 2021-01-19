@@ -89,7 +89,6 @@ public class AssessedIdentityListController extends FormBasicController implemen
 
 	private final RepositoryEntry testEntry;
 	private final AssessableResource element;
-	private final boolean isAdministrativeUser;
 	private SearchAssessedIdentityParams searchParams;
 	private final List<UserPropertyHandler> userPropertyHandlers;
 	protected final AssessmentToolSecurityCallback assessmentCallback;
@@ -129,7 +128,7 @@ public class AssessedIdentityListController extends FormBasicController implemen
 		this.stackPanel = stackPanel;
 		this.assessmentCallback = assessmentCallback;
 		
-		isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
+		boolean isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
 		userPropertyHandlers = userManager.getUserPropertyHandlersFor(AssessmentToolConstants.usageIdentifyer, isAdministrativeUser);
 		
 		initForm(ureq);
@@ -154,9 +153,6 @@ public class AssessedIdentityListController extends FormBasicController implemen
 
 		//add the table
 		FlexiTableColumnModel columnsModel = FlexiTableDataModelFactory.createFlexiTableColumnModel();
-		if(isAdministrativeUser) {
-			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(IdentityCourseElementCols.username, "select"));
-		}
 		
 		int colIndex = AssessmentToolConstants.USER_PROPS_OFFSET;
 		for (int i = 0; i < userPropertyHandlers.size(); i++) {
@@ -269,7 +265,7 @@ public class AssessedIdentityListController extends FormBasicController implemen
 		for(Identity assessedIdentity:assessedIdentities) {
 			AssessmentEntry entry = entryMap.get(assessedIdentity.getKey());
 			AssessedIdentityElementRow row = new AssessedIdentityElementRow(assessedIdentity, entry,
-					null, null, null, userPropertyHandlers, getLocale());
+					null, null, null, null, userPropertyHandlers, getLocale());
 			row.setInitialCourseLaunchDate(initialLaunchDates.get(assessedIdentity.getKey()));
 			rows.add(row);
 		}

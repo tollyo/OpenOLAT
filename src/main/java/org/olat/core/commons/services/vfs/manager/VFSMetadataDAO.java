@@ -30,6 +30,7 @@ import org.olat.core.commons.persistence.DB;
 import org.olat.core.commons.services.vfs.VFSMetadata;
 import org.olat.core.commons.services.vfs.VFSMetadataRef;
 import org.olat.core.commons.services.vfs.model.VFSMetadataImpl;
+import org.olat.core.id.Identity;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -219,6 +220,13 @@ public class VFSMetadataDAO {
 			.getResultList();
 	}
 	
+	public List<VFSMetadata> getMetadatasOnly(VFSMetadataRef parentMetadata) {
+		return dbInstance.getCurrentEntityManager()
+			.createNamedQuery("metadataOnlyByParent", VFSMetadata.class)
+			.setParameter("parentKey", parentMetadata.getKey())
+			.getResultList();
+	}
+	
 	/**
 	 * This is an exact match to find the direct children of a specific
 	 * directory.
@@ -311,9 +319,22 @@ public class VFSMetadataDAO {
 	 * 
 	 * @param fileSize The new file size (mandatory)
 	 * @param lastModified The modification date (mandatory)
+	 * @param lastModifiedBy The identity who saved the file
 	 * @param relativePath The path to the file
 	 * @param filename The name of the file
 	 */
+	public void updateMetadata(long fileSize, Date lastModified, Identity lastModifiedBy, String relativePath, String filename) {
+		String updateQuery = "update vfsmetadatafilesaved set fileLastModified=:lastModified, fileLastModifiedBy=:lastModifiedBy, fileSize=:fileSize, deleted=false where filename=:filename and relativePath=:relativePath";
+		dbInstance.getCurrentEntityManager()
+			.createQuery(updateQuery)
+			.setParameter("filename", filename)
+			.setParameter("relativePath", relativePath)
+			.setParameter("fileSize", fileSize)
+			.setParameter("lastModified", lastModified)
+			.setParameter("lastModifiedBy", lastModifiedBy)
+			.executeUpdate();
+	}
+	
 	public void updateMetadata(long fileSize, Date lastModified, String relativePath, String filename) {
 		String updateQuery = "update vfsmetadatafilesaved set fileLastModified=:lastModified, fileSize=:fileSize, deleted=false where filename=:filename and relativePath=:relativePath";
 		dbInstance.getCurrentEntityManager()
@@ -422,7 +443,7 @@ public class VFSMetadataDAO {
 			query.setParameter("revisionCount", revisionCount);
 		}
 		if(size > 0) {
-			query.setParameter("size", new Long(size));
+			query.setParameter("size", Long.valueOf(size));
 		}
 
 		return query.setFirstResult(0)

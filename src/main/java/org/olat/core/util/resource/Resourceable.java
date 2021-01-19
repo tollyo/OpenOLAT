@@ -34,16 +34,17 @@ import org.olat.core.id.OLATResourceable;
 public class Resourceable implements OLATResourceable, Serializable, Cloneable {
 
 	private static final long serialVersionUID = 4493480617698403988L;
-	private String resourceableTypeName;
-	private Long resourceableId;
-	
-	public Resourceable() {
-		//
-	}
+	private final String resourceableTypeName;
+	private final Long resourceableId;
 	
 	public Resourceable(String type, Long key) {
 		this.resourceableTypeName = type;
 		this.resourceableId = key;
+	}
+	
+	public Resourceable(OLATResourceable resource) {
+		this.resourceableTypeName = resource.getResourceableTypeName();
+		this.resourceableId = resource.getResourceableId();
 	}
 	
 	@Override
@@ -51,17 +52,9 @@ public class Resourceable implements OLATResourceable, Serializable, Cloneable {
 		return resourceableTypeName;
 	}
 
-	public void setResourceableTypeName(String resourceableTypeName) {
-		this.resourceableTypeName = resourceableTypeName;
-	}
-
 	@Override
 	public Long getResourceableId() {
 		return resourceableId;
-	}
-	
-	public void setResourceableId(Long resourceableId) {
-		this.resourceableId = resourceableId;
 	}
 
 	@Override

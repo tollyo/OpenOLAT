@@ -102,10 +102,10 @@ public abstract class AbstractFlexiTableRenderer extends DefaultComponentRendere
 				  .append("jQuery(function() {\n")
 				  .append(" jQuery('.o_table_flexi table tr').draggable({\n")
 		          .append("  containment: '#o_main',\n")
-		          .append("	 zIndex: 10000,\n")
-		          .append("	 cursorAt: {left: 0, top: 0},\n")
-		          .append("	 accept: function(event,ui){ return true; },\n")
-		          .append("	 helper: function(event,ui,zt) {\n")
+		          .append("  zIndex: 10000,\n")
+		          .append("  cursorAt: {left: 0, top: 0},\n")
+		          .append("  accept: function(event,ui){ return true; },\n")
+		          .append("  helper: function(event,ui,zt) {\n")
 		          .append("    var helperText = jQuery(this).children('.o_dnd_label').text();\n")
 		          .append("    return jQuery(\"<div class='ui-widget-header o_table_drag'>\" + helperText + \"</div>\").appendTo('body').css('zIndex',5).show();\n")
 		          .append("  }\n")
@@ -145,6 +145,9 @@ public abstract class AbstractFlexiTableRenderer extends DefaultComponentRendere
 		if(searchCmp == null && !ftE.isExtendedSearchExpanded() && !ftE.isNumOfRowsEnabled()
 				&& !ftE.isFilterEnabled() && !ftE.isSortEnabled() && ! ftE.isExportEnabled()
 				&& !ftE.isCustomizeColumns() && ftE.getAvailableRendererTypes().length  <= 1) {
+			if(ftE.getCustomButton() != null) {
+				ftE.getCustomButton().getComponent().setDirty(false);
+			}
 			return;
 		}
 		
@@ -195,13 +198,13 @@ public abstract class AbstractFlexiTableRenderer extends DefaultComponentRendere
 		if(!empty && ftE.getExportButton() != null && ftE.isExportEnabled()) {
 			sb.append("<div class='btn-group'>");
 			ftE.getExportButton().setEnabled(!empty);
-			renderFormItem(renderer, sb, ftE.getExportButton(), ubu, translator, renderResult, args);
+			renderFormItem(renderer, sb, ftE.getExportButton(), ubu, translator, renderResult, null);
 			sb.append("</div> ");
 		}
 		if(!empty && ftE.getCustomButton() != null && ftE.isCustomizeColumns()
 				&& (ftE.getRendererType() == null || ftE.getRendererType() == FlexiTableRendererType.classic)) {
 			sb.append("<div class='btn-group'>");
-			renderFormItem(renderer, sb, ftE.getCustomButton(), ubu, translator, renderResult, args);
+			renderFormItem(renderer, sb, ftE.getCustomButton(), ubu, translator, renderResult, null);
 			sb.append("</div> ");
 		}
 		
@@ -210,7 +213,7 @@ public abstract class AbstractFlexiTableRenderer extends DefaultComponentRendere
 		if(!empty && types.length > 1) {
 			sb.append("<div class='btn-group'>");
 			for(FlexiTableRendererType type:types) {
-				renderHeaderSwitchType(type, renderer, sb, ftE, ubu, translator, renderResult, args);
+				renderHeaderSwitchType(type, renderer, sb, ftE, ubu, translator, renderResult, null);
 			}
 			sb.append("</div> ");
 		}
@@ -243,7 +246,7 @@ public abstract class AbstractFlexiTableRenderer extends DefaultComponentRendere
 			
 			sb.append("<div class='o_table_search input-group o_noprint'>");
 			if(searchInput) {
-				renderFormItem(renderer, sb, ftE.getSearchElement(), ubu, translator, renderResult, args);
+				renderFormItem(renderer, sb, ftE.getSearchElement(), ubu, translator, renderResult, null);
 				sb.append("<div class='input-group-btn'>");
 				// reset quick search
 				String id = ftE.getSearchElement().getFormDispatchId();
@@ -253,9 +256,9 @@ public abstract class AbstractFlexiTableRenderer extends DefaultComponentRendere
 				  .append("\" class='btn o_reset_quick_search'><i class='o_icon o_icon_remove_filters' aria-label='")
 				  .append(translator.translate("aria.reset.search")).append("'> </i></a>");
 							
-				renderFormItem(renderer, sb, ftE.getSearchButton(), ubu, translator, renderResult, args);
+				renderFormItem(renderer, sb, ftE.getSearchButton(), ubu, translator, renderResult, null);
 				if(ftE.getExtendedSearchButton() != null) {
-					renderFormItem(renderer, sb, ftE.getExtendedSearchButton(), ubu, translator, renderResult, args);
+					renderFormItem(renderer, sb, ftE.getExtendedSearchButton(), ubu, translator, renderResult, null);
 				}
 			}
 			

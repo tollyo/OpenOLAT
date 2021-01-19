@@ -60,11 +60,6 @@ public class AttemptsRuleSPI implements FilterRuleSPI {
 	}
 
 	@Override
-	public String getCategory() {
-		return "assessment";
-	}
-
-	@Override
 	public RuleEditorFragment getEditorFragment(ReminderRule rule, RepositoryEntry entry) {
 		return new AttemptsRuleEditor(rule, entry);
 	}
@@ -87,7 +82,7 @@ public class AttemptsRuleSPI implements FilterRuleSPI {
 			CourseNode courseNode = course.getRunStructure().getNode(nodeIdent);
 			if (courseNode == null) {
 				identities.clear();
-				log.error("Attempts rule in course " + entry.getKey() + " (" + entry.getDisplayname() + ") is missing a course element");
+				log.warn("Attempts rule in course {} ({}) is missing a course element", entry.getKey(), entry.getDisplayname());
 				return;
 			}
 

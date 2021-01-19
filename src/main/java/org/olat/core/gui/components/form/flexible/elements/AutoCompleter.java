@@ -47,6 +47,10 @@ public interface AutoCompleter extends FormItem {
 	
 	public String getValue();
 	
+	public void setValue(String value);
+
+	public int getMaxEntries();
+	
 	public String getMapperUri();
 	
 	public void setListProvider(ListProvider provider, UserSession usess);

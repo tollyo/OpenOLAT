@@ -31,10 +31,13 @@ import java.util.Locale;
 import java.util.Map;
 
 import org.apache.logging.log4j.Logger;
+import org.olat.basesecurity.AuthHelper;
 import org.olat.basesecurity.Authentication;
 import org.olat.basesecurity.BaseSecurity;
+import org.olat.basesecurity.BaseSecurityModule;
 import org.olat.basesecurity.IdentityRef;
 import org.olat.basesecurity.manager.AuthenticationDAO;
+import org.olat.core.commons.persistence.DB;
 import org.olat.core.commons.services.webdav.manager.WebDAVAuthManager;
 import org.olat.core.gui.translator.Translator;
 import org.olat.core.id.Identity;
@@ -53,7 +56,6 @@ import org.olat.core.util.mail.MailContextImpl;
 import org.olat.core.util.mail.MailHelper;
 import org.olat.core.util.mail.MailManager;
 import org.olat.core.util.resource.OresHelper;
-import org.olat.core.util.xml.XStreamHelper;
 import org.olat.ldap.LDAPError;
 import org.olat.ldap.LDAPLoginManager;
 import org.olat.ldap.LDAPLoginModule;
@@ -65,6 +67,7 @@ import org.olat.login.oauth.OAuthSPI;
 import org.olat.login.validation.PasswordValidationRulesFactory;
 import org.olat.login.validation.SyntaxValidator;
 import org.olat.login.validation.UsernameValidationRulesFactory;
+import org.olat.login.validation.ValidationResult;
 import org.olat.registration.RegistrationManager;
 import org.olat.registration.TemporaryKey;
 import org.olat.shibboleth.ShibbolethDispatcher;
@@ -82,11 +85,15 @@ public class OLATAuthManager implements AuthenticationSPI {
 	private static final Logger log = Tracing.createLoggerFor(OLATAuthManager.class);
 	
 	@Autowired
+	private DB dbInstance;
+	@Autowired
 	private OAuthLoginModule oauthModule;
 	@Autowired
 	private UserManager userManager;
 	@Autowired
 	private BaseSecurity securityManager;
+	@Autowired
+	private BaseSecurityModule securityModule;
 	@Autowired
 	private MailManager mailManager;
 	@Autowired
@@ -106,6 +113,29 @@ public class OLATAuthManager implements AuthenticationSPI {
 	@Autowired
 	private UsernameValidationRulesFactory usernameRulesFactory;
 	
+	@Override
+	public List<String> getProviderNames() {
+		return Collections.singletonList("OLAT");
+	}
+
+	@Override
+	public boolean canChangeAuthenticationUsername(String provider) {
+		return "OLAT".equals(provider);
+	}
+
+	@Override
+	public boolean changeAuthenticationUsername(Authentication authentication, String newUsername) {
+		authentication.setAuthusername(newUsername);
+		authentication = authenticationDao.updateAuthentication(authentication);
+		webDAVAuthManager.removeDigestAuthentications(authentication.getIdentity());
+		return true;
+	}
+
+	@Override
+	public ValidationResult validateAuthenticationUsername(String name, Identity identity) {
+		return  createUsernameSytaxValidator().validate(name, identity);
+	}
+
 	/**
 	 * 
 	 * @param identity
@@ -114,26 +144,51 @@ public class OLATAuthManager implements AuthenticationSPI {
 	 * @return
 	 */
 	@Override
-	public Identity authenticate(Identity ident, String login, String password) {
+	public Identity authenticate(String login, String password) {
+		AuthenticationStatus status = new AuthenticationStatus();
+		return authenticate(null, login, password, status);
+	}
+	
+	public Identity findIdentityByLogin(String login) {
+		// check first for email
+		Identity ident = findIdentityByEmail(login);
+		if(ident == null) {
+			Authentication authentication = securityManager.findAuthenticationByAuthusername(login, "OLAT");
+			if(authentication != null) {
+				ident = authentication.getIdentity();
+			}
+		}
+		return ident;
+	}
+	
+	/**
+	 * 
+	 * @param login The login
+	 * @return Identity if email matches and email login allowed
+	 */
+	private Identity findIdentityByEmail(String login) {
+		Identity ident = null;
+		if(loginModule.isAllowLoginUsingEmail() && MailHelper.isValidEmailAddress(login)){
+			List<Identity> identities = userManager.findIdentitiesByEmail(Collections.singletonList(login));
+			// check for email changed with verification workflow
+			if(identities.size() == 1) {
+				ident = identities.get(0);
+			} else if(identities.size() > 1) {
+				log.error("more than one identity found with email::{}", login);
+			}
+			
+			if (ident == null) {
+				ident = findIdentInChangingEmailWorkflow(login);
+			}
+		}
+		return ident;
+	}
+	
+	public Identity authenticate(Identity ident, String login, String password, AuthenticationStatus status) {
 		Authentication authentication;	
 		if (ident == null) {
 			// check for email instead of username if ident is null
-			if(loginModule.isAllowLoginUsingEmail()) {
-				if (MailHelper.isValidEmailAddress(login)){
-					List<Identity> identities = userManager.findIdentitiesByEmail(Collections.singletonList(login));
-					// check for email changed with verification workflow
-					if(identities.size() == 1) {
-						ident = identities.get(0);
-					} else if(identities.size() > 1) {
-						log.error("more than one identity found with email::{}", login);
-					}
-					
-					if (ident == null) {
-						ident = findIdentInChangingEmailWorkflow(login);
-					}
-				}
-			} 
-			
+			ident = findIdentityByEmail(login);
 			if(ident == null) {
 				authentication = securityManager.findAuthenticationByAuthusername(login, "OLAT");
 			} else {
@@ -144,6 +199,9 @@ public class OLATAuthManager implements AuthenticationSPI {
 		}
 
 		if (authentication == null) {
+			if(status != null) {
+				status.setStatus(AuthHelper.LOGIN_FAILED);
+			}
 			log.info(Tracing.M_AUDIT, "Cannot authenticate user {} via provider OLAT", login);
 			return null;
 		}
@@ -156,13 +214,22 @@ public class OLATAuthManager implements AuthenticationSPI {
 				authentication = securityManager.updateCredentials(authentication, password, defAlgorithm);
 			}
 			Identity identity = authentication.getIdentity();
-			if(!securityManager.isIdentityVisible(identity)) {
+			if(!securityManager.isIdentityLoginAllowed(identity, "OLAT")) {
+				if(status != null) {
+					if(Identity.STATUS_INACTIVE.equals(identity.getStatus())) {
+						status.setStatus(AuthHelper.LOGIN_INACTIVE);
+					} else {
+						status.setStatus(AuthHelper.LOGIN_DENIED);
+					}
+				}
 				return null;
 			}
 			if(identity != null && webDAVAuthManager != null) {
 				webDAVAuthManager.upgradePassword(identity, login, password);
 			}
 			return identity;
+		} else if(status != null) {
+			status.setStatus(AuthHelper.LOGIN_FAILED);
 		}
 		log.info(Tracing.M_AUDIT, "Cannot authenticate user {} via provider OLAT", login);
 		return null;
@@ -190,16 +257,15 @@ public class OLATAuthManager implements AuthenticationSPI {
 		//nothing to do
 	}
 
-	private Identity findIdentInChangingEmailWorkflow(String login){
+	private Identity findIdentInChangingEmailWorkflow(String login) {
 		List<TemporaryKey> tk = registrationManager.loadTemporaryKeyByAction(RegistrationManager.EMAIL_CHANGE);
 		if (tk != null) {
 			for (TemporaryKey temporaryKey : tk) {
-				@SuppressWarnings("unchecked")
-				Map<String, String> mails = (Map<String, String>)XStreamHelper.createXStreamInstance()
-					.fromXML(temporaryKey.getEmailAddress());
+				Map<String, String> mails = registrationManager.readTemporaryValue(temporaryKey.getEmailAddress());
 				String currentEmail = mails.get("currentEMail");
 				String changedEmail = mails.get("changedEMail");
 				if (login.equals(changedEmail) && StringHelper.containsNonWhitespace(currentEmail)) {
+					// legacy, probably wrong
 					return securityManager.findIdentityByName(currentEmail);
 				}
 			}
@@ -214,6 +280,24 @@ public class OLATAuthManager implements AuthenticationSPI {
 	
 	public SyntaxValidator createPasswordSytaxValidator() {
 		return new SyntaxValidator(passwordRulesFactory.createRules(), true);
+	}
+	
+	public String getAuthenticationUsername(Identity identity) {
+		List<Authentication> authentications = securityManager.getAuthentications(identity);
+		if(ldapLoginModule.isLDAPEnabled()) {
+			for(Authentication authentication:authentications) {
+				if(LDAPAuthenticationController.PROVIDER_LDAP.equals(authentication.getProvider())) {
+					return authentication.getAuthusername();
+				}
+			}
+		}
+		
+		for(Authentication authentication:authentications) {
+			if("OLAT".equals(authentication.getProvider())) {
+				return authentication.getAuthusername();
+			}
+		}
+		return null;
 	}
 	
 	/**
@@ -244,16 +328,16 @@ public class OLATAuthManager implements AuthenticationSPI {
 		if(ldapAuth != null) {
 			if(ldapLoginModule.isPropagatePasswordChangedOnLdapServer()) {
 				LDAPError ldapError = new LDAPError();
-				ldapLoginManager.changePassword(identity, newPwd, ldapError);
+				ldapLoginManager.changePassword(ldapAuth, newPwd, ldapError);
 				log.info(Tracing.M_AUDIT, "{} change the password on the LDAP server for identity: {}", doer.getKey(), identity.getKey());
 				allOk = ldapError.isEmpty();
 
 				if(allOk && ldapLoginModule.isCacheLDAPPwdAsOLATPwdOnLogin()) {
-					allOk &= changeOlatPassword(doer, identity, identity.getName(), newPwd);
+					allOk &= changeOlatPassword(doer, identity, newPwd);
 				}
 			}
 		} else {
-			allOk = changeOlatPassword(doer, identity, identity.getName(), newPwd);
+			allOk = changeOlatPassword(doer, identity, newPwd);
 		}
 		if(allOk) {
 			sendConfirmationEmail(doer, identity);
@@ -275,8 +359,9 @@ public class OLATAuthManager implements AuthenticationSPI {
 
 		ContextEntry ce = BusinessControlFactory.getInstance().createContextEntry(OresHelper.createOLATResourceableInstance("changepw", 0l));
 		String changePwUrl = BusinessControlFactory.getInstance().getAsURIString(Collections.singletonList(ce), false);
+		String authUsername = securityManager.findAuthenticationName(identity);
 		String[] args = new String[] {
-				identity.getName(),//0: changed users username
+				authUsername,//0: changed users username
 				UserManager.getInstance().getUserDisplayEmail(identity, locale),// 1: changed users email address
 				userManager.getUserDisplayName(doer.getUser()),// 2: Name (first and last name) of user who changed the password
 				WebappHelper.getMailConfig("mailSupport"), //3: configured support email address
@@ -294,25 +379,52 @@ public class OLATAuthManager implements AuthenticationSPI {
 	}
 	
 	/**
+	 * It will propose an authentication user name for the OLAT
+	 * provider based on settings of the instance.
+	 * 
+	 * @param identity The identity
+	 * @return An authentication user name suited for the OLAT provider
+	 */
+	public String getOlatAuthusernameFromIdentity(Identity identity) {
+		String username;
+		if(securityModule.isIdentityNameAutoGenerated()) {
+			username = identity.getUser().getNickName();
+		} else {
+			username = identity.getName();
+		}
+		if(!StringHelper.containsNonWhitespace(username) && loginModule.isAllowLoginUsingEmail()) {
+			username = identity.getUser().getEmail();
+			if(!StringHelper.containsNonWhitespace(username)) {
+				username = identity.getUser().getInstitutionalEmail();
+			}
+		}
+		return username;
+	}
+	
+	/**
 	 * This update the OLAT and the HA1 passwords
 	 * @param doer
 	 * @param identity
 	 * @param newPwd
 	 * @return
 	 */
-	public boolean changeOlatPassword(Identity doer, Identity identity, String username, String newPwd) {
+	public boolean changeOlatPassword(Identity doer, Identity identity, String newPwd) {
+		String username;
 		Authentication auth = securityManager.findAuthentication(identity, "OLAT");
 		if (auth == null) { // create new authentication for provider OLAT
-			securityManager.createAndPersistAuthentication(identity, "OLAT", identity.getName(), newPwd, loginModule.getDefaultHashAlgorithm());
-			log.info(Tracing.M_AUDIT, "{} created new authenticatin for identity: {}", doer.getKey(), identity.getKey());
+			username = getOlatAuthusernameFromIdentity(identity);
+			securityManager.createAndPersistAuthentication(identity, "OLAT", username, newPwd, loginModule.getDefaultHashAlgorithm());
+			log.info(Tracing.M_AUDIT, "{} created new authentication for identity: {} with authusername: {}", doer.getKey(), identity.getKey(), username);
 		} else {
+			username = auth.getAuthusername();
 			securityManager.updateCredentials(auth, newPwd, loginModule.getDefaultHashAlgorithm());
 			log.info(Tracing.M_AUDIT, "{} set new password for identity: {}", doer.getKey(),  identity.getKey());
 		}
 		
 		if(StringHelper.containsNonWhitespace(username) && webDAVAuthManager != null) {
-			webDAVAuthManager.changeDigestPassword(doer, identity, newPwd);
+			webDAVAuthManager.changeDigestPassword(doer, identity, username, newPwd);
 		}
+		dbInstance.commit();
 		return true;
 	}
 	
@@ -336,7 +448,7 @@ public class OLATAuthManager implements AuthenticationSPI {
 		}
 		
 		if(StringHelper.containsNonWhitespace(username) && webDAVAuthManager != null) {
-			webDAVAuthManager.changeDigestPassword(doer, identity, newPwd);
+			webDAVAuthManager.changeDigestPassword(doer, identity, username, newPwd);
 		}
 		return true;
 	}
@@ -355,7 +467,8 @@ public class OLATAuthManager implements AuthenticationSPI {
 	 * @return
 	 */
 	public boolean changePasswordAsAdmin(Identity identity, String newPwd) {
-		Identity adminUserIdentity = securityManager.findIdentityByName("administrator");
+		Authentication adminAuthIdentity = securityManager.findAuthenticationByAuthusername("administrator", "OLAT");
+		Identity adminUserIdentity = adminAuthIdentity.getIdentity();
 		return changePassword(adminUserIdentity, identity, newPwd);
 	}
 	

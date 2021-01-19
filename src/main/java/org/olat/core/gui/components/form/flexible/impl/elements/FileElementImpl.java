@@ -30,6 +30,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.apache.logging.log4j.Logger;
 import org.olat.core.CoreSpringFactory;
 import org.olat.core.commons.services.image.Crop;
 import org.olat.core.commons.services.image.ImageService;
@@ -51,7 +52,7 @@ import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.control.generic.modal.DialogBoxController;
 import org.olat.core.gui.control.generic.modal.DialogBoxUIFactory;
 import org.olat.core.gui.translator.Translator;
-import org.apache.logging.log4j.Logger;
+import org.olat.core.id.Identity;
 import org.olat.core.logging.Tracing;
 import org.olat.core.util.CodeHelper;
 import org.olat.core.util.FileUtils;
@@ -103,6 +104,7 @@ public class FileElementImpl extends FormItemImpl
 	private boolean checkForMaxFileSize = false;
 	private boolean checkForMimeTypes = false;
 	private boolean cropSelectionEnabled = false;
+	private boolean area = true;
 	// error keys
 	private String i18nErrMandatory;
 	private String i18nErrMaxSize;
@@ -114,6 +116,7 @@ public class FileElementImpl extends FormItemImpl
 	private String[] fileExampleParams;
 
 	private WindowControl wControl;
+	private Identity savedBy;
 
 	/**
 	 * Constructor for a file element. Use the limitToMimeType and setter
@@ -121,9 +124,10 @@ public class FileElementImpl extends FormItemImpl
 	 * 
 	 * @param name
 	 */
-	public FileElementImpl(WindowControl wControl, String name) {
+	public FileElementImpl(WindowControl wControl, Identity savedBy, String name) {
 		super(name);
 		this.wControl = wControl;
+		this.savedBy = savedBy;
 		component = new FileElementComponent(this);
 		setElementCssClass(null); // trigger default css 
 	}
@@ -147,7 +151,7 @@ public class FileElementImpl extends FormItemImpl
 		if (keys.size() > 0 && keys.contains(component.getFormDispatchId())) {
 			// Remove old files first
 			if (tempUploadFile != null && tempUploadFile.exists()) {
-				tempUploadFile.delete();
+				FileUtils.deleteFile(tempUploadFile);
 			}
 			// Move file from a temporary request scope location to a location
 			// with a
@@ -237,7 +241,7 @@ public class FileElementImpl extends FormItemImpl
 	@Override
 	public void reset() {
 		if (tempUploadFile != null && tempUploadFile.exists()) {
-			tempUploadFile.delete();
+			FileUtils.deleteFile(tempUploadFile);
 		}
 		tempUploadFile = null;
 		if (previewEl != null) {
@@ -246,7 +250,7 @@ public class FileElementImpl extends FormItemImpl
 				previewEl.setMedia(media);
 				previewEl.setMaxWithAndHeightToFitWithin(300, 200);
 				previewEl.setVisible(true);
-			} else if (previewEl != null) {
+			} else {
 				previewEl.setVisible(false);
 			}
 		}
@@ -352,6 +356,13 @@ public class FileElementImpl extends FormItemImpl
 		}
 	}
 
+	/**
+	 * Render the file element in a preview style where the actual file upload
+	 * functionality is disabled but the element looks like an actual upload
+	 * element and not like the disabled element. 
+	 * 
+	 * @return
+	 */
 	public boolean isButtonsEnabled() {
 		return buttonsEnabled;
 	}
@@ -364,6 +375,16 @@ public class FileElementImpl extends FormItemImpl
 	@Override
 	public void setCropSelectionEnabled(boolean enable) {
 		this.cropSelectionEnabled = enable;
+	}
+
+	@Override
+	public boolean isArea() {
+		return area;
+	}
+
+	@Override
+	public void setArea(boolean area) {
+		this.area = area;
 	}
 
 	@Override
@@ -533,10 +554,10 @@ public class FileElementImpl extends FormItemImpl
 				if (crop && cropSelection != null) {
 					CoreSpringFactory.getImpl(ImageService.class).cropImage(tempUploadFile, targetFile, cropSelection);
 					targetLeaf = (VFSLeaf) destinationContainer.resolve(targetFile.getName());
-					CoreSpringFactory.getImpl(VFSRepositoryService.class).itemSaved(targetLeaf);
+					CoreSpringFactory.getImpl(VFSRepositoryService.class).itemSaved(targetLeaf, savedBy);
 				} else if (FileUtils.copyFileToFile(tempUploadFile, targetFile, true)) {
 					targetLeaf = (VFSLeaf) destinationContainer.resolve(targetFile.getName());
-					CoreSpringFactory.getImpl(VFSRepositoryService.class).itemSaved(targetLeaf);
+					CoreSpringFactory.getImpl(VFSRepositoryService.class).itemSaved(targetLeaf, savedBy);
 				} else {
 					log.error("Error after copying content from temp file, cannot copy file::"
 							+ (tempUploadFile == null ? "NULL" : tempUploadFile) + " - "
@@ -553,15 +574,14 @@ public class FileElementImpl extends FormItemImpl
 				VFSLeaf leaf = destinationContainer.createChildLeaf(uploadFilename);
 				boolean success = false;
 				try {
-					success = VFSManager.copyContent(tempUploadFile, leaf);
+					success = VFSManager.copyContent(tempUploadFile, leaf, savedBy);
 				} catch (Exception e) {
-					log.error("Error while copying content from temp file::"
-							+ (tempUploadFile == null ? "NULL" : tempUploadFile.getAbsolutePath()), e);
+					log.error("Error while copying content from temp file: {}", tempUploadFile, e);
 				}
 				if (success) {
 					// Delete original temp file after copy to simulate move
 					// behavior
-					tempUploadFile.delete();
+					FileUtils.deleteFile(tempUploadFile);
 					targetLeaf = leaf;
 				}
 			}
@@ -587,7 +607,7 @@ public class FileElementImpl extends FormItemImpl
 	@Override
 	public void dispose() {
 		if (tempUploadFile != null && tempUploadFile.exists()) {
-			tempUploadFile.delete();
+			FileUtils.deleteFile(tempUploadFile);
 		}
 	}
 

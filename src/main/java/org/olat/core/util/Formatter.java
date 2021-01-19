@@ -437,6 +437,7 @@ public class Formatter {
 	 * @return escaped string
 	 * @deprecated use org.apache.commons.lang.StringEscapeUtils.escapeJavaScript() instead.
 	 */
+	@Deprecated
 	public static StringBuilder escapeSingleAndDoubleQuotes(String source) {
 		if (source == null) return null;
 		StringBuilder sb = new StringBuilder(300);
@@ -602,9 +603,8 @@ public class Formatter {
 						sb.append("&amp;");
 					}
 					break;
-				//case '\r':sb.append("<br />"); break;
 				case '\n':
-					sb.append("<br />");
+					sb.append("<br>");
 					break;
 				default:
 					sb.append(c);
@@ -726,7 +726,7 @@ public class Formatter {
 			}
 			// OpenOLAT URL's are opened in same window, all other URL's in separate window
 			else if (!url.startsWith(Settings.getServerContextPathURI())) {
-				sb.append(" target=\"_blank\"");				
+				sb.append(" target=\"_blank\"");
 			}
 			sb.append(">");
 			if (url.startsWith("mailto")) {
@@ -839,8 +839,21 @@ public class Formatter {
 	 * @return formatted string
 	 */
 	public static String roundToString(float value, int decimalPlace) {
-    BigDecimal bd = new BigDecimal(value);
-    bd = bd.setScale(decimalPlace,BigDecimal.ROUND_HALF_UP); 
+		BigDecimal bd = new BigDecimal(value);
+		bd = bd.setScale(decimalPlace, BigDecimal.ROUND_HALF_UP);
+		return bd.toString();
+	}
+	
+	/**
+	 * Format a double as string with given number of figures after
+	 * comma
+	 * @param value
+	 * @param decimalPlace
+	 * @return formatted string
+	 */
+	public static String roundToString(double value, int decimalPlace) {
+		BigDecimal bd = BigDecimal.valueOf(value);
+		bd = bd.setScale(decimalPlace, BigDecimal.ROUND_HALF_UP);
 		return bd.toString();
 	}
 	

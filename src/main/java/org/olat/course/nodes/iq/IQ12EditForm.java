@@ -160,8 +160,8 @@ public class IQ12EditForm extends FormBasicController {
 		// Only tests and selftests have summaries and score progress
 		if (!isSurvey) {
 			modConfig.set(IQEditController.CONFIG_KEY_SUMMARY, getSummary());
-			modConfig.set(IQEditController.CONFIG_KEY_DATE_DEPENDENT_RESULTS, new Boolean(isShowResultsDateDependent()));
-			modConfig.set(IQEditController.CONFIG_KEY_RESULTS_START_DATE, getShowResultsStartDate());
+			modConfig.set(IQEditController.CONFIG_KEY_DATE_DEPENDENT_RESULTS, String.valueOf(isShowResultsDateDependent()));
+			modConfig.set(IQEditController.CONFIG_KEY_RESULTS_START_DATE, getShowResultsStartDate()); 
 			modConfig.set(IQEditController.CONFIG_KEY_RESULTS_END_DATE, getShowResultsEndDate());
 			modConfig.set(IQEditController.CONFIG_KEY_RESULT_ON_FINISH, isShowResultsAfterFinishTest());
 			modConfig.set(IQEditController.CONFIG_KEY_RESULT_ON_HOME_PAGE, isShowResultsOnHomePage());
@@ -223,7 +223,7 @@ public class IQ12EditForm extends FormBasicController {
 		showResultsOnHomePage.addActionListener(FormEvent.ONCLICK);
 		showResultsOnHomePage.setVisible(!isSurvey);
 		
-		Boolean showResultsActive = modConfig.getBooleanEntry(IQEditController.CONFIG_KEY_DATE_DEPENDENT_RESULTS);
+		Boolean showResultsActive = Boolean.valueOf(modConfig.getStringValue(IQEditController.CONFIG_KEY_DATE_DEPENDENT_RESULTS));
 		boolean showResultsDateDependent = false; // default false
 		if (showResultsActive != null) {
 			showResultsDateDependent = showResultsActive.booleanValue();
@@ -238,8 +238,8 @@ public class IQ12EditForm extends FormBasicController {
 		}
 	
 		Date startDate = null;
-		if(modConfig.get(IQEditController.CONFIG_KEY_RESULTS_START_DATE) instanceof Date) {
-			startDate = (Date)modConfig.get(IQEditController.CONFIG_KEY_RESULTS_START_DATE);
+		if(modConfig.get(IQEditController.CONFIG_KEY_RESULTS_START_DATE) instanceof Date) { 
+			startDate = (Date)modConfig.get(IQEditController.CONFIG_KEY_RESULTS_START_DATE); 
 		}
 		startDateElement = uifactory.addDateChooser("qti_form_start_date", "qti.form.date.start", null, formLayout);
 		startDateElement.setDateChooserTimeEnabled(true);
@@ -346,7 +346,7 @@ public class IQ12EditForm extends FormBasicController {
 			if (minval != null) {
 				String mv = minval.getValue();
 				try {
-					minValue = new Float(Float.parseFloat(mv));
+					minValue = Float.valueOf(mv);
 				} catch (NumberFormatException e1) {
 					// if not correct in qti file -> ignore
 				}
@@ -355,7 +355,7 @@ public class IQ12EditForm extends FormBasicController {
 			if (maxval != null) {
 				String mv = maxval.getValue();
 				try {
-					maxValue = new Float(Float.parseFloat(mv));
+					maxValue = Float.valueOf(mv);
 				} catch (NumberFormatException e1) {
 					// if not correct in qti file -> ignore
 				}
@@ -364,7 +364,7 @@ public class IQ12EditForm extends FormBasicController {
 			if (cutval != null) {
 				String cv = cutval.getValue();
 				try {
-					cutValue = new Float(Float.parseFloat(cv));
+					cutValue = Float.valueOf(cv);
 				} catch (NumberFormatException e1) {
 					// if not correct in qti file -> ignore
 				}

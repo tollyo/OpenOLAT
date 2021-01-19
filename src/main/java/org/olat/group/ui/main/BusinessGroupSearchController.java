@@ -20,11 +20,13 @@
 package org.olat.group.ui.main;
 
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 
 import org.olat.basesecurity.GroupRoles;
 import org.olat.core.CoreSpringFactory;
 import org.olat.core.gui.UserRequest;
+import org.olat.core.gui.components.AbstractComponent;
 import org.olat.core.gui.components.form.flexible.FormItem;
 import org.olat.core.gui.components.form.flexible.FormItemContainer;
 import org.olat.core.gui.components.form.flexible.elements.FormLink;
@@ -43,6 +45,7 @@ import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.control.generic.dtabs.Activateable2;
 import org.olat.core.id.context.ContextEntry;
 import org.olat.core.id.context.StateEntry;
+import org.olat.core.util.DateUtils;
 import org.olat.core.util.StringHelper;
 import org.olat.group.BusinessGroupModule;
 
@@ -65,8 +68,10 @@ public class BusinessGroupSearchController extends FormBasicController implement
 	private FormLink searchButton;
 	private SingleSelection rolesEl;
 	private SingleSelection publicEl;
+	private SingleSelection managedEl;
 	private SingleSelection resourceEl;
 	private MultipleSelectionElement headlessEl;
+	private TextElement lastUsageEl;
 	
 	private final boolean showRoles;
 	private final boolean showAdminTools;
@@ -75,6 +80,7 @@ public class BusinessGroupSearchController extends FormBasicController implement
 	private String[] roleKeys = {"all", "owner", "attendee", "waiting"};
 	private String[] adminRoleKeys = {"none", "all", "owner", "attendee", "waiting"};
 	private String[] openKeys = {"all", "yes", "no"};
+	private String[] managedKeys = {"all", "yes", "no"};
 	private String[] resourceKeys = {"all", "yes", "no"};
 	
 	private final boolean admin;
@@ -160,6 +166,15 @@ public class BusinessGroupSearchController extends FormBasicController implement
 		publicEl.setElementCssClass("o_sel_group_search_public_field");
 		publicEl.select("all", true);
 
+		//managed
+		String[] managedValues = new String[managedKeys.length];
+		for(int i=managedKeys.length; i-->0; ) {
+			managedValues[i] = translate("search." + managedKeys[i]);
+		}
+		managedEl = uifactory.addRadiosHorizontal("managedBg", "search.managed", rightContainer, managedKeys, managedValues);
+		managedEl.select("all", true);
+		managedEl.setVisible(managedEnable);
+		
 		//resources
 		String[] resourceValues = new String[resourceKeys.length];
 		for(int i=resourceKeys.length; i-->0; ) {
@@ -174,6 +189,17 @@ public class BusinessGroupSearchController extends FormBasicController implement
 		headlessEl = uifactory.addCheckboxesHorizontal("headless.groups", "search.headless", rightContainer, keys, values);
 		headlessEl.setElementCssClass("o_sel_group_search_headless_field");
 		headlessEl.setVisible(showAdminTools);
+		
+		// Last usage
+		String page = velocity_root + "/last_usage.html";
+		FormLayoutContainer lastUsageCont = FormLayoutContainer.createCustomFormLayout("lastUsage", getTranslator(), page);
+		rightContainer.add("lastUsage", lastUsageCont);
+		lastUsageCont.setLabel("search.last.usage", null);
+		lastUsageCont.setRootForm(mainForm);
+		
+		lastUsageEl = uifactory.addTextElement("search.last.usage", 10, null, lastUsageCont);
+		((AbstractComponent)lastUsageEl.getComponent()).setDomReplacementWrapperRequired(false);
+		lastUsageEl.setDisplaySize(5);
 
 		FormLayoutContainer buttonLayout = FormLayoutContainer.createButtonLayout("button_layout", getTranslator());
 		formLayout.add(buttonLayout);
@@ -240,7 +266,28 @@ public class BusinessGroupSearchController extends FormBasicController implement
 	protected boolean validateFormLogic(UserRequest ureq) {
 		if(!enabled) return true;
 		
-		return super.validateFormLogic(ureq);
+		boolean allOk = super.validateFormLogic(ureq);
+		
+		lastUsageEl.clearError();
+		if (lastUsageEl != null && lastUsageEl.isVisible()) {
+			String lastUsage = lastUsageEl.getValue();
+			if (StringHelper.containsNonWhitespace(lastUsage)) {
+				int min = 1;
+				int max = 10000;
+				try {
+					int lastUsageInt = Integer.parseInt(lastUsage);
+					if (lastUsageInt < min || lastUsageInt > max) {
+						allOk &= false;
+						lastUsageEl.setErrorKey("error.last.usage", new String [] {String.valueOf(min), String.valueOf(max)});
+					}
+				} catch(Exception e) {
+					allOk &= false;
+					lastUsageEl.setErrorKey("error.last.usage", new String [] {String.valueOf(min), String.valueOf(max)});
+				}
+			}
+		}
+		
+		return allOk;
 	}
 
 	@Override
@@ -265,7 +312,9 @@ public class BusinessGroupSearchController extends FormBasicController implement
 	@Override
 	protected void formInnerEvent (UserRequest ureq, FormItem source, FormEvent event) {
 		if (source == searchButton) {
-			fireSearchEvent(ureq);
+			if (validateFormLogic(ureq)) {
+				fireSearchEvent(ureq);
+			}
 		}
 	}
 	
@@ -304,6 +353,14 @@ public class BusinessGroupSearchController extends FormBasicController implement
 				publicEl.select("yes", true);
 			} else {
 				publicEl.select("no", true);
+			}
+		}
+		
+		if(e.getManaged() != null && managedEl != null) {
+			if(e.getManaged().booleanValue()) {
+				managedEl.select("yes", true);
+			} else {
+				managedEl.select("no", true);
 			}
 		}
 		
@@ -351,6 +408,14 @@ public class BusinessGroupSearchController extends FormBasicController implement
 			}
 		}
 		
+		if(managedEl.isVisible() && managedEl.isOneSelected()) {
+			if(managedEl.isSelected(1)) {
+				e.setManaged(Boolean.TRUE);
+			} else if(managedEl.isSelected(2)) {
+				e.setManaged(Boolean.FALSE);
+			}
+		}
+		
 		if(resourceEl.isOneSelected()) {
 			if(resourceEl.isSelected(1)) {
 				e.setResources(Boolean.TRUE);
@@ -358,6 +423,13 @@ public class BusinessGroupSearchController extends FormBasicController implement
 				e.setResources(Boolean.FALSE);
 			}
 		}
+		
+		if (StringHelper.containsNonWhitespace(lastUsageEl.getValue())) {
+			Integer lastUsage = Integer.valueOf(lastUsageEl.getValue());
+			Date lastUsageBefore = DateUtils.addDays(new Date(), -lastUsage.intValue());
+			e.setLastUsageBefore(lastUsageBefore);
+		}
+		
 		fireEvent(ureq, e);
 	}
 }

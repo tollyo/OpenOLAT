@@ -82,6 +82,8 @@ import org.olat.core.gui.control.navigation.BornSiteInstance;
 import org.olat.core.gui.control.navigation.NavElement;
 import org.olat.core.gui.control.navigation.SiteInstance;
 import org.olat.core.gui.control.util.ZIndexWrapper;
+import org.olat.core.gui.control.winmgr.Command;
+import org.olat.core.gui.control.winmgr.CommandFactory;
 import org.olat.core.gui.control.winmgr.JSCommand;
 import org.olat.core.gui.translator.Translator;
 import org.olat.core.helpers.Settings;
@@ -94,8 +96,6 @@ import org.olat.core.id.context.BusinessControlFactory;
 import org.olat.core.id.context.ContextEntry;
 import org.olat.core.id.context.HistoryPoint;
 import org.olat.core.id.context.HistoryPointImpl;
-import org.olat.core.id.context.StateEntry;
-import org.olat.core.id.context.StateSite;
 import org.olat.core.logging.AssertException;
 import org.olat.core.util.CodeHelper;
 import org.olat.core.util.Formatter;
@@ -108,6 +108,7 @@ import org.olat.core.util.i18n.I18nManager;
 import org.olat.core.util.i18n.I18nModule;
 import org.olat.core.util.prefs.Preferences;
 import org.olat.core.util.resource.OresHelper;
+import org.olat.course.assessment.AssessmentMode.EndStatus;
 import org.olat.course.assessment.AssessmentMode.Status;
 import org.olat.course.assessment.AssessmentModeNotificationEvent;
 import org.olat.course.assessment.model.TransientAssessmentMode;
@@ -115,7 +116,9 @@ import org.olat.course.assessment.ui.mode.AssessmentModeGuardController;
 import org.olat.course.assessment.ui.mode.ChooseAssessmentModeEvent;
 import org.olat.gui.control.UserToolsMenuController;
 import org.olat.home.HomeSite;
+import org.olat.modules.dcompensation.DisadvantageCompensationService;
 import org.olat.modules.edusharing.EdusharingModule;
+import org.olat.repository.model.RepositoryEntryRefImpl;
 import org.olat.user.UserManager;
 import org.olat.user.propertyhandlers.UserPropertyHandler;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -146,7 +149,9 @@ public class BaseFullWebappController extends BasicController implements DTabs, 
 	
 	// PARTICIPATING
 	private GuiStack currentGuiStack;
-	private Panel main, modalPanel;
+	private Panel main;
+	private Panel modalPanel;
+	private Panel topModalPanel;
 	private GUIMessage guiMessage;
 	private OncePanel guimsgPanel;
 	private Panel cssHolder, guimsgHolder, currentMsgHolder;
@@ -217,7 +222,7 @@ public class BaseFullWebappController extends BasicController implements DTabs, 
 		WindowManager winman = Windows.getWindows(ureq).getWindowManager();
 		String windowSettings = (String)usess.removeEntryFromNonClearedStore(Dispatcher.WINDOW_SETTINGS);
 		WindowSettings settings = WindowSettings.parse(windowSettings);
-		wbo = winman.createWindowBackOffice("basechiefwindow", this, settings);
+		wbo = winman.createWindowBackOffice("basechiefwindow", usess.getCsrfToken(), this, settings);
 		
 		IdentityEnvironment identityEnv = usess.getIdentityEnvironment();
 		if(identityEnv != null && identityEnv.getRoles() != null) {	
@@ -247,9 +252,9 @@ public class BaseFullWebappController extends BasicController implements DTabs, 
 		
 		initialPanel.setDomReplaceable(false);
 		// ------ all the frame preparation is finished ----
-		initializeBase(ureq, winman, initialPanel);
+		initializeBase(ureq, initialPanel);
 		
-		if(usess.isAuthenticated() && !isAdmin && usess.getAssessmentModes() != null && usess.getAssessmentModes().size() > 0) {
+		if(usess.isAuthenticated() && !isAdmin && usess.getAssessmentModes() != null && !usess.getAssessmentModes().isEmpty()) {
     		assessmentGuardCtrl = new AssessmentModeGuardController(ureq, getWindowControl(),
     				usess.getAssessmentModes(), false);
     		listenTo(assessmentGuardCtrl);
@@ -316,12 +321,8 @@ public class BaseFullWebappController extends BasicController implements DTabs, 
     	usess.removeEntryFromNonClearedStore("redirect-bc");
 	}
 	
-	private void initializeBase(UserRequest ureq, WindowManager winman, ComponentCollection mainPanel) {
+	private void initializeBase(UserRequest ureq, ComponentCollection mainPanel) {
 		UserSession usess = ureq.getUserSession();
-		
-		// component-id of mainPanel for the window id
-		mainVc.contextPut("o_winid", mainPanel.getDispatchID());
-		
 		mainVc.contextPut("enforceTopFrame", cspModule.isForceTopFrame());
 
 		// add optional css classes
@@ -431,6 +432,12 @@ public class BaseFullWebappController extends BasicController implements DTabs, 
 	public WindowControl getWindowControl() {
 		return super.getWindowControl();
 	}
+	
+	public void setStartBusinessPath(String path) {
+		String businessPath = BusinessControlFactory.getInstance()
+					.getAuthenticatedURLFromBusinessPathString(path);
+		mainVc.contextPut("startBusinessPath", businessPath);
+	}
 
 	private void initialize(UserRequest ureq) {
 		mainVc = createVelocityContainer("fullwebapplayout");
@@ -495,6 +502,11 @@ public class BaseFullWebappController extends BasicController implements DTabs, 
 					link.setCustomDisplayText(StringHelper.xssScan(navEl.getTitle()));
 					link.setTitle(navEl.getDescription());
 					link.setUserObject(si);
+					if(StringHelper.containsNonWhitespace(navEl.getBusinessPath())) {
+						String navUrl = BusinessControlFactory.getInstance()
+								.getRelativeURLFromBusinessPathString(navEl.getBusinessPath());
+						link.setUrl(navUrl);
+					}
 					Character accessKey = navEl.getAccessKey();
 					if (accessKey != null && StringHelper.containsNonWhitespace(accessKey.toString())) {
 						link.setAccessKey(accessKey.toString());					
@@ -531,6 +543,9 @@ public class BaseFullWebappController extends BasicController implements DTabs, 
 		// panel for modal overlays, placed right after the olat-header-div
 		modalPanel = new Panel("ccmodalpanel");
 		mainVc.put("modalpanel", modalPanel);
+		
+		topModalPanel = new Panel("topmodalpanel");
+		mainVc.put("topmodalpanel", topModalPanel);
 
 		// main, mandatory (e.g. a LayoutMain3ColsController)
 		main = new Panel("mainContent");
@@ -660,7 +675,8 @@ public class BaseFullWebappController extends BasicController implements DTabs, 
 				
 				HistoryPoint point = ureq.getUserSession().popLastHistoryEntry();
 				if(point != null) {
-					back(ureq, point);
+					Command reloadCmd = CommandFactory.reloadWindow();
+					getWindow().getWindowBackOffice().sendCommandTo(reloadCmd);
 				}
 			}
 		} else if (source == mainVc) {
@@ -672,40 +688,8 @@ public class BaseFullWebappController extends BasicController implements DTabs, 
 			} else if ("width.standard".equals(event.getCommand())) {
 				mainVc.contextPut("pageSizeCss", "");			
 				mainVc.setDirty(false);
-			}
-		}
-	}
-	
-	protected void back(UserRequest ureq, HistoryPoint cstate) {
-		List<ContextEntry> entries = cstate.getEntries();
-		if(entries.isEmpty()) return;
-		
-		entries = new ArrayList<>(entries);
-		
-		ContextEntry state = entries.remove(0);
-		if(state == null) return;//no red screen for this
-		
-		OLATResourceable ores = state.getOLATResourceable();
-		if(ores != null && "HomeSite".equals(ores.getResourceableTypeName())) {
-			activateSite(userTools, ureq, entries, false);
-		} else {
-			DTab dt = getDTab(ores);
-			if(dt != null) {
-				doActivateDTab(dt);
-				if(dt.getController() instanceof Activateable2) {
-					((Activateable2)dt.getController()).activate(ureq, entries, null);
-				}
-				updateBusinessPath(ureq, dt);
-			} else {
-				StateEntry s = state.getTransientState();
-				if(s instanceof StateSite && ((StateSite)s).getSite() != null && sites != null) {
-					SiteInstance site = ((StateSite)s).getSite();
-					for(SiteInstance savedSite:sites) {
-						if(savedSite != null && site.getClass().equals(savedSite.getClass())) {
-							activateSite(savedSite, ureq, entries, false);
-						}
-					}
-				}
+			} else if("close-window".equals(event.getCommand())) {
+				getWindow().setMarkToBeRemoved(true);
 			}
 		}
 	}
@@ -804,6 +788,9 @@ public class BaseFullWebappController extends BasicController implements DTabs, 
 		// maybe null if no current modal dialog -> clears the panel
 		StackedPanel modalStackP = currentGuiStack.getModalPanel();
 		modalPanel.setContent(modalStackP);
+		
+		StackedPanel topModalStackP = currentGuiStack.getTopModalPanel();
+		topModalPanel.setContent(topModalStackP);
 	}
 
 	/**
@@ -1337,15 +1324,14 @@ public class BaseFullWebappController extends BasicController implements DTabs, 
 	
 	@Override
 	public void closeDTab(UserRequest ureq, OLATResourceable ores, HistoryPoint launchedFromPoint) {
-
 		// Now try to go back to place that is attached to (optional) root back business path
 		if (launchedFromPoint != null && StringHelper.containsNonWhitespace(launchedFromPoint.getBusinessPath())
-				&& launchedFromPoint.getEntries() != null && launchedFromPoint.getEntries().size() > 0) {
+				&& launchedFromPoint.getEntries() != null && !launchedFromPoint.getEntries().isEmpty()
+				&& startsWithBusinessPath(launchedFromPoint.getEntries().get(0))) {
 			BusinessControl bc = BusinessControlFactory.getInstance().createFromPoint(launchedFromPoint);
 			if(bc.hasContextEntry()) {
 				WindowControl bwControl = BusinessControlFactory.getInstance().createBusinessWindowControl(bc, getWindowControl());
-				try {
-					//make the resume secure. If something fail, don't generate a red screen
+				try {//make the resume secure. If something fail, don't generate a red screen
 					NewControllerFactory.getInstance().launch(ureq, bwControl);
 				} catch (Exception e) {
 					logError("Error while resuming with root level back business path::" + launchedFromPoint.getBusinessPath(), e);
@@ -1356,12 +1342,48 @@ public class BaseFullWebappController extends BasicController implements DTabs, 
 		// Navigate beyond the stack, our own layout has been popped - close this tab
 		DTabs tabs = getWindowControl().getWindowBackOffice().getWindow().getDTabs();
 		if (tabs != null) {
-			
 			DTab tab = tabs.getDTab(ores);
 			if (tab != null) {
 				tabs.removeDTab(ureq, tab);						
 			}
 		}
+	}
+	
+	/**
+	 * 
+	 * @param path
+	 * @return true if a site or tabs starts with the business path
+	 */
+	private boolean startsWithBusinessPath(ContextEntry entry) {
+		BusinessControl bc = BusinessControlFactory.getInstance().createFromContextEntries(List.of(entry));
+		String path = BusinessControlFactory.getInstance().getAsString(bc);
+		
+		try {
+			if(sites != null && siteToBornSite != null) {
+				for(SiteInstance site:sites) {
+					BornSiteInstance bs = siteToBornSite.get(site);
+					if (bs != null && bs.getController() != null) {
+						String bp = bs.getController().getWindowControlForDebug().getBusinessControl().getAsString();
+						if(bp != null && bp.startsWith(path)) {
+							return true;
+						}
+					}
+				}
+			}
+			
+			if(dtabsControllers != null) {
+				for(Controller ctrl:dtabsControllers) {
+					String bp = ctrl.getWindowControlForDebug().getBusinessControl().getAsString();
+					if(bp != null && bp.startsWith(path)) {
+						return true;
+					}
+				}
+			}
+		} catch (Exception e) {
+			logError("", e);
+		}
+		
+		return false;
 	}
 
 	@Override
@@ -1403,8 +1425,7 @@ public class BaseFullWebappController extends BasicController implements DTabs, 
 			UserRequest ureq = lce.getCurrentUreq();
 			getTranslator().setLocale(lce.getNewLocale());
 			initialize(ureq);
-			WindowManager winman = Windows.getWindows(ureq).getWindowManager();
-			initializeBase(ureq, winman, initialPanel);
+			initializeBase(ureq, initialPanel);
 			initialPanel.setContent(mainVc);
 			
 			reload = Boolean.TRUE;
@@ -1421,44 +1442,49 @@ public class BaseFullWebappController extends BasicController implements DTabs, 
 	}
 	
 	private void processAssessmentModeNotificationEvent(AssessmentModeNotificationEvent event) {
-		if(getIdentity() == null) return;
-		
+		if(getIdentity() == null || !event.isModeOf(lockMode, getIdentity())) {
+			return;
+		}
+
 		String cmd = event.getCommand();
-		if(AssessmentModeNotificationEvent.STOP_WARNING.equals(cmd)) {
-			lockResourceMessage(event.getAssessementMode());
-		} else if(event.getAssessedIdentityKeys() != null && event.getAssessedIdentityKeys().contains(getIdentity().getKey())) {
-			switch(cmd) {
-				case AssessmentModeNotificationEvent.BEFORE:
-					if(asyncUnlockResource(event.getAssessementMode())) {
-						stickyMessageCmp.setDelegateComponent(null);
-					}
-					break;	
-				case AssessmentModeNotificationEvent.LEADTIME:
-					if(asyncLockResource(event.getAssessementMode())) {
-						stickyMessageCmp.setDelegateComponent(null);
-					}
-					break;
-				case AssessmentModeNotificationEvent.START_ASSESSMENT:
+		switch(cmd) {
+			case AssessmentModeNotificationEvent.STOP_WARNING:
+				lockResourceMessage(event.getAssessementMode());
+				break;
+			case AssessmentModeNotificationEvent.BEFORE:
+				if(asyncUnlockResource(event.getAssessementMode())) {
+					stickyMessageCmp.setDelegateComponent(null);
+				}
+				break;	
+			case AssessmentModeNotificationEvent.LEADTIME:
+				if(asyncLockResource(event.getAssessementMode())) {
+					stickyMessageCmp.setDelegateComponent(null);
+				}
+				break;
+			case AssessmentModeNotificationEvent.START_ASSESSMENT:
+				if(event.getAssessedIdentityKeys().contains(getIdentity().getKey())) {
 					asyncLockResource(event.getAssessementMode());
-					break;
-				case AssessmentModeNotificationEvent.STOP_ASSESSMENT:
-					if(asyncLockResource(event.getAssessementMode())) {
-						stickyMessageCmp.setDelegateComponent(null);
-					}
-					break;
-				case AssessmentModeNotificationEvent.END:
-					if(asyncUnlockResource(event.getAssessementMode())) {
-						stickyMessageCmp.setDelegateComponent(null);
-					}
-					break;	
-			}
+				}
+				break;
+			case AssessmentModeNotificationEvent.STOP_ASSESSMENT:
+				if(event.getAssessedIdentityKeys().contains(getIdentity().getKey())
+						&& asyncLockResource(event.getAssessementMode())) {
+					stickyMessageCmp.setDelegateComponent(null);
+				}
+				break;
+			case AssessmentModeNotificationEvent.END:
+				if(event.getAssessedIdentityKeys().contains(getIdentity().getKey())
+						&& asyncUnlockResource(event.getAssessementMode())) {
+					stickyMessageCmp.setDelegateComponent(null);
+				}
+				break;	
 		}
 	}
 
 	@Override
 	public boolean hasStaticSite(Class<? extends SiteInstance> type) {
 		boolean hasSite = false;
-		if(sites != null && sites.size() > 0) {
+		if(sites != null && !sites.isEmpty()) {
 			for(SiteInstance site:sites) {
 				if(site.getClass().equals(type)) {
 					hasSite = true;
@@ -1469,13 +1495,24 @@ public class BaseFullWebappController extends BasicController implements DTabs, 
 	}
 	
 	@Override
-	public OLATResourceable getLockResource() {
-		return lockResource;
+	public LockResourceInfos getLockResourceInfos() {
+		if(lockResource == null) return null;
+		return new LockResourceInfos(lockStatus, lockResource, lockMode);
 	}
 
 	@Override
 	public void lockResource(OLATResourceable resource) {
 		this.lockResource = resource;
+		lockGUI();
+	}
+
+	@Override
+	public void hardLockResource(LockResourceInfos lockInfos) {
+		if(lockInfos == null) return;
+		
+		lockResource = lockInfos.getLockResource();
+		lockMode = lockInfos.getLockMode();
+		lockStatus = lockInfos.getLockStatus();
 		lockGUI();
 	}
 	
@@ -1536,8 +1573,10 @@ public class BaseFullWebappController extends BasicController implements DTabs, 
 			lock = true;
 			lockMode = mode;
 			lockStatus = LockStatus.need;
-		} else if(lockResource != null && lockResource.getResourceableId().equals(mode.getResource().getResourceableId())) {
-			if(mode.getStatus() == Status.leadtime || mode.getStatus() == Status.followup) {
+		} else if(lockResource.getResourceableId().equals(mode.getResource().getResourceableId())) {
+			if(mode.getStatus() == Status.leadtime
+					|| (mode.getStatus() == Status.followup && mode.getEndStatus() == EndStatus.all)
+					|| (mode.getStatus() == Status.followup && mode.getEndStatus() == EndStatus.withoutDisadvantage && !hasDisadvantageCompensation(mode))) {
 				if(assessmentGuardCtrl == null) {
 					lockStatus = LockStatus.need;
 				}
@@ -1548,6 +1587,11 @@ public class BaseFullWebappController extends BasicController implements DTabs, 
 			lock = false;
 		}
 		return lock;
+	}
+	
+	private boolean hasDisadvantageCompensation(TransientAssessmentMode mode) {
+		return CoreSpringFactory.getImpl(DisadvantageCompensationService.class)
+			.isActiveDisadvantageCompensation(getIdentity(), new RepositoryEntryRefImpl(mode.getRepositoryEntryKey()), mode.getElementList());
 	}
 	
 	private boolean asyncUnlockResource(TransientAssessmentMode mode) {
@@ -1749,7 +1793,7 @@ public class BaseFullWebappController extends BasicController implements DTabs, 
 		}
 	}
 	
-	private enum LockStatus {
+	protected enum LockStatus {
 		need,
 		popup,
 		locked

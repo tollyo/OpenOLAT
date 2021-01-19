@@ -23,12 +23,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.olat.admin.user.delete.service.UserDeletionManager;
 import org.olat.admin.user.imp.TransientIdentity;
 import org.olat.basesecurity.AuthHelper;
 import org.olat.basesecurity.BaseSecurity;
-import org.olat.basesecurity.OrganisationRoles;
-import org.olat.basesecurity.OrganisationService;
 import org.olat.core.dispatcher.DispatcherModule;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.form.flexible.FormItem;
@@ -89,10 +86,6 @@ public class OAuthRegistrationController extends FormBasicController {
 	@Autowired
 	private OLATAuthManager olatAuthManager;
 	@Autowired
-	private UserDeletionManager userDeletionManager;
-	@Autowired
-	private OrganisationService organisationService;
-	@Autowired
 	private RegistrationManager registrationManager;
 	
 	public OAuthRegistrationController(UserRequest ureq, WindowControl wControl, OAuthRegistration registration) {
@@ -114,7 +107,9 @@ public class OAuthRegistrationController extends FormBasicController {
 		
 		usernameEl = uifactory.addTextElement("username",  "user.login", 128, "", formLayout);
 		usernameEl.setMandatory(true);
-		if(StringHelper.containsNonWhitespace(oauthUser.getId())) {
+		if(StringHelper.containsNonWhitespace(oauthUser.getNickName())) {
+			usernameEl.setValue(oauthUser.getNickName());
+		} else if(StringHelper.containsNonWhitespace(oauthUser.getId())) {
 			usernameEl.setValue(oauthUser.getId());
 		}
 
@@ -218,7 +213,7 @@ public class OAuthRegistrationController extends FormBasicController {
 
 		User newUser = userManager.createUser(null, null, null);
 		for (UserPropertyHandler userPropertyHandler : userPropertyHandlers) {
-			FormItem propertyItem = this.flc.getFormComponent(userPropertyHandler.getName());
+			FormItem propertyItem = flc.getFormComponent(userPropertyHandler.getName());
 			userPropertyHandler.updateUserFromFormItem(newUser, propertyItem);
 		}
 		
@@ -234,10 +229,9 @@ public class OAuthRegistrationController extends FormBasicController {
 		} else {
 			id = username;
 		}
-		authenticatedIdentity = securityManager.createAndPersistIdentityAndUser(username, null, newUser, registration.getAuthProvider(), id, null);
-		// Add user to default organization as user
-		organisationService.addMember(authenticatedIdentity, OrganisationRoles.user);
-		
+		authenticatedIdentity = securityManager.createAndPersistIdentityAndUserWithOrganisation(null, username, null, newUser,
+				registration.getAuthProvider(), id, null, null, null);
+
 		//open disclaimer
 		removeAsListenerAndDispose(disclaimerController);
 		disclaimerController = new DisclaimerController(ureq, getWindowControl(), authenticatedIdentity, false);
@@ -254,7 +248,7 @@ public class OAuthRegistrationController extends FormBasicController {
 		int loginStatus = AuthHelper.doLogin(authIdentity, registration.getAuthProvider(), ureq);
 		if (loginStatus == AuthHelper.LOGIN_OK) {
 			//update last login date and register active user
-			userDeletionManager.setIdentityAsActiv(authIdentity);
+			securityManager.setIdentityLastLogin(authIdentity);
 		} else if (loginStatus == AuthHelper.LOGIN_NOTAVAILABLE){
 			DispatcherModule.redirectToServiceNotAvailable( ureq.getHttpResp() );
 		} else {

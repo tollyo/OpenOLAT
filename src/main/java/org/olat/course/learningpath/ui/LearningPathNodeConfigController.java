@@ -92,6 +92,7 @@ public class LearningPathNodeConfigController extends FormBasicController {
 	protected void initForm(FormItemContainer formLayout, Controller listener, UserRequest ureq) {
 		setFormTitle("config.title");
 		setFormContextHelp("Learning path element");
+		formLayout.setElementCssClass("o_sel_learnpath_element");
 		KeyValues obligationKV = new KeyValues();
 		obligationKV.add(entry(AssessmentObligation.mandatory.name(), translate("config.obligation.mandatory")));
 		obligationKV.add(entry(AssessmentObligation.optional.name(), translate("config.obligation.optional")));
@@ -200,6 +201,15 @@ public class LearningPathNodeConfigController extends FormBasicController {
 		
 		allOk &= validateInteger(durationEl, 1, 10000, isDurationMandatory(), "error.positiv.int");
 		allOk &= validateInteger(scoreCutEl, 0, 10000, true, "error.positiv.int");
+		
+		if (startDateEl.getDate() != null && endDateEl.getDate() != null) {
+			Date start = startDateEl.getDate();
+			Date end = endDateEl.getDate();
+			if(end.before(start)) {
+				endDateEl.setErrorKey("error.start.after.end", null);
+				allOk &= false;
+			}
+		}
 		
 		return allOk & super.validateFormLogic(ureq);
 	}

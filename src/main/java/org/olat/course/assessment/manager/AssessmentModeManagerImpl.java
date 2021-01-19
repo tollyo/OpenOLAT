@@ -63,6 +63,7 @@ import org.olat.group.model.SearchBusinessGroupParams;
 import org.olat.modules.curriculum.CurriculumElement;
 import org.olat.modules.curriculum.CurriculumElementRef;
 import org.olat.modules.curriculum.manager.CurriculumElementDAO;
+import org.olat.modules.dcompensation.manager.DisadvantageCompensationDAO;
 import org.olat.modules.lecture.LectureBlock;
 import org.olat.modules.lecture.manager.LectureBlockToGroupDAO;
 import org.olat.repository.RepositoryEntry;
@@ -100,13 +101,15 @@ public class AssessmentModeManagerImpl implements AssessmentModeManager {
 	@Autowired
 	private LectureBlockToGroupDAO lectureBlockToGroupDao;
 	@Autowired
+	private DisadvantageCompensationDAO disadvantageCompensationDao;
+	@Autowired
 	private AssessmentModeCoordinationServiceImpl assessmentModeCoordinationService;
 
 	@Override
 	public AssessmentMode createAssessmentMode(RepositoryEntry entry) {
 		AssessmentModeImpl mode = new AssessmentModeImpl();
 		mode.setCreationDate(new Date());
-		mode.setLastModified(new Date());
+		mode.setLastModified(mode.getCreationDate());
 		mode.setRepositoryEntry(entry);
 		mode.setStatus(Status.none);
 		mode.setManualBeginEnd(true);
@@ -118,7 +121,7 @@ public class AssessmentModeManagerImpl implements AssessmentModeManager {
 			int leadTime, int followupTime, String ips, String sebKeys) {
 		AssessmentModeImpl mode = new AssessmentModeImpl();
 		mode.setCreationDate(new Date());
-		mode.setLastModified(new Date());
+		mode.setLastModified(mode.getCreationDate());
 		mode.setName(lectureBlock.getTitle());
 		mode.setDescription(lectureBlock.getDescription());
 		mode.setBegin(lectureBlock.getStartDate());
@@ -139,6 +142,41 @@ public class AssessmentModeManagerImpl implements AssessmentModeManager {
 		mode.setLectureBlock(lectureBlock);
 		mode.setStatus(Status.none);
 		mode.setManualBeginEnd(true);
+		return mode;
+	}
+
+	@Override
+	public AssessmentMode createAssessmentMode(AssessmentMode assessmentMode) {
+		AssessmentModeImpl mode = new AssessmentModeImpl();
+		mode.setCreationDate(new Date());
+		mode.setLastModified(mode.getCreationDate());
+		mode.setName(assessmentMode.getName());
+		mode.setDescription(assessmentMode.getDescription());
+		mode.setBegin(null);
+		mode.setEnd(null);
+		mode.setLeadTime(assessmentMode.getLeadTime());
+		mode.setFollowupTime(assessmentMode.getFollowupTime());
+		
+		mode.setElementList(assessmentMode.getElementList());
+		mode.setRestrictAccessElements(assessmentMode.isRestrictAccessElements());
+		mode.setStartElement(assessmentMode.getStartElement());
+		
+		mode.setRestrictAccessIps(assessmentMode.isRestrictAccessIps());
+		if(assessmentMode.isRestrictAccessIps()) {
+			mode.setIpList(assessmentMode.getIpList());
+		}
+		
+		mode.setSafeExamBrowser(assessmentMode.isSafeExamBrowser());
+		if(assessmentMode.isSafeExamBrowser()) {
+			mode.setSafeExamBrowserKey(assessmentMode.getSafeExamBrowserKey());
+			mode.setSafeExamBrowserHint(assessmentMode.getSafeExamBrowserHint());
+		}
+		
+		mode.setStatus(Status.none);
+		mode.setManualBeginEnd(assessmentMode.isManualBeginEnd());
+		mode.setTargetAudience(assessmentMode.getTargetAudience());
+		mode.setRepositoryEntry(assessmentMode.getRepositoryEntry());
+		mode.setApplySettingsForCoach(assessmentMode.isApplySettingsForCoach());
 		return mode;
 	}
 
@@ -173,7 +211,7 @@ public class AssessmentModeManagerImpl implements AssessmentModeManager {
 		Date beginWithLeadTime = evaluateLeadTime(begin, assessmentMode.getLeadTime());
 		((AssessmentModeImpl)assessmentMode).setBeginWithLeadTime(beginWithLeadTime);
 		Date end = assessmentMode.getEnd();
-		Date endWithFollowupTime = this.evaluateFollowupTime(end, assessmentMode.getFollowupTime());
+		Date endWithFollowupTime = evaluateFollowupTime(end, assessmentMode.getFollowupTime());
 		((AssessmentModeImpl)assessmentMode).setEndWithFollowupTime(endWithFollowupTime);
 
 		dbInstance.getCurrentEntityManager().persist(assessmentMode);
@@ -287,13 +325,16 @@ public class AssessmentModeManagerImpl implements AssessmentModeManager {
 
 	@Override
 	public void delete(AssessmentMode assessmentMode) {
+		if(assessmentMode == null) return;// nothing to do
 		assessmentModeDao.delete(assessmentMode);
 	}
 	
 	@Override
 	public void delete(LectureBlock lectureBlock) {
 		AssessmentMode mode = assessmentModeDao.getAssessmentModeByLecture(lectureBlock);
-		delete(mode);
+		if(mode != null) {
+			delete(mode);
+		}
 	}
 	
 	@Override
@@ -327,9 +368,25 @@ public class AssessmentModeManagerImpl implements AssessmentModeManager {
 		List<AssessmentMode> myModes = null;
 		if(!currentModes.isEmpty()) {
 			//check permissions, groups, areas, course
-			myModes = assessmentModeDao.loadAssessmentModeFor(identity, currentModes);
+			List<AssessmentMode> allMyModes = assessmentModeDao.loadAssessmentModeFor(identity, currentModes);
+
+			myModes = new ArrayList<>(allMyModes.size());
+			for(AssessmentMode mode:allMyModes) {
+				if(assessmentModeCoordinationService.isDisadvantageCompensationExtensionTime(mode)) {
+					if(isDisadvantagedUser(mode, identity)) {
+						myModes.add(mode);
+					}
+				} else {
+					myModes.add(mode);
+				}
+			}
 		}
 		return myModes == null ? Collections.<AssessmentMode>emptyList() : myModes;
+	}
+	
+	private boolean isDisadvantagedUser(AssessmentMode mode, IdentityRef identity) {
+		return disadvantageCompensationDao
+				.isActiveDisadvantagedUser(identity, mode.getRepositoryEntry(), mode.getElementAsList());
 	}
 
 	@Override
@@ -345,12 +402,8 @@ public class AssessmentModeManagerImpl implements AssessmentModeManager {
 			assessedKeys.addAll(courseMemberKeys);
 		}
 		
-		if(targetAudience == Target.curriculumEls || targetAudience == Target.courseAndGroups) {
-			List<Long> courseMemberKeys = assessmentMode.isApplySettingsForCoach()
-					? repositoryEntryRelationDao.getMemberKeys(re, RepositoryEntryRelationType.entryAndCurriculums, GroupRoles.coach.name(), GroupRoles.participant.name())
-					: repositoryEntryRelationDao.getMemberKeys(re, RepositoryEntryRelationType.entryAndCurriculums, GroupRoles.participant.name());
-			assessedKeys.addAll(courseMemberKeys);
-			
+		// For courseAndGroups, the curriculums are retrieved by the relation type.
+		if(targetAudience == Target.curriculumEls) {
 			List<CurriculumElementRef> curriculumElements = new ArrayList<>();
 			Set<AssessmentModeToCurriculumElement> modeTocurriculumElements  = assessmentMode.getCurriculumElements();
 			for(AssessmentModeToCurriculumElement modeTocurriculumElement:modeTocurriculumElements) {
@@ -418,6 +471,12 @@ public class AssessmentModeManagerImpl implements AssessmentModeManager {
 	}
 
 	@Override
+	public void deleteAssessmentModeToGroup(AssessmentModeToGroup modeToGroup) {
+		dbInstance.getCurrentEntityManager().remove(modeToGroup);
+	}
+
+
+	@Override
 	public AssessmentModeToArea createAssessmentModeToArea(AssessmentMode mode, BGArea area) {
 		AssessmentModeToAreaImpl modeToArea = new AssessmentModeToAreaImpl();
 		modeToArea.setAssessmentMode(mode);
@@ -427,12 +486,22 @@ public class AssessmentModeManagerImpl implements AssessmentModeManager {
 	}
 
 	@Override
+	public void deleteAssessmentModeToArea(AssessmentModeToArea modeToArea) {
+		dbInstance.getCurrentEntityManager().remove(modeToArea);
+	}
+
+	@Override
 	public AssessmentModeToCurriculumElement createAssessmentModeToCurriculumElement(AssessmentMode mode, CurriculumElement curriculumElement) {
 		AssessmentModeToCurriculumElementImpl modeToElement = new AssessmentModeToCurriculumElementImpl();
 		modeToElement.setAssessmentMode(mode);
 		modeToElement.setCurriculumElement(curriculumElement);
 		dbInstance.getCurrentEntityManager().persist(modeToElement);
 		return modeToElement;
+	}
+	
+	@Override
+	public void deleteAssessmentModeToCurriculumElement(AssessmentModeToCurriculumElement modeToCurriculumElement) {
+		dbInstance.getCurrentEntityManager().remove(modeToCurriculumElement);
 	}
 
 	@Override

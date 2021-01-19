@@ -16,10 +16,11 @@
 </div></div></div>
 ## always show top of modal dialog when on long pages
 <script>
-/* <![CDATA[ */	
 jQuery(function() {
 	jQuery('#$r.getId("o_closablewapper_") > .modal-backdrop')
 		.css('height', 0).css('height', jQuery('#$r.getId("o_closablewapper_")')[0].scrollHeight);
+	#if($r.isTrue($suppressDirty))
+	addFormDirtyExclusion('$r.getId("o_closablewapper_")');
+	#end
 });
-/* ]]> */
 </script>

@@ -58,6 +58,7 @@ import org.olat.login.LoginModule;
 import org.olat.login.auth.AuthenticationProvider;
 import org.olat.login.oauth.OAuthLoginModule;
 import org.olat.login.oauth.OAuthSPI;
+import org.olat.shibboleth.ShibbolethDispatcher;
 import org.olat.user.UserManager;
 import org.olat.user.propertyhandlers.EmailProperty;
 import org.olat.user.propertyhandlers.UserPropertyHandler;
@@ -135,12 +136,14 @@ public class UsermanagerUserSearchForm extends FormBasicController {
 				Integer.toString(Identity.STATUS_ACTIV),
 				Integer.toString(Identity.STATUS_PERMANENT),
 				Integer.toString(Identity.STATUS_PENDING),
+				Integer.toString(Identity.STATUS_INACTIVE),
 				Integer.toString(Identity.STATUS_LOGIN_DENIED)
 		};
 		statusValues = new String[] {
 				translate("rightsForm.status.activ"),
 				translate("rightsForm.status.permanent"),
 				translate("rightsForm.status.pending"),
+				translate("rightsForm.status.inactive"),
 				translate("rightsForm.status.login_denied")
 		};
 		
@@ -324,6 +327,9 @@ public class UsermanagerUserSearchForm extends FormBasicController {
 					for(OAuthSPI spi:spis) {
 						apl.add(spi.getProviderName());
 					}
+				} else if("ShibGeneric".equals(authKey)) {
+					apl.add(ShibbolethDispatcher.PROVIDER_SHIB);
+					apl.add(authKey);
 				} else {
 					apl.add(authKey);
 				}
@@ -416,6 +422,7 @@ public class UsermanagerUserSearchForm extends FormBasicController {
 		status.select(statusKeys[1], true);	
 		status.select(statusKeys[2], true);	
 		status.select(statusKeys[3], true);	
+		status.select(statusKeys[4], true);	
 		
 		extraSearch = uifactory.addCheckboxesVertical("extra.search", null, formLayout, extraSearchKeys, extraSearchValues, 2);
 

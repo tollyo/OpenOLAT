@@ -38,7 +38,13 @@
 			stretching: 'responsive',
 			alwaysShowControls: $alwaysShowControls,
 			clickToPlayPause: $clickToPlayPause,
-			
+			hls: {
+		        path: '$r.staticLink("movie/mediaelementjs/hls/hls.min.js")',
+		    },
+		    flv : {
+		        path: '$r.staticLink("movie/mediaelementjs/flv/flv.min.js")',
+		        withCredentials: true
+		    },
 			## Enabled features - should be same order as in player.js. 
 			## Special here is tracks and sourcechooser which are not available in player.js
 			features: ['playpause','current','volume','progress','duration','tracks' #if($useSourceChooser),'sourcechooser'#end ,'speed','fullscreen','markers'],
@@ -93,20 +99,6 @@
 						$r.openNoResponseJavaScriptCommand("timeupdate"), 'currentTime', mediaElement.currentTime, 'src', $mediaSrc, 'duration', mediaElement.duration);
 					}
 		        	#end
-		        	if(jQuery('#$r.getId("o_vid")').length == 0) {
-		        		## // try a second time to prevent destroying after a reload
-		        		setTimeout(function() {
-		        			if(jQuery('#$r.getId("o_vid")').length == 0) {
-		        				try {
-		        					player.setMuted(true);
-		        					player.pause();
-		        					player.remove();
-		        				} catch(e) {
-		        					if(window.console) console.log(e);
-		        				}
-		        			}
-		        		}, 500);
-		        	}
 		        }, false);
 		        
 		        ## listen to end events, fired when movie is finished

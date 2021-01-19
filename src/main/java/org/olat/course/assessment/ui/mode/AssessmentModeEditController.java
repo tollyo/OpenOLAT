@@ -22,9 +22,9 @@ package org.olat.course.assessment.ui.mode;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.StringTokenizer;
 
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.form.flexible.FormItem;
@@ -89,19 +89,29 @@ public class AssessmentModeEditController extends FormBasicController {
 	private static final String[] onValues = new String[]{ "" };
 	private static final String[] startModeKeys = new String[] { "automatic", "manual" };
 
-	private SingleSelection targetEl, startModeEl;
-	private IntegerElement leadTimeEl, followupTimeEl;
-	private DateChooser beginEl, endEl;
+	private SingleSelection targetEl;
+	private SingleSelection startModeEl;
+	private IntegerElement leadTimeEl;
+	private IntegerElement followupTimeEl;
+	private DateChooser beginEl;
+	private DateChooser endEl;
 	private StaticTextElement startElementEl;
 	private FormLink chooseGroupsButton;
 	private FormLink chooseAreasButton;
 	private FormLink chooseStartElementButton;
 	private FormLink chooseElementsButton;
 	private FormLink chooseCurriculumElementsButton;
-	private TextElement nameEl, ipListEl, safeExamBrowserKeyEl;
-	private RichTextElement descriptionEl, safeExamBrowserHintEl;
-	private FormLayoutContainer chooseGroupsCont, chooseElementsCont;
-	private MultipleSelectionElement ipsEl, safeExamBrowserEl, forCoachEl, courseElementsRestrictionEl;
+	private TextElement nameEl;
+	private TextElement ipListEl;
+	private TextElement safeExamBrowserKeyEl;
+	private RichTextElement descriptionEl;
+	private RichTextElement safeExamBrowserHintEl;
+	private FormLayoutContainer chooseGroupsCont;
+	private FormLayoutContainer chooseElementsCont;
+	private MultipleSelectionElement ipsEl;
+	private MultipleSelectionElement forCoachEl;
+	private MultipleSelectionElement safeExamBrowserEl;
+	private MultipleSelectionElement courseElementsRestrictionEl;
 	
 	private CloseableModalController cmc;
 	private DialogBoxController confirmCtrl;
@@ -242,13 +252,13 @@ public class AssessmentModeEditController extends FormBasicController {
 		
 		KeyValues targetKeyValues = new KeyValues();
 		boolean curriculumEnabled = curriculumModule.isEnabled();
-		String allLabel = curriculumEnabled ? translate("target.courseGroupsAndCurriculums") : translate("target.courseAndGroups");
-		targetKeyValues.add(KeyValues.entry(AssessmentMode.Target.courseAndGroups.name(), allLabel));
 		targetKeyValues.add(KeyValues.entry(AssessmentMode.Target.course.name(), translate("target.course")));
 		targetKeyValues.add(KeyValues.entry(AssessmentMode.Target.groups.name(), translate("target.groups")));
 		if(curriculumEnabled) {
 			targetKeyValues.add(KeyValues.entry(AssessmentMode.Target.curriculumEls.name(), translate("target.curriculumElements")));
 		}
+		String allLabel = curriculumEnabled ? translate("target.courseGroupsAndCurriculums") : translate("target.courseAndGroups");
+		targetKeyValues.add(KeyValues.entry(AssessmentMode.Target.courseAndGroups.name(), allLabel));
 		targetEl = uifactory.addRadiosVertical("audience", "mode.target", formLayout, targetKeyValues.keys(), targetKeyValues.values());
 		targetEl.setElementCssClass("o_sel_assessment_mode_audience");
 		targetEl.setEnabled(status != Status.end);
@@ -277,32 +287,9 @@ public class AssessmentModeEditController extends FormBasicController {
 		chooseCurriculumElementsButton.setEnabled(status != Status.end);
 		chooseCurriculumElementsButton.setVisible(curriculumEnabled);
 
-		groupKeys = new ArrayList<>();
-		groupNames = new ArrayList<>();
-		for(AssessmentModeToGroup modeToGroup: assessmentMode.getGroups()) {
-			BusinessGroup group = modeToGroup.getBusinessGroup();
-			groupKeys.add(group.getKey());
-			groupNames.add(StringHelper.escapeHtml(group.getName()));
-		}
-		chooseGroupsCont.getFormItemComponent().contextPut("groupNames", groupNames);
-
-		areaKeys = new ArrayList<>();
-		areaNames = new ArrayList<>();
-		for(AssessmentModeToArea modeToArea: assessmentMode.getAreas()) {
-			BGArea area = modeToArea.getArea();
-			areaKeys.add(area.getKey());
-			areaNames.add(StringHelper.escapeHtml(area.getName()));
-		}
-		chooseGroupsCont.getFormItemComponent().contextPut("areaNames", areaNames);
-
-		curriculumElementKeys = new ArrayList<>();
-		curriculumElementNames = new ArrayList<>();
-		for(AssessmentModeToCurriculumElement modeToElement: assessmentMode.getCurriculumElements()) {
-			CurriculumElement element = modeToElement.getCurriculumElement();
-			curriculumElementKeys.add(element.getKey());
-			curriculumElementNames.add(StringHelper.escapeHtml(element.getDisplayName()));
-		}
-		chooseGroupsCont.getFormItemComponent().contextPut("curriculumElementNames", curriculumElementNames);
+		selectBusinessGroups(assessmentMode.getGroups());
+		selectAreas(assessmentMode.getAreas());
+		selectCurriculumElements(assessmentMode.getCurriculumElements());
 
 		//course elements
 		courseElementsRestrictionEl = uifactory.addCheckboxesHorizontal("cer", "mode.course.element.restriction", formLayout, onKeys, onValues);
@@ -350,7 +337,8 @@ public class AssessmentModeEditController extends FormBasicController {
 		ipsEl.addActionListener(FormEvent.ONCHANGE);
 		ipsEl.setEnabled(status != Status.end);
 		String ipList = assessmentMode.getIpList();
-		ipListEl = uifactory.addTextAreaElement("mode.ips.list", "mode.ips.list", 4096, 4, 60, false, false, ipList, formLayout);
+		ipListEl = uifactory.addTextAreaElement("mode.ips.list", "mode.ips.list", 16000, 4, 60, false, false, ipList, formLayout);
+		ipListEl.setMaxLength(16000);
 		ipListEl.setVisible(assessmentMode.isRestrictAccessIps());
 		ipListEl.setEnabled(status != Status.end);
 		
@@ -359,7 +347,8 @@ public class AssessmentModeEditController extends FormBasicController {
 		safeExamBrowserEl.addActionListener(FormEvent.ONCHANGE);
 		safeExamBrowserEl.setEnabled(status != Status.end);
 		String key = assessmentMode.getSafeExamBrowserKey();
-		safeExamBrowserKeyEl = uifactory.addTextAreaElement("safeexamkey", "mode.safeexambrowser.key", 4096, 6, 60, false, false, key, formLayout);
+		safeExamBrowserKeyEl = uifactory.addTextAreaElement("safeexamkey", "mode.safeexambrowser.key", 16000, 6, 60, false, false, key, formLayout);
+		safeExamBrowserKeyEl.setMaxLength(16000);
 		safeExamBrowserKeyEl.setVisible(assessmentMode.isSafeExamBrowser());
 		safeExamBrowserKeyEl.setEnabled(status != Status.end);
 		String hint = assessmentMode.getSafeExamBrowserHint();
@@ -378,6 +367,39 @@ public class AssessmentModeEditController extends FormBasicController {
 		if(status != Status.end) {
 			uifactory.addFormSubmitButton("save", buttonCont);
 		}
+	}
+	
+	protected void selectBusinessGroups(Set<AssessmentModeToGroup> assessmentModeToGroups) {
+		groupKeys = new ArrayList<>();
+		groupNames = new ArrayList<>();
+		for(AssessmentModeToGroup modeToGroup:assessmentModeToGroups) {
+			BusinessGroup group = modeToGroup.getBusinessGroup();
+			groupKeys.add(group.getKey());
+			groupNames.add(StringHelper.escapeHtml(group.getName()));
+		}
+		chooseGroupsCont.getFormItemComponent().contextPut("groupNames", groupNames);
+	}
+	
+	protected void selectAreas(Set<AssessmentModeToArea> assessmentModeToAreas) {
+		areaKeys = new ArrayList<>();
+		areaNames = new ArrayList<>();
+		for(AssessmentModeToArea modeToArea: assessmentModeToAreas) {
+			BGArea area = modeToArea.getArea();
+			areaKeys.add(area.getKey());
+			areaNames.add(StringHelper.escapeHtml(area.getName()));
+		}
+		chooseGroupsCont.getFormItemComponent().contextPut("areaNames", areaNames);
+	}
+	
+	protected void selectCurriculumElements(Set<AssessmentModeToCurriculumElement> assessmentModeToCurriculumElements) {
+		curriculumElementKeys = new ArrayList<>();
+		curriculumElementNames = new ArrayList<>();
+		for(AssessmentModeToCurriculumElement modeToElement: assessmentModeToCurriculumElements) {
+			CurriculumElement element = modeToElement.getCurriculumElement();
+			curriculumElementKeys.add(element.getKey());
+			curriculumElementNames.add(StringHelper.escapeHtml(element.getDisplayName()));
+		}
+		chooseGroupsCont.getFormItemComponent().contextPut("curriculumElementNames", curriculumElementNames);
 	}
 	
 	private String getCourseNodeName(String ident, CourseEditorTreeModel treeModel) {
@@ -494,20 +516,17 @@ public class AssessmentModeEditController extends FormBasicController {
 			endEl.setErrorKey("form.legende.mandatory", null);
 			allOk &= false;
 		}
-		if(beginEl.getDate() != null && endEl.getDate() != null) {
-			if(beginEl.getDate().compareTo(endEl.getDate()) >= 0) {
-				beginEl.setErrorKey("error.begin.after.end", null);
-				endEl.setErrorKey("error.begin.after.end", null);
-				allOk &= false;
-			}
+		if(beginEl.getDate() != null && endEl.getDate() != null
+				&& beginEl.getDate().compareTo(endEl.getDate()) >= 0) {
+			beginEl.setErrorKey("error.begin.after.end", null);
+			endEl.setErrorKey("error.begin.after.end", null);
+			allOk &= false;
 		}
 		
 		courseElementsRestrictionEl.clearError();
-		if(courseElementsRestrictionEl.isAtLeastSelected(1)) {
-			if(elementKeys.isEmpty()) {
-				courseElementsRestrictionEl.setErrorKey("error.course.element.mandatory", null);
-				allOk &= false;
-			}
+		if(courseElementsRestrictionEl.isAtLeastSelected(1) && elementKeys.isEmpty()) {
+			courseElementsRestrictionEl.setErrorKey("error.course.element.mandatory", null);
+			allOk &= false;
 		}
 		
 		targetEl.clearError();
@@ -540,6 +559,9 @@ public class AssessmentModeEditController extends FormBasicController {
 			if(!StringHelper.containsNonWhitespace(value)) {
 				safeExamBrowserKeyEl.setErrorKey("form.legende.mandatory", null);
 				allOk &= false;
+			} else if(value.length() > safeExamBrowserKeyEl.getMaxLength()) {
+				safeExamBrowserKeyEl.setErrorKey("form.error.toolong", new String[] { Integer.toString(safeExamBrowserKeyEl.getMaxLength()) } );
+				allOk &= false;
 			}
 		}
 		
@@ -549,8 +571,34 @@ public class AssessmentModeEditController extends FormBasicController {
 			if(!StringHelper.containsNonWhitespace(value)) {
 				ipListEl.setErrorKey("form.legende.mandatory", null);
 				allOk &= false;
+			} else if(value.length() > ipListEl.getMaxLength()) {
+				ipListEl.setErrorKey("form.error.toolong", new String[] { Integer.toString(ipListEl.getMaxLength()) } );
+				allOk &= false;
+			} else {
+				allOk &= validIpList(ipListEl.getValue());
 			}
 		}
+		return allOk;
+	}
+	
+	/**
+	 * Try to begin some validation of the list but the list allowed
+	 * a lot of possibilities.
+	 * 
+	 * @param ipList The list of IPs
+	 * @return true if valid
+	 */
+	private boolean validIpList(String ipList) {
+		boolean allOk = true;
+		
+		for(StringTokenizer tokenizer = new StringTokenizer(ipList, "\n\r", false); tokenizer.hasMoreTokens(); ) {
+			String ipRange = tokenizer.nextToken();
+			if(StringHelper.containsNonWhitespace(ipRange) && ipRange.startsWith("/")) {
+				ipListEl.setErrorKey("error.ip.range.cannot.start.slash", new String[] { ipRange } );
+				allOk &= false;
+			}
+		}
+		
 		return allOk;
 	}
 
@@ -615,7 +663,8 @@ public class AssessmentModeEditController extends FormBasicController {
 		}
 		
 		String targetKey = targetEl.getSelectedKey();
-		assessmentMode.setTargetAudience(AssessmentMode.Target.valueOf(targetKey));
+		Target target = AssessmentMode.Target.valueOf(targetKey);
+		assessmentMode.setTargetAudience(target);
 
 		boolean elementRestrictions = courseElementsRestrictionEl.isAtLeastSelected(1);
 		assessmentMode.setRestrictAccessElements(elementRestrictions);
@@ -660,68 +709,32 @@ public class AssessmentModeEditController extends FormBasicController {
 		if(assessmentMode.getKey() == null) {
 			assessmentMode = assessmentModeMgr.persist(assessmentMode);
 		}
+		
+		updateBusinessGroupRelations(target);
+		updateAreaRelations(target);
+		updateCurriculumElementsRelations(target);
 
-		//update groups
-		if(groupKeys.isEmpty()) {
-			if(!assessmentMode.getGroups().isEmpty()) {
-				assessmentMode.getGroups().clear();
-			}
-		} else {
-			Set<Long> currentKeys = new HashSet<>();
-			for(Iterator<AssessmentModeToGroup> modeToGroupIt=assessmentMode.getGroups().iterator(); modeToGroupIt.hasNext(); ) {
-				Long currentKey = modeToGroupIt.next().getBusinessGroup().getKey();
-				if(!groupKeys.contains(currentKey)) {
-					modeToGroupIt.remove();
-				} else {
-					currentKeys.add(currentKey);
-				}
-			}
-			
-			for(Long groupKey:groupKeys) {
-				if(!currentKeys.contains(groupKey)) {
-					BusinessGroup group = businessGroupService.loadBusinessGroup(groupKey);
-					AssessmentModeToGroup modeToGroup = assessmentModeMgr.createAssessmentModeToGroup(assessmentMode, group);
-					assessmentMode.getGroups().add(modeToGroup);
-				}
-			}
-		}
-		
-		//update areas
-		if(areaKeys.isEmpty()) {
-			if(!assessmentMode.getAreas().isEmpty()) {
-				assessmentMode.getAreas().clear();
-			}
-		} else {
-			Set<Long> currentKeys = new HashSet<>();
-			for(Iterator<AssessmentModeToArea> modeToAreaIt=assessmentMode.getAreas().iterator(); modeToAreaIt.hasNext(); ) {
-				Long currentKey = modeToAreaIt.next().getArea().getKey();
-				if(!areaKeys.contains(currentKey)) {
-					modeToAreaIt.remove();
-				} else {
-					currentKeys.add(currentKey);
-				}
-			}
-			
-			for(Long areaKey:areaKeys) {
-				if(!currentKeys.contains(areaKey)) {
-					BGArea area = areaMgr.loadArea(areaKey);
-					AssessmentModeToArea modeToArea = assessmentModeMgr.createAssessmentModeToArea(assessmentMode, area);
-					assessmentMode.getAreas().add(modeToArea);
-				}
-			}
-		}
-		
-		//update areas
-		if(curriculumElementKeys.isEmpty()) {
+		assessmentMode = assessmentModeMgr.merge(assessmentMode, forceStatus);
+		fireEvent(ureq, Event.CHANGED_EVENT);
+	}
+	
+	private void updateCurriculumElementsRelations(Target target) {
+		if(curriculumElementKeys.isEmpty() || target == Target.course || target == Target.groups) {
 			if(!assessmentMode.getCurriculumElements().isEmpty()) {
+				List<AssessmentModeToCurriculumElement> currentElements = new ArrayList<>(assessmentMode.getCurriculumElements());
+				for(AssessmentModeToCurriculumElement modeToElement:currentElements) {
+					assessmentModeMgr.deleteAssessmentModeToCurriculumElement(modeToElement);
+				}
 				assessmentMode.getCurriculumElements().clear();
 			}
 		} else {
 			Set<Long> currentKeys = new HashSet<>();
-			for(Iterator<AssessmentModeToCurriculumElement> modeToElementIt=assessmentMode.getCurriculumElements().iterator(); modeToElementIt.hasNext(); ) {
-				Long currentKey = modeToElementIt.next().getCurriculumElement().getKey();
+			List<AssessmentModeToCurriculumElement> currentElements = new ArrayList<>(assessmentMode.getCurriculumElements());
+			for(AssessmentModeToCurriculumElement modeToElement:currentElements) {
+				Long currentKey = modeToElement.getCurriculumElement().getKey();
 				if(!curriculumElementKeys.contains(currentKey)) {
-					modeToElementIt.remove();
+					assessmentMode.getCurriculumElements().remove(modeToElement);
+					assessmentModeMgr.deleteAssessmentModeToCurriculumElement(modeToElement);
 				} else {
 					currentKeys.add(currentKey);
 				}
@@ -735,9 +748,72 @@ public class AssessmentModeEditController extends FormBasicController {
 				}
 			}
 		}
-
-		assessmentMode = assessmentModeMgr.merge(assessmentMode, forceStatus);
-		fireEvent(ureq, Event.CHANGED_EVENT);
+	}
+	
+	private void updateAreaRelations(Target target) {
+		//update areas
+		if(areaKeys.isEmpty() || target == Target.course || target == Target.curriculumEls) {
+			if(!assessmentMode.getAreas().isEmpty()) {
+				List<AssessmentModeToArea> currentAreas = new ArrayList<>(assessmentMode.getAreas());
+				for(AssessmentModeToArea modeToArea:currentAreas) {
+					assessmentModeMgr.deleteAssessmentModeToArea(modeToArea);
+				}
+				assessmentMode.getAreas().clear();
+			}
+		} else {
+			Set<Long> currentKeys = new HashSet<>();
+			List<AssessmentModeToArea> currentAreas = new ArrayList<>(assessmentMode.getAreas());
+			for(AssessmentModeToArea modeToArea:currentAreas) {
+				Long currentKey = modeToArea.getArea().getKey();
+				if(!areaKeys.contains(currentKey)) {
+					assessmentMode.getAreas().remove(modeToArea);
+					assessmentModeMgr.deleteAssessmentModeToArea(modeToArea);
+				} else {
+					currentKeys.add(currentKey);
+				}
+			}
+			
+			for(Long areaKey:areaKeys) {
+				if(!currentKeys.contains(areaKey)) {
+					BGArea area = areaMgr.loadArea(areaKey);
+					AssessmentModeToArea modeToArea = assessmentModeMgr.createAssessmentModeToArea(assessmentMode, area);
+					assessmentMode.getAreas().add(modeToArea);
+				}
+			}
+		}
+	}
+	
+	private void updateBusinessGroupRelations(Target target) {
+		//update groups
+		if(groupKeys.isEmpty() || target == Target.course || target == Target.curriculumEls) {
+			if(!assessmentMode.getGroups().isEmpty()) {
+				List<AssessmentModeToGroup> currentGroups = new ArrayList<>(assessmentMode.getGroups());
+				for(AssessmentModeToGroup modeToGroup:currentGroups) {
+					assessmentModeMgr.deleteAssessmentModeToGroup(modeToGroup);
+				}
+				assessmentMode.getGroups().clear();
+			}
+		} else {
+			Set<Long> currentKeys = new HashSet<>();
+			List<AssessmentModeToGroup> currentGroups = new ArrayList<>(assessmentMode.getGroups());
+			for(AssessmentModeToGroup modeToGroup:currentGroups) {
+				Long currentKey = modeToGroup.getBusinessGroup().getKey();
+				if(!groupKeys.contains(currentKey)) {
+					assessmentMode.getGroups().remove(modeToGroup);
+					assessmentModeMgr.deleteAssessmentModeToGroup(modeToGroup);
+				} else {
+					currentKeys.add(currentKey);
+				}
+			}
+			
+			for(Long groupKey:groupKeys) {
+				if(!currentKeys.contains(groupKey)) {
+					BusinessGroup group = businessGroupService.loadBusinessGroup(groupKey);
+					AssessmentModeToGroup modeToGroup = assessmentModeMgr.createAssessmentModeToGroup(assessmentMode, group);
+					assessmentMode.getGroups().add(modeToGroup);
+				}
+			}
+		}
 	}
 
 	@Override

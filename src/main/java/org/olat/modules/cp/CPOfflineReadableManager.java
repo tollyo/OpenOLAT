@@ -53,6 +53,7 @@ import org.olat.core.util.StringHelper;
 import org.olat.core.util.WebappHelper;
 import org.olat.core.util.ZipUtil;
 import org.olat.core.util.vfs.LocalFileImpl;
+import org.olat.core.util.vfs.filters.VFSAllItemsFilter;
 import org.olat.fileresource.FileResourceManager;
 import org.olat.modules.cp.CPManifestTreeModel.UserObject;
 
@@ -103,27 +104,6 @@ public class CPOfflineReadableManager {
 	 */
 	public static CPOfflineReadableManager getInstance() {
 		return instance;
-	}
-
-	/**
-	 * "exports" the the given CP (specified by its containing _unzipped_ directory) to a
-	 * zipFile.<br />
-	 * The resulting zip contains a "offline-readable" version of the CP.
-	 * including style-sheets, menu-Tree and OpenOLAT branding
-	 * 
-	 * @param ores
-	 *            the containing directory
-	 * @param targetZip
-	 *            the resulting zip-filename
-	 */
-	public void makeCPOfflineReadable(File unzippedDir, File targetZip) {
-		try {
-			writeOfflineCPStartHTMLFile(unzippedDir);
-			File cpOfflineMat = new File(WebappHelper.getContextRealPath("/static/" + DIRNAME_CPOFFLINEMENUMAT));
-			zipOfflineReadableCP(unzippedDir, targetZip, cpOfflineMat);
-		} catch (IOException e) {
-			log.error("", e);
-		}
 	}
 	
 	public void makeCPOfflineReadable(String manifest, String indexSrc, ZipOutputStream exportStream) {
@@ -327,10 +307,9 @@ public class CPOfflineReadableManager {
 		for (int i = 0; i < cpFiles.length; i++) {
 			allFilesInUnzippedDir.add(cpFiles[i]);
 		}
-		boolean zipResult = ZipUtil.zip(allFilesInUnzippedDir, unzippedDir, targetZip, true);
-
-		if(!targetZip.exists()){
-			log.warn("targetZip does not exists after zipping. zip-result is: "+ zipResult);
+		boolean zipResult = ZipUtil.zip(allFilesInUnzippedDir, unzippedDir, targetZip, VFSAllItemsFilter.ACCEPT_ALL, false);
+		if(!targetZip.exists()) {
+			log.warn("targetZip does not exists after zipping. zip-result is: {}", zipResult);
 		}
 	}
 

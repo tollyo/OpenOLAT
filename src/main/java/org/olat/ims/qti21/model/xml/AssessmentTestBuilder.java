@@ -59,7 +59,8 @@ public class AssessmentTestBuilder {
 	private Double maxScore;
 	private Long maximumTimeLimits;
 	private OutcomeRule testScoreRule;
-	private OutcomeCondition cutValueRule, minScoreRule;
+	private OutcomeCondition cutValueRule;
+	private OutcomeCondition minScoreRule;
 	
 	private TestFeedbackBuilder passedFeedback;
 	private TestFeedbackBuilder failedFeedback;
@@ -212,7 +213,9 @@ public class AssessmentTestBuilder {
 		
 		buildScore();
 		buildTestScore();
+		// the cut value makes the PASS variable
 		buildCutValue();
+		// feedbacks need the PASS variable
 		buildFeedback();
 		
 		//clean up
@@ -321,7 +324,7 @@ public class AssessmentTestBuilder {
 			}
 			
 			boolean updated = false;
-			if(cutValueRule != null && cutValueRule.getOutcomeIf().getExpressions().size() > 0) {
+			if(cutValueRule != null && !cutValueRule.getOutcomeIf().getExpressions().isEmpty()) {
 				Expression gte = cutValueRule.getOutcomeIf().getExpressions().get(0);
 				if(gte.getExpressions().size() > 1) {
 					Expression baseValue = gte.getExpressions().get(1);
@@ -339,6 +342,10 @@ public class AssessmentTestBuilder {
 				assessmentTest.getOutcomeProcessing().getOutcomeRules().add(cutValueRule);
 			}
 		} else if(cutValueRule != null) {
+			OutcomeDeclaration passDeclaration = assessmentTest.getOutcomeDeclaration(QTI21Constants.PASS_IDENTIFIER);
+			if(passDeclaration != null) {
+				assessmentTest.getOutcomeDeclarations().remove(passDeclaration);
+			}
 			assessmentTest.getOutcomeProcessing().getOutcomeRules().remove(cutValueRule);
 		}
 	}
@@ -362,23 +369,48 @@ public class AssessmentTestBuilder {
 			}
 		}
 		
-		//set the feedbackmodal outcome declaration if needed
-		if(passedFeedback != null || failedFeedback != null) {
-			OutcomeDeclaration outcomeDeclaration = assessmentTest.getOutcomeDeclaration(QTI21Constants.FEEDBACKMODAL_IDENTIFIER);
-			if(outcomeDeclaration == null) {
-				OutcomeDeclaration feedbackModalOutcomeDeclaration = AssessmentTestFactory
-						.createTestFeedbackModalOutcomeDeclaration(assessmentTest);
-				assessmentTest.getOutcomeDeclarations().add(feedbackModalOutcomeDeclaration);
+		if(cutValue == null) {
+			// remove the feedbacks, they are PASS based and need the cut value
+			removeFeedback(passedFeedback);
+			removeFeedback(failedFeedback);
+		} else {
+			//set the feedbackmodal outcome declaration if needed
+			if(passedFeedback != null || failedFeedback != null) {
+				OutcomeDeclaration outcomeDeclaration = assessmentTest.getOutcomeDeclaration(QTI21Constants.FEEDBACKMODAL_IDENTIFIER);
+				if(outcomeDeclaration == null) {
+					OutcomeDeclaration feedbackModalOutcomeDeclaration = AssessmentTestFactory
+							.createTestFeedbackModalOutcomeDeclaration(assessmentTest);
+					assessmentTest.getOutcomeDeclarations().add(feedbackModalOutcomeDeclaration);
+				}
+			}
+	
+			if(passedFeedback != null) {
+				buildFeedback(passedFeedback, true);
+			}
+			
+			if(failedFeedback != null) {
+				buildFeedback(failedFeedback, false);
 			}
 		}
-
-		if(passedFeedback != null) {
-			buildFeedback(passedFeedback, true);
+	}
+	
+	private void removeFeedback(TestFeedbackBuilder feedbackBuilder) {
+		if(feedbackBuilder == null || feedbackBuilder.getTestFeedback() == null
+				|| assessmentTest.getTestFeedbacks() == null || assessmentTest.getTestFeedbacks().isEmpty()) {
+			return;
 		}
 		
-		if(failedFeedback != null) {
-			buildFeedback(failedFeedback, false);
+		// remove by identifier
+		TestFeedback feedback = feedbackBuilder.getTestFeedback();
+		for(Iterator<TestFeedback> testFeedbackIt=assessmentTest.getTestFeedbacks().iterator(); testFeedbackIt.hasNext(); ) {
+			TestFeedback testFeedback = testFeedbackIt.next();
+			if(testFeedback.getOutcomeValue() != null && feedback.getOutcomeValue() != null
+					&& testFeedback.getOutcomeValue().equals(feedback.getOutcomeValue())) {
+				testFeedbackIt.remove();
+			}
 		}
+		// additional removing by instance
+		assessmentTest.getTestFeedbacks().remove(feedback);
 	}
 	
 	private void buildFeedback(TestFeedbackBuilder feedbackBuilder, boolean passed) {
@@ -388,11 +420,14 @@ public class AssessmentTestBuilder {
 				testFeedback = AssessmentTestFactory
 						.createTestFeedbackModal(assessmentTest, IdentifierGenerator.newAsIdentifier("fm") , feedbackBuilder.getTitle(), feedbackBuilder.getText());
 				assessmentTest.getTestFeedbacks().add(testFeedback);
+				feedbackBuilder.setTestFeedback(testFeedback);
 			} else {
 				testFeedback = feedbackBuilder.getTestFeedback();
 				testFeedback.setTitle(feedbackBuilder.getTitle());
 				htmlBuilder.appendHtml(testFeedback, feedbackBuilder.getText());
 			}
+			
+			// The condition need the PASS variable
 			OutcomeCondition outcomeCondition = AssessmentTestFactory
 					.createTestFeedbackModalCondition(assessmentTest, passed, testFeedback.getOutcomeValue());
 			assessmentTest.getOutcomeProcessing().getOutcomeRules().add(outcomeCondition);

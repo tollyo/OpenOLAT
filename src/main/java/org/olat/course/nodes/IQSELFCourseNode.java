@@ -104,6 +104,8 @@ public class IQSELFCourseNode extends AbstractAccessableCourseNode implements Se
 	private static final Logger log = Tracing.createLoggerFor(IQSELFCourseNode.class);
 	private static final String PACKAGE_IQ = Util.getPackageName(IQRunController.class);
 	public static final String TYPE = "iqself";
+	
+	private static final int CURRENT_CONFIG_VERSION = 3;
 
 	public IQSELFCourseNode() {
 		this(null);
@@ -235,7 +237,11 @@ public class IQSELFCourseNode extends AbstractAccessableCourseNode implements Se
 	public boolean archiveNodeData(Locale locale, ICourse course, ArchiveOptions options,
 			ZipOutputStream exportStream, String archivePath, String charset) {
 		String repositorySoftKey = (String) getModuleConfiguration().get(IQEditController.CONFIG_KEY_REPOSITORY_SOFTKEY);
-		RepositoryEntry re = RepositoryManager.getInstance().lookupRepositoryEntryBySoftkey(repositorySoftKey, true);
+		RepositoryEntry re = RepositoryManager.getInstance().lookupRepositoryEntryBySoftkey(repositorySoftKey, false);
+		if(re == null) {
+			log.error("Cannot archive course node. Missing repository entry with soft key: ", repositorySoftKey);
+			return false;
+		}
 		
 		try {
 			if(ImsQTI21Resource.TYPE_NAME.equals(re.getOlatResource().getResourceableTypeName())) {
@@ -323,7 +329,19 @@ public class IQSELFCourseNode extends AbstractAccessableCourseNode implements Se
 			config.set(IQEditController.CONFIG_KEY_TYPE, AssessmentInstance.QMD_ENTRY_TYPE_SELF);
 			config.set(IQEditController.CONFIG_KEY_SUMMARY, AssessmentInstance.QMD_ENTRY_SUMMARY_DETAILED);
 			config.set(IQEditController.CONFIG_KEY_CONFIG_REF, Boolean.TRUE);
+		} else {
+			int version = config.getConfigurationVersion();
+			if (version < CURRENT_CONFIG_VERSION) {
+				if (version <= 3) {
+					if (config.get(IQEditController.CONFIG_KEY_DATE_DEPENDENT_RESULTS) instanceof Boolean) {
+						config.setStringValue(IQEditController.CONFIG_KEY_DATE_DEPENDENT_RESULTS, String.valueOf(config.getBooleanEntry(IQEditController.CONFIG_KEY_DATE_DEPENDENT_RESULTS)));
+					}
+				}
+				
+			}
 		}
+		
+		config.setConfigurationVersion(CURRENT_CONFIG_VERSION);
 	}
 	
 	@Override

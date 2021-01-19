@@ -31,6 +31,7 @@ import java.util.zip.ZipOutputStream;
 
 import org.olat.basesecurity.GroupRoles;
 import org.olat.core.commons.modules.bc.FolderConfig;
+import org.olat.core.commons.persistence.DB;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.form.flexible.FormItemContainer;
 import org.olat.core.gui.components.form.flexible.elements.MultipleSelectionElement;
@@ -87,6 +88,8 @@ public class QTI21ResetDataController extends FormBasicController {
 	private CourseEnvironment courseEnv;
 	private RepositoryEntry assessedEntry;
 	
+	@Autowired
+	private DB dbInstance;
 	@Autowired
 	private QTI21Service qtiService;
 	@Autowired
@@ -179,7 +182,7 @@ public class QTI21ResetDataController extends FormBasicController {
 	
 	@Override
 	protected boolean validateFormLogic(UserRequest ureq) {
-		boolean allOk = true;
+		boolean allOk = super.validateFormLogic(ureq);
 		
 		acknowledgeEl.clearError();
 		if(!acknowledgeEl.isAtLeastSelected(1)) {
@@ -187,7 +190,7 @@ public class QTI21ResetDataController extends FormBasicController {
 			allOk &= false;
 		}
 		
-		return allOk & super.validateFormLogic(ureq);
+		return allOk;
 	}
 
 	@Override
@@ -206,13 +209,15 @@ public class QTI21ResetDataController extends FormBasicController {
 			
 			qtiService.deleteAssessmentTestSession(identities, testEntry, courseEntry, courseNode.getIdent());
 			for(Identity identity:identities) {
-				ScoreEvaluation scoreEval = new ScoreEvaluation(null, null, AssessmentEntryStatus.notStarted, null, 0.0d, AssessmentRunStatus.notStarted, null);
+				ScoreEvaluation scoreEval = new ScoreEvaluation(null, null, AssessmentEntryStatus.notStarted, null,
+						null, 0.0d, AssessmentRunStatus.notStarted, null);
 				IdentityEnvironment ienv = new IdentityEnvironment(identity, Roles.userRoles());
 				UserCourseEnvironment uce = new UserCourseEnvironmentImpl(ienv, courseEnv);
 				courseAssessmentService.updateScoreEvaluation(courseNode, scoreEval, uce, getIdentity(), false,
 						Role.coach);
-				courseAssessmentService.updateCurrentCompletion(courseNode, uce, null, AssessmentRunStatus.notStarted,
+				courseAssessmentService.updateCurrentCompletion(courseNode, uce, null, null, AssessmentRunStatus.notStarted,
 						Role.coach);
+				dbInstance.commitAndCloseSession();
 			}
 		} else if(assessedEntry != null) {
 			archiveData(assessedEntry);

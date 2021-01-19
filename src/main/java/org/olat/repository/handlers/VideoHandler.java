@@ -34,7 +34,6 @@ import org.olat.core.gui.components.stack.TooledStackedPanel;
 import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.control.generic.layout.MainLayoutController;
-import org.olat.core.gui.control.generic.wizard.StepsMainRunController;
 import org.olat.core.gui.media.MediaResource;
 import org.olat.core.gui.media.NotFoundMediaResource;
 import org.olat.core.id.Identity;
@@ -108,11 +107,6 @@ public class VideoHandler extends FileHandler {
 	}
 
 	@Override
-	public boolean isPostCreateWizardAvailable() {
-		return false;
-	}
-
-	@Override
 	public boolean supportImport() {
 		return true;
 	}
@@ -172,10 +166,10 @@ public class VideoHandler extends FileHandler {
 		VideoMeta videoMeta = null;
 		if (fileName.endsWith(".mp4") || fileName.endsWith(".mov") || fileName.endsWith(".m4v")) {
 			// 2a) import video from raw mp4 master video file
-			videoMeta = videoManager.importFromMasterFile(repoEntry, importFile);
+			videoMeta = videoManager.importFromMasterFile(repoEntry, importFile, initialAuthor);
 		} else if (fileName.endsWith(".zip")) {
 			// 2b) import video from archive from another OpenOLAT instance
-			videoMeta = videoManager.importFromExportArchive(repoEntry, importFile);
+			videoMeta = videoManager.importFromExportArchive(repoEntry, importFile, initialAuthor);
 		}
 		dbInstance.commit();
 		
@@ -242,11 +236,6 @@ public class VideoHandler extends FileHandler {
 	}
 
 	@Override
-	public StepsMainRunController createWizardController(OLATResourceable res, UserRequest ureq, WindowControl wControl) {
-		throw new AssertException("Trying to get wizard where no creation wizard is provided for this type.");
-	}
-
-	@Override
 	public MainLayoutController createLaunchController(RepositoryEntry re,  RepositoryEntrySecurity reSecurity, UserRequest ureq, WindowControl wControl) {
 		return new VideoRuntimeController(ureq, wControl, re, reSecurity, (uureq, wwControl, toolbarPanel, entry, rereSecurity, assessmentMode) -> 
 			new VideoDisplayController(uureq, wwControl, entry)
@@ -263,6 +252,7 @@ public class VideoHandler extends FileHandler {
 		return null;
 	}
 
+	@Override
 	protected String getDeletedFilePrefix() {
 		return "del_video_";
 	}

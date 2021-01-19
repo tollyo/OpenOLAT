@@ -8,8 +8,6 @@
   http://www.springframework.org/schema/context 
   http://www.springframework.org/schema/context/spring-context.xsd">
 
-	<context:component-scan base-package="org.olat.course.nodes.en,org.olat.course.nodes.cl,org.olat.course.nodes.projectbroker.service,org.olat.course.nodes.gta,org.olat.course.nodes.pf" />
-	  
 	<!-- Course node spring config: Course Nodes are searched on the whole classpath, just place your CourceNodeConfiguration somewhere
 	on the classpath best as a jar. The xml file with ending ...Context.xml has do to be outside of the jar to get automatically loaded -->
 	
@@ -76,8 +74,12 @@
 		<property name="order" value="100" />
 	</bean>
 	
-	<bean id="bc" class="org.olat.course.nodes.bc.BCCourseNodeConfiguration" scope="prototype">
+	<bean id="document" class="org.olat.course.nodes.document.DocumentCourseNodeConfiguration" scope="prototype">
 		<property name="order" value="51" />
+	</bean>
+	
+	<bean id="bc" class="org.olat.course.nodes.bc.BCCourseNodeConfiguration" scope="prototype">
+		<property name="order" value="52" />
 	</bean>
 	
 	<bean id="ms" class="org.olat.course.nodes.ms.MSCourseNodeConfiguration" scope="prototype">
@@ -99,6 +101,14 @@
 	
 	<bean id="livestream" class="org.olat.course.nodes.livestream.LiveStreamCourseNodeConfiguration" scope="prototype">
 		<property name="order" value="222" />
+	</bean>
+	
+	<bean id="opencast" class="org.olat.course.nodes.opencast.OpencastCourseNodeConfiguration" scope="prototype">
+		<property name="order" value="223" />
+	</bean>
+	
+	<bean id="edusharing" class="org.olat.course.nodes.edusharing.EdusharingCourseNodeConfiguration" scope="prototype">
+		<property name="order" value="224" />
 	</bean>
 	
 	<bean id="ita" class="org.olat.course.nodes.gta.GTACourseNodeConfiguration" scope="prototype">
@@ -154,6 +164,10 @@
 		
 	<bean id="cal" class="org.olat.course.nodes.cal.CalCourseNodeConfiguration" scope="prototype">
 		<property name="order" value="200" />
+	</bean>
+	
+	<bean id="appointment" class="org.olat.course.nodes.appointments.AppointmentsCourseNodeConfiguration" scope="prototype">
+		<property name="order" value="202" />
 	</bean>
 	
 	<bean id="checklist" class="org.olat.course.nodes.cl.CheckListCourseNodeConfiguration" scope="prototype" >

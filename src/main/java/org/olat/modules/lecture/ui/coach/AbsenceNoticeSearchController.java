@@ -72,7 +72,7 @@ public class AbsenceNoticeSearchController extends FormBasicController {
 	
 	public AbsenceNoticeSearchController(UserRequest ureq, WindowControl wControl, Date currentDate) {
 		super(ureq, wControl, Util.createPackageTranslator(LectureRepositoryAdminController.class, ureq.getLocale()));
-		categories = lectureService.getAllAbsencesCategories();
+		categories = lectureService.getAbsencesCategories(Boolean.TRUE);
 		this.currentDate = currentDate;
 		initForm(ureq);
 	}
@@ -84,6 +84,7 @@ public class AbsenceNoticeSearchController extends FormBasicController {
 	@Override
 	protected void initForm(FormItemContainer formLayout, Controller listener, UserRequest ureq) {
 		searchEl = uifactory.addTextElement("search.form.string", 128, "", formLayout);
+		searchEl.setHelpTextKey("search.form.string.hint.more", null);
 		
 		String[] typeValues = new String[] {
 			translate("noticed.type.absence"), translate("noticed.type.notified"), translate("noticed.type.dispensation")
@@ -102,6 +103,7 @@ public class AbsenceNoticeSearchController extends FormBasicController {
 		categories.forEach(cat -> categoriesKeyValues.add(KeyValues.entry(cat.getKey().toString(), cat.getTitle())));
 		absenceCategoryEl = uifactory.addDropdownSingleselect("search.form.category", formLayout,
 				categoriesKeyValues.keys(), categoriesKeyValues.values());
+		absenceCategoryEl.setVisible(!categoriesKeyValues.isEmpty());
 		
 		dateEl = uifactory.addDateChooser("search.date", currentDate, formLayout);
 		dateEl.setSecondDate(true);

@@ -117,6 +117,21 @@ public class QTI21Page {
 		return this;
 	}
 	
+	public QTI21Page passE4() {
+		start()
+			.answerSingleChoiceWithParagraph("Correct answer")
+			.saveAnswer()
+			.answerMultipleChoice("Correct answer", "The answer is correct")
+			.saveAnswer()
+			.answerCorrectKPrim("This answer", "Plus answer")
+			.answerIncorrectKPrim("Not answer", "Minus answer")
+			.saveAnswer()
+			.answerGapText("not", "qtiworks_response_oofibc4c14bfe94a41861fe19c70091182_5_1_RESPONSE_1")
+			.saveAnswer()
+			.endTest();
+		return this;
+	}
+	
 	/**
 	 * Check the answer of a single choice.
 	 * @param answer The answer
@@ -418,11 +433,17 @@ public class QTI21Page {
 		return this;
 	}
 	
-	public QTI21Page answerOrderDropItem(String source) {
-		By sourceBy = By.xpath("//li[@class='o_assessmentitem_order_item'][contains(text(),'" + source + "')]");
-		OOGraphene.waitElement(sourceBy, 5, browser);
+	public QTI21Page answerOrderDropItem(String source, boolean wrappedInParagraph) {
+		By sourceBy;
+		if(wrappedInParagraph) {
+			sourceBy = By.xpath("//li[@class='o_assessmentitem_order_item']/p[contains(text(),'" + source + "')]");
+		} else {
+			sourceBy = By.xpath("//li[@class='o_assessmentitem_order_item'][contains(text(),'" + source + "')]");
+		}
+		
+		OOGraphene.waitElement(sourceBy, browser);
 		WebElement sourceEl = browser.findElement(sourceBy);
-		By targetBy = By.xpath("//div[@class='orderInteraction']//div[contains(@class,'target')]/ul");
+		By targetBy = By.xpath("//div[contains(@class,'orderInteraction')]//div[contains(@class,'target')]/ul");
 		WebElement targetEl = browser.findElement(targetBy);
 		
 		Position sourcePos = Position.valueOf(30, 30, sourceEl.getSize());
@@ -435,8 +456,40 @@ public class QTI21Page {
 			.build()
 			.perform();
 
-		By sourceDroppedBy = By.xpath("//div[@class='orderInteraction']//div[contains(@class,'target')]/ul/li[text()[contains(.,'" + source + "')]]");
-		OOGraphene.waitElement(sourceDroppedBy, 5, browser);
+		By sourceDroppedBy;
+		if(wrappedInParagraph) {
+			sourceDroppedBy = By.xpath("//div[contains(@class,'orderInteraction')]//div[contains(@class,'target')]/ul/li/p[text()[contains(.,'" + source + "')]]");
+		} else {
+			sourceDroppedBy = By.xpath("//div[contains(@class,'orderInteraction')]//div[contains(@class,'target')]/ul/li[text()[contains(.,'" + source + "')]]");
+		}
+		OOGraphene.waitElement(sourceDroppedBy, browser);
+		return this;
+	}
+	
+	public QTI21Page moveOrderDropItemTop(String source, boolean wrappedInParagraph) {
+		By sourceDroppedBy;
+		if(wrappedInParagraph) {
+			sourceDroppedBy = By.xpath("//div[contains(@class,'orderInteraction')]//div[contains(@class,'target')]/ul/li/p[text()[contains(.,'" + source + "')]]");
+		} else {
+			sourceDroppedBy = By.xpath("//div[contains(@class,'orderInteraction')]//div[contains(@class,'target')]/ul/li[text()[contains(.,'" + source + "')]]");
+		}
+
+		OOGraphene.waitElement(sourceDroppedBy, browser);
+		WebElement sourceDroppedEl = browser.findElement(sourceDroppedBy);
+		By targetContainerBy = By.xpath("//div[contains(@class,'orderInteraction')]//div[contains(@class,'target')]/ul");
+		WebElement targetContainerEl = browser.findElement(targetContainerBy);
+		
+		Position sourcePos = Position.valueOf(30, 30, sourceDroppedEl.getSize());
+		Position targetPos = Position.valueOf(5, 5, targetContainerEl.getSize());
+		new Actions(browser)
+			.moveToElement(sourceDroppedEl, sourcePos.getX(), sourcePos.getY())
+			.clickAndHold()
+			.moveToElement(targetContainerEl, targetPos.getX(), targetPos.getY())
+			.release()
+			.build()
+			.perform();
+
+		OOGraphene.waitElement(sourceDroppedBy, browser);
 		return this;
 	}
 	
@@ -464,13 +517,14 @@ public class QTI21Page {
 	 */
 	public QTI21Page answerGraphicGapClick(String item, String gap) {
 		By sourceBy = By.xpath("//div[contains(@class,'gap_container')]/div[contains(@class,'o_gap_item')][@data-qti-id='" + item + "']");
-		OOGraphene.waitElement(sourceBy, 5, browser);
+		OOGraphene.waitElement(sourceBy, browser);
 		browser.findElement(sourceBy).click();
 		By areaBy = By.xpath("//div[@class='graphicGapMatchInteraction']//map/area[@data-qti-id='" + gap + "']");
 		WebElement areaEl = browser.findElement(areaBy);
 		String coords = areaEl.getAttribute("coords");
-		By imgBy = By.xpath("//div[contains(@class,'graphicGapMatchInteraction')]/div/div/img");
-		WebElement element = browser.findElement(imgBy);
+		By canvasBy = By.xpath("//div[contains(@class,'graphicGapMatchInteraction')]/div/div/canvas");
+		OOGraphene.waitElement(canvasBy, browser);
+		WebElement element = browser.findElement(canvasBy);
 		Dimension dim = element.getSize();
 		Position pos = Position.valueOf(coords, dim);
 		new Actions(browser)
@@ -769,7 +823,7 @@ public class QTI21Page {
 	
 	public QTI21Page closeTest() {
 		By closeBy = By.cssSelector("a.o_sel_close_test");
-		OOGraphene.waitElement(closeBy, 5, browser);
+		OOGraphene.waitElement(closeBy, browser);
 		browser.findElement(closeBy).click();
 		OOGraphene.waitBusy(browser);
 		confirm();
@@ -836,55 +890,61 @@ public class QTI21Page {
 	 */
 	public QTI21Page assertOnAssessmentResults(int timeout) {
 		By resultsBy = By.cssSelector("div.o_sel_results_details");
-		OOGraphene.waitElement(resultsBy, timeout, browser);
+		OOGraphene.waitElementSlowly(resultsBy, timeout, browser);
 		return this;
 	}
 	
 	public QTI21Page assertOnCourseAssessmentTestScore(int score) {
 		By resultsBy = By.xpath("//div[contains(@class,'o_personal')]//tr[contains(@class,'o_score')]/td[contains(text(),'" + score + "')]");
-		OOGraphene.waitElement(resultsBy, 5, browser);
+		OOGraphene.waitElement(resultsBy, browser);
 		return this;
 	}
 	
 	public QTI21Page assertOnCourseAssessmentTestWaitingCorrection() {
 		By resultsBy = By.xpath("//div[contains(@class,'o_personal')]//tr[contains(@class,'o_score')]/td/span[@id='o_score_in_review']");
-		OOGraphene.waitElement(resultsBy, 5, browser);
+		OOGraphene.waitElement(resultsBy, browser);
+		return this;
+	}
+	
+	public QTI21Page assertOnCourseAssessmentTestPassed() {
+		By passedBy = By.xpath("//div[contains(@class,'o_personal')]//tr[contains(@class,'o_state')][contains(@class,'o_passed')]/td/i[contains(@class,'o_icon_passed')]");
+		OOGraphene.waitElement(passedBy, browser);
 		return this;
 	}
 	
 	public QTI21Page assertOnAssessmentTestScore(int score) {
 		By resultsBy = By.xpath("//div[contains(@class,'o_sel_results_details')]//tr[contains(@class,'o_sel_assessmenttest_scores')]/td/div/span[contains(@class,'o_sel_assessmenttest_score')][contains(text(),'" + score + "')]");
-		OOGraphene.waitElement(resultsBy, 5, browser);
+		OOGraphene.waitElement(resultsBy, browser);
 		return this;
 	}
 	
 	public QTI21Page assertOnAssessmentItemScore(String title, int score) {
 		By resultsBy = By.xpath("//div[contains(@class,'o_qti_item')][div/h4[text()[contains(.,'" + title + "')]]]//tr[contains(@class,'o_sel_assessmentitem_score')]//span[@class='o_sel_assessmentitem_score'][contains(text(),'" + score + "')]");
-		OOGraphene.waitElement(resultsBy, 5, browser);
+		OOGraphene.waitElement(resultsBy, browser);
 		return this;
 	}
 	
 	public QTI21Page assertOnAssessmentTestScore(String score) {
 		By resultsBy = By.xpath("//div[contains(@class,'o_sel_results_details')]//tr[contains(@class,'o_sel_assessmenttest_scores')]/td/div/span[contains(@class,'o_sel_assessmenttest_score')][contains(text(),'" + score + "')]");
-		OOGraphene.waitElement(resultsBy, 5, browser);
+		OOGraphene.waitElement(resultsBy, browser);
 		return this;
 	}
 	
 	public QTI21Page assertOnAssessmentTestPassed() {
-		By notPassedBy = By.cssSelector("div.o_sel_results_details tr.o_qti_stateinfo.o_passed");
-		OOGraphene.waitElement(notPassedBy, 5, browser);
+		By passedBy = By.cssSelector("div.o_sel_results_details tr.o_qti_stateinfo.o_passed");
+		OOGraphene.waitElement(passedBy, browser);
 		return this;
 	}
 	
 	public QTI21Page assertOnAssessmentTestNotPassed() {
 		By notPassedBy = By.cssSelector("div.o_sel_results_details tr.o_qti_stateinfo.o_failed");
-		OOGraphene.waitElement(notPassedBy, 5, browser);
+		OOGraphene.waitElement(notPassedBy, browser);
 		return this;
 	}
 	
 	public QTI21Page assertOnAssessmentTestMaxScore(int score) {
 		By resultsBy = By.xpath("//div[contains(@class,'o_sel_results_details')]//tr[contains(@class,'o_sel_assessmenttest_scores')]/td/div/span[contains(@class,'o_sel_assessmenttest_maxscore')][contains(text(),'" + score + "')]");
-		OOGraphene.waitElement(resultsBy, 5, browser);
+		OOGraphene.waitElement(resultsBy, browser);
 		return this;
 	}
 	
@@ -968,17 +1028,32 @@ public class QTI21Page {
 	}
 	
 	public QTI21SettingsPage settings() {
-		By toolsLinkBy = By.cssSelector("ul.o_tools li.o_tool_dropdown a.o_sel_repository_tools");
-		OOGraphene.waitElement(toolsLinkBy, browser);
-		if(!browser.findElement(toolsMenu).isDisplayed()) {
-			openToolsMenu();
-		}
+		openAdministrationMenu();
 		
 		By optionsBy = By.cssSelector("ul.o_sel_repository_tools a.o_sel_repo_settings");
 		OOGraphene.waitElement(optionsBy, browser);
 		browser.findElement(optionsBy).click();
 		OOGraphene.waitBusy(browser);
 		return new QTI21SettingsPage(browser);
+	}
+	
+	public QTI21GradingPage grading() {
+		openAdministrationMenu();
+		
+		By optionsBy = By.cssSelector("ul.o_sel_repository_tools a.o_sel_grading");
+		OOGraphene.waitElement(optionsBy, browser);
+		browser.findElement(optionsBy).click();
+		OOGraphene.waitBusy(browser);
+		return new QTI21GradingPage(browser);
+	}
+	
+	private QTI21Page openAdministrationMenu() {
+		By toolsLinkBy = By.cssSelector("ul.o_tools li.o_tool_dropdown a.o_sel_repository_tools");
+		OOGraphene.waitElement(toolsLinkBy, browser);
+		if(!browser.findElement(toolsMenu).isDisplayed()) {
+			openToolsMenu();
+		}
+		return this;
 	}
 	
 	/**

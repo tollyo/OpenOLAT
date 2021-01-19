@@ -50,7 +50,9 @@ import org.olat.core.gui.media.MediaResource;
 import org.olat.core.gui.media.NotFoundMediaResource;
 import org.olat.core.id.Identity;
 import org.olat.core.util.CodeHelper;
+import org.olat.core.util.Formatter;
 import org.olat.core.util.StringHelper;
+import org.olat.core.util.io.SystemFileFilter;
 import org.olat.course.CourseFactory;
 import org.olat.course.ICourse;
 import org.olat.course.assessment.AssessmentHelper;
@@ -64,10 +66,10 @@ import org.olat.ims.qti21.QTI21AssessmentResultsOptions;
 import org.olat.ims.qti21.QTI21Constants;
 import org.olat.ims.qti21.QTI21Service;
 import org.olat.ims.qti21.model.QTI21QuestionType;
-import org.olat.ims.qti21.model.xml.AssessmentHtmlBuilder;
 import org.olat.ims.qti21.model.xml.QtiNodesExtractor;
 import org.olat.ims.qti21.ui.assessment.TerminatedStaticCandidateSessionContext;
 import org.olat.ims.qti21.ui.components.FeedbackResultFormItem;
+import org.olat.ims.qti21.ui.components.FlowFormItem;
 import org.olat.ims.qti21.ui.components.ItemBodyResultFormItem;
 import org.olat.repository.RepositoryEntry;
 import org.olat.user.UserManager;
@@ -115,24 +117,25 @@ public class AssessmentResultController extends FormBasicController {
 	private String signatureMapperUri;
 	private final String submissionMapperUri;
 	private final QTI21AssessmentResultsOptions options;
+	private boolean testSessionError = false;
 	
 	private final boolean anonym;
 	private final boolean withPrint;
 	private final boolean withTitle;
 	private final boolean toggleSolution;
 	private final Identity assessedIdentity;
-	private final TestSessionState testSessionState;
-	private final AssessmentResult assessmentResult;
-	private final AssessmentTestSession candidateSession;
-	private final CandidateSessionContext candidateSessionContext;
+	private TestSessionState testSessionState;
+	private AssessmentResult assessmentResult;
+	private AssessmentTestSession candidateSession;
+	private CandidateSessionContext candidateSessionContext;
 
 	private final File fUnzippedDirRoot;
 	private final URI assessmentObjectUri;
+	private final File assessmentTestFile;
 	private final ResourceLocator inputResourceLocator;
 	private final ResolvedAssessmentTest resolvedAssessmentTest;
 	private UserShortDescription assessedIdentityInfosCtrl;
 	private final Map<String,AssessmentItemSession> identifierToItemSession = new HashMap<>();
-	private final AssessmentHtmlBuilder htmlBuilder;
 	
 	private int count = 0;
 
@@ -167,7 +170,6 @@ public class AssessmentResultController extends FormBasicController {
 		this.candidateSession = candidateSession;
 		this.fUnzippedDirRoot = fUnzippedDirRoot;
 		this.submissionMapperUri = submissionMapperUri;
-		htmlBuilder = new AssessmentHtmlBuilder();
 
 		ResourceLocator fileResourceLocator = new PathResourceLocator(fUnzippedDirRoot.toPath());
 		inputResourceLocator = 
@@ -181,6 +183,8 @@ public class AssessmentResultController extends FormBasicController {
 		}
 		
 		resolvedAssessmentTest = qtiService.loadAndResolveAssessmentTest(fUnzippedDirRoot, false, false);
+		URI testUri = resolvedAssessmentTest.getTestLookup().getSystemId();
+		assessmentTestFile = new File(testUri);
 		
 		File signature = qtiService.getAssessmentResultSignature(candidateSession);
 		if (signature != null) {
@@ -192,12 +196,17 @@ public class AssessmentResultController extends FormBasicController {
 			}
 		}
 		
-		testSessionState = qtiService.loadTestSessionState(candidateSession);
-		assessmentResult = qtiService.getAssessmentResult(candidateSession);
-		candidateSessionContext = new TerminatedStaticCandidateSessionContext(candidateSession);
-		List<AssessmentItemSession> itemSessions = qtiService.getAssessmentItemSessions(candidateSession);
-		for(AssessmentItemSession itemSession:itemSessions) {
-			identifierToItemSession.put(itemSession.getAssessmentItemIdentifier(), itemSession);
+		try {
+			testSessionState = qtiService.loadTestSessionState(candidateSession);
+			assessmentResult = qtiService.getAssessmentResult(candidateSession);
+			candidateSessionContext = new TerminatedStaticCandidateSessionContext(candidateSession);
+			List<AssessmentItemSession> itemSessions = qtiService.getAssessmentItemSessions(candidateSession);
+			for(AssessmentItemSession itemSession:itemSessions) {
+				identifierToItemSession.put(itemSession.getAssessmentItemIdentifier(), itemSession);
+			}
+		} catch(Exception e) {
+			logError("Cannot show results", e);
+			testSessionError = true;
 		}
 
 		initForm(ureq);
@@ -208,13 +217,15 @@ public class AssessmentResultController extends FormBasicController {
 		if(formLayout instanceof FormLayoutContainer) {
 			FormLayoutContainer layoutCont = (FormLayoutContainer)formLayout;
 			layoutCont.contextPut("options", options);
+			layoutCont.contextPut("mapperUri", mapperUri);
+			// mapperUri is the default
+			layoutCont.contextPut("submissionMapperUri", submissionMapperUri == null ? mapperUri : submissionMapperUri);
 			if(assessedIdentity != null) {
 				layoutCont.contextPut("userDisplayName", userMgr.getUserDisplayName(assessedIdentity.getKey()));
 			} else {
 				layoutCont.contextPut("userDisplayName", Boolean.FALSE);
 			}
-			
-			
+
 			if(testSessionState == null || assessmentResult == null) {
 				// An author has deleted the test session before the user end it.
 				// It can happen with time limited tests.
@@ -222,9 +233,13 @@ public class AssessmentResultController extends FormBasicController {
 				layoutCont.contextPut("testResults", results);
 				layoutCont.contextPut("itemResults", new ArrayList<>());
 				layoutCont.contextPut("testSessionNotFound", Boolean.TRUE);
+				if(testSessionError) {
+					layoutCont.contextPut("testSessionError", Boolean.TRUE);
+				}
 			} else {
 				
 				if (candidateSession != null) {
+					layoutCont.contextPut("candidateSessionKey", candidateSession.getKey());
 					// Add some meta information about the context of this assessment
 					RepositoryEntry contextRE = candidateSession.getRepositoryEntry();
 					RepositoryEntry testRE = candidateSession.getTestEntry();
@@ -240,9 +255,17 @@ public class AssessmentResultController extends FormBasicController {
 					
 					if (testRE != null) {
 						layoutCont.contextPut("testTitle", testRE.getDisplayname());
-						layoutCont.contextPut("testId", testRE.getResourceableId());						
-						layoutCont.contextPut("testExternalRef", testRE.getExternalRef());						
-						
+						layoutCont.contextPut("testId", testRE.getResourceableId());
+						layoutCont.contextPut("testExternalRef", testRE.getExternalRef());
+					}
+					
+					if(candidateSession.getExtraTime() != null && candidateSession.getExtraTime().intValue() > 0) {
+						int extraTimeInMinutes = candidateSession.getExtraTime().intValue() / 60;
+						layoutCont.contextPut("extraTimeInMinutes", Integer.toString(extraTimeInMinutes));
+					}
+					if(candidateSession.getCompensationExtraTime() != null && candidateSession.getCompensationExtraTime().intValue() > 0) {
+						int extraTimeInMinutes = candidateSession.getCompensationExtraTime().intValue() / 60;
+						layoutCont.contextPut("compensationExtraTimeInMinutes", Integer.toString(extraTimeInMinutes));
 					}
 				}
 				
@@ -313,7 +336,7 @@ public class AssessmentResultController extends FormBasicController {
 			TestPlanNodeKey testPlanNodeKey = node.getKey();
 			TestNodeType testNodeType = node.getTestNodeType();
 			if(testNodeType == TestNodeType.ASSESSMENT_SECTION) {
-				String rubrics = getSectionRubric(node);
+				List<FlowFormItem> rubrics = getSectionRubric(layoutCont, node);
 				Results r = new Results(true, node.getSectionPartTitle(), rubrics, "o_mi_qtisection", options.isSectionSummary());
 				AssessmentSectionSessionState sectionState = testSessionState.getAssessmentSectionSessionStates().get(testPlanNodeKey);
 				if(sectionState != null) {
@@ -345,22 +368,31 @@ public class AssessmentResultController extends FormBasicController {
 		}
 	}
 	
-	private String getSectionRubric(TestPlanNode node) {
+	private List<FlowFormItem> getSectionRubric(FormLayoutContainer layoutCont, TestPlanNode node) {
 		AssessmentTest assessmentTest = resolvedAssessmentTest.getRootNodeLookup().extractIfSuccessful();
 		
-		StringBuilder sb = new StringBuilder(128);
+		List<FlowFormItem> rubricsEls = new ArrayList<>();
 		AbstractPart part = assessmentTest.lookupFirstDescendant(node.getIdentifier());
 		if(part instanceof AssessmentSection) {
 			AssessmentSection section = (AssessmentSection)part;
 			for(RubricBlock rubricBlock:section.getRubricBlocks()) {
-				String content = htmlBuilder.blocksString(rubricBlock.getBlocks());
-				if(StringHelper.containsNonWhitespace(content)) {
-					sb.append("<div class='rubric'>").append(content).append("</div>");
+				String rubricElId = "section_rubric_" + (count++);
+				FlowFormItem formItem = new FlowFormItem(rubricElId, assessmentTestFile);
+				formItem.setBlocks(rubricBlock.getBlocks());
+				formItem.setCandidateSessionContext(candidateSessionContext);
+				formItem.setResourceLocator(inputResourceLocator);
+				formItem.setAssessmentObjectUri(assessmentObjectUri);
+				formItem.setMapperUri(mapperUri);
+				if(submissionMapperUri != null) {
+					formItem.setSubmissionMapperUri(submissionMapperUri);
 				}
+				
+				rubricsEls.add(formItem);
+				layoutCont.add(rubricElId, formItem);
 			}
 		}
 		
-		return sb.toString();
+		return rubricsEls;
 	}
 
 	private Results initFormItemResult(FormLayoutContainer layoutCont, TestPlanNode node,
@@ -399,7 +431,29 @@ public class AssessmentResultController extends FormBasicController {
 				r.setScore(itemSession.getManualScore());
 				r.setManualScore(itemSession.getManualScore());
 			}
-			r.setComment(itemSession.getCoachComment());
+
+			String comment = itemSession.getCoachComment();
+			if(comment != null) {
+				if(StringHelper.isHtml(comment)) {
+					comment = StringHelper.xssScan(comment);
+					comment = Formatter.formatLatexFormulas(comment);
+				} else {
+					comment = Formatter.escWithBR(comment).toString();
+				}
+			}
+			r.setComment(comment);
+			r.setItemSessionKey(itemSession.getKey());
+			
+			File assessmentDocsDir = qtiService.getAssessmentDocumentsDirectory(candidateSession, itemSession);
+			if(assessmentDocsDir != null && assessmentDocsDir.exists()) {
+				File[] assessmentDocs = assessmentDocsDir.listFiles(SystemFileFilter.FILES_ONLY);
+				if(assessmentDocs != null) {
+					for(File assessmentDoc:assessmentDocs) {
+						DocumentWrapper dw = new DocumentWrapper(assessmentDoc.getName());
+						r.getAssessmentDocuments().add(dw);
+					}
+				}
+			}
 		}
 		
 		//update max score of section
@@ -543,7 +597,7 @@ public class AssessmentResultController extends FormBasicController {
 	}
 
 	private void doPrint(UserRequest ureq) {
-		ControllerCreator creator = getResultControllerCtreator();
+		ControllerCreator creator = getResultControllerCreator();
 		openInNewBrowserWindow(ureq, creator);
 	}
 	
@@ -589,7 +643,7 @@ public class AssessmentResultController extends FormBasicController {
 		return filename;
 	}
 	
-	private ControllerCreator getResultControllerCtreator() {
+	private ControllerCreator getResultControllerCreator() {
 		return (uureq, wwControl) -> {
 			AssessmentResultController printViewCtrl = new AssessmentResultController(uureq, wwControl, assessedIdentity, anonym,
 					candidateSession, fUnzippedDirRoot, mapperUri, submissionMapperUri, options, false, true, false);
@@ -622,6 +676,8 @@ public class AssessmentResultController extends FormBasicController {
 		private Date entryTime;
 		private Date endTime;
 		private Long duration;
+		private Integer extraTime;
+		private Integer compensationExtraTime;
 		
 		private BigDecimal score;
 		private Double manualScore;
@@ -634,12 +690,13 @@ public class AssessmentResultController extends FormBasicController {
 		
 		private String itemIdentifier;
 		private final String title;
-		private final String rubrics;
 		private final String cssClass;
 		private final boolean section;
 		private final boolean metadataVisible;
 		
 		private SessionStatus sessionStatus;
+		
+		private Long itemSessionKey;
 		
 		private int numberOfSections = 0;
 		private int numberOfQuestions = 0;
@@ -649,8 +706,10 @@ public class AssessmentResultController extends FormBasicController {
 		
 		private FormItem questionItem;
 		private FormItem correctSolutionItem;
+		private final List<FlowFormItem> rubrics;
 		private InteractionResults interactionResults;
 		private final List<Results> subResults = new ArrayList<>();
+		private final List<DocumentWrapper> assessmentDocuments = new ArrayList<>(1);
 		
 		public Results(boolean deleted, String title) {
 			this.deleted = deleted;
@@ -669,7 +728,7 @@ public class AssessmentResultController extends FormBasicController {
 			this.rubrics = null;
 		}
 
-		public Results(boolean section, String title, String rubrics, String cssClass, boolean metadataVisible) {
+		public Results(boolean section, String title, List<FlowFormItem> rubrics, String cssClass, boolean metadataVisible) {
 			this.section = section;
 			this.title = title;
 			this.rubrics = rubrics;
@@ -677,13 +736,20 @@ public class AssessmentResultController extends FormBasicController {
 			this.metadataVisible = metadataVisible;
 		}
 		
-		
 		public void setItemIdentifier(String itemIdentifier) {
 			this.itemIdentifier = itemIdentifier;
 		}
 		
 		public String getItemIdentifier() {
-			return this.itemIdentifier;
+			return itemIdentifier;
+		}
+
+		public Long getItemSessionKey() {
+			return itemSessionKey;
+		}
+
+		public void setItemSessionKey(Long itemSessionKey) {
+			this.itemSessionKey = itemSessionKey;
 		}
 
 		public void setSessionState(ControlObjectSessionState sessionState) {
@@ -721,7 +787,7 @@ public class AssessmentResultController extends FormBasicController {
 			return title;
 		}
 		
-		public String getRubrics() {
+		public List<FlowFormItem> getRubrics() {
 			return rubrics;
 		}
 		
@@ -744,6 +810,14 @@ public class AssessmentResultController extends FormBasicController {
 
 		public Long getDuration() {
 			return duration;
+		}
+		
+		public Integer getExtraTime() {
+			return extraTime;
+		}
+		
+		public Integer getCompensationExtraTime() {
+			return compensationExtraTime;
 		}
 		
 		public boolean hasScore() {
@@ -962,6 +1036,23 @@ public class AssessmentResultController extends FormBasicController {
 		
 		public void setInteractionResults(InteractionResults interactionResults) {
 			this.interactionResults = interactionResults;
+		}
+		
+		public List<DocumentWrapper> getAssessmentDocuments() {
+			return assessmentDocuments;
+		}
+	}
+	
+	public class DocumentWrapper {
+		
+		private final String filename;
+		
+		public DocumentWrapper(String filename) {
+			this.filename = filename;
+		}
+		
+		public String getFilename() {
+			return filename;
 		}
 	}
 	

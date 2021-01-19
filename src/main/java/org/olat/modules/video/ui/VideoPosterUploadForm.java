@@ -32,6 +32,7 @@ import org.olat.core.gui.components.form.flexible.impl.FormLayoutContainer;
 import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.Event;
 import org.olat.core.gui.control.WindowControl;
+import org.olat.core.util.FileUtils;
 import org.olat.core.util.vfs.LocalFolderImpl;
 import org.olat.core.util.vfs.Quota;
 import org.olat.core.util.vfs.VFSContainer;
@@ -47,7 +48,6 @@ import org.olat.resource.OLATResource;
 public class VideoPosterUploadForm extends FormBasicController {
 	private OLATResource videoResource;
 	private long remainingSpace;
-	private VFSContainer videoResourceFileroot;
 	private VFSContainer metaDataFolder;
 	private FileElement posterField;
 
@@ -69,10 +69,10 @@ public class VideoPosterUploadForm extends FormBasicController {
 	@Override
 	protected void initForm(FormItemContainer formLayout, Controller listener, UserRequest ureq) {
 		remainingSpace = Quota.UNLIMITED;
-		videoResourceFileroot = new LocalFolderImpl(FileResourceManager.getInstance().getFileResourceRootImpl(videoResource).getBasefile());
+		VFSContainer videoResourceFileroot = new LocalFolderImpl(FileResourceManager.getInstance().getFileResourceRootImpl(videoResource).getBasefile());
 		metaDataFolder = VFSManager.getOrCreateContainer(videoResourceFileroot, "media");
 
-		posterField = uifactory.addFileElement(getWindowControl(), "poster", "video.config.poster", formLayout);
+		posterField = uifactory.addFileElement(getWindowControl(), getIdentity(), "poster", "video.config.poster", formLayout);
 		posterField.limitToMimeType(imageMimeTypes, "poster.error.filetype", null);
 		posterField.setMaxUploadSizeKB(picUploadlimitKB, null, null);
 		posterField.setPreview(ureq.getUserSession(), true);
@@ -92,8 +92,7 @@ public class VideoPosterUploadForm extends FormBasicController {
 			if (remainingSpace != -1) {
 				if (posterField.getUploadFile().length() / 1024 > remainingSpace) {
 					posterField.setErrorKey("QuotaExceeded", null);
-					posterField.getUploadFile().delete();
-					return;
+					FileUtils.deleteFile(posterField.getUploadFile());
 				}
 			} else {
 				fireEvent(ureq, new FolderEvent(FolderEvent.UPLOAD_EVENT, posterField.moveUploadFileTo(metaDataFolder)));

@@ -24,10 +24,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.olat.admin.help.ui.HelpAdminController;
 import org.olat.admin.user.tools.UserTool;
+import org.olat.admin.user.tools.UserToolCategory;
 import org.olat.admin.user.tools.UserToolExtension;
 import org.olat.admin.user.tools.UserToolsModule;
 import org.olat.core.commons.fullWebApp.LockableController;
+import org.olat.core.commons.services.help.HelpLinkSPI;
+import org.olat.core.commons.services.help.HelpModule;
 import org.olat.core.dispatcher.DispatcherModule;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
@@ -43,6 +47,7 @@ import org.olat.core.id.Roles;
 import org.olat.core.id.User;
 import org.olat.core.id.UserConstants;
 import org.olat.core.util.StringHelper;
+import org.olat.core.util.Util;
 import org.olat.core.util.prefs.Preferences;
 import org.olat.user.DisplayPortraitController;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,20 +66,26 @@ public class OlatTopNavController extends BasicController implements LockableCon
 
 	@Autowired
 	private UserToolsModule userToolsModule;
+	@Autowired
+	private HelpModule helpModule;
 	
 	public OlatTopNavController(UserRequest ureq, WindowControl wControl) {
 		super(ureq, wControl);
+		
+		// Include translator for help
+		setTranslator(Util.createPackageTranslator(HelpAdminController.class, getLocale(), getTranslator()));
+		
 		topNavVC = createVelocityContainer("topnav");
 		topNavVC.setDomReplacementWrapperRequired(false); // we provide our own DOM replacmenet ID
 		
 		Roles roles = ureq.getUserSession().getRoles();
 		boolean isGuest = roles.isGuestOnly();
 		boolean isInvitee = roles.isInvitee();
-		topNavVC.contextPut("isGuest", new Boolean(isGuest));
-		topNavVC.contextPut("isInvitee", new Boolean(isInvitee));
+		topNavVC.contextPut("isGuest", Boolean.valueOf(isGuest));
+		topNavVC.contextPut("isInvitee", Boolean.valueOf(isInvitee));
 		
 		// login link
-		if (ureq.getIdentity() == null) {
+		if (ureq.getIdentity() == null || isGuest) {
 			loginLink = LinkFactory.createLink("topnav.login", topNavVC, this);
 			loginLink.setIconLeftCSS("o_icon o_icon_login o_icon-lg");
 			loginLink.setTooltip("topnav.login.alt");
@@ -127,6 +138,7 @@ public class OlatTopNavController extends BasicController implements LockableCon
 	
 	private void loadPersonalTools(UserRequest ureq) {
 		List<Tool> toolSetLinksName = new ArrayList<>();
+		List<Tool> helpPluginLinksName = new ArrayList<>();
 		
 		Preferences prefs = ureq.getUserSession().getGuiPreferences();
 		String selectedTools = userToolsModule.getUserTools(prefs);
@@ -147,15 +159,30 @@ public class OlatTopNavController extends BasicController implements LockableCon
 			if(toolExtension.isShortCutOnly() || selectedToolSet.contains(toolExtension.getUniqueExtensionID())) {
 				UserTool tool = toolExtension.createUserTool(ureq, getWindowControl(), getLocale());
 				if(tool != null) {
-					Component cmp = tool.getMenuComponent(ureq, topNavVC);
-					String cssId = toolExtension.getShortCutCssId();
-					String cssClass = toolExtension.getShortCutCssClass();
-					toolSetLinksName.add(new Tool(cssId, cssClass, cmp.getComponentName()));
-					disposableTools.add(tool);
+					if (toolExtension.getUserToolCategory().equals(UserToolCategory.help)) {
+						for (HelpLinkSPI helpLinkSPI : helpModule.getUserToolHelpPlugins()) {
+							UserTool helpTool = helpLinkSPI.getHelpUserTool(getWindowControl());
+							if (helpTool != null) {
+								Component cmp = helpTool.getMenuComponent(ureq, topNavVC);
+								String CssId = toolExtension.getShortCutCssId() + "_" + helpLinkSPI.getPluginName();
+								String cssClass = toolExtension.getShortCutCssClass();
+								helpPluginLinksName.add(new Tool(CssId, cssClass, cmp.getComponentName()));
+								disposableTools.add(helpTool);
+							}
+						}
+					} else {
+						Component cmp = tool.getMenuComponent(ureq, topNavVC);
+						String cssId = toolExtension.getShortCutCssId();
+						String cssClass = toolExtension.getShortCutCssClass();
+						toolSetLinksName.add(new Tool(cssId, cssClass, cmp.getComponentName()));
+						disposableTools.add(tool);
+					}
+
 				}
 			}
 		}
 		topNavVC.contextPut("toolSet", toolSetLinksName);
+		topNavVC.contextPut("helpPlugins", helpPluginLinksName);
 	}
 
 	@Override

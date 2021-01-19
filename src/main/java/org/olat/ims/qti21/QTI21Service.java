@@ -49,6 +49,7 @@ import uk.ac.ed.ph.jqtiplus.reading.QtiXmlReader;
 import uk.ac.ed.ph.jqtiplus.resolution.ResolvedAssessmentItem;
 import uk.ac.ed.ph.jqtiplus.resolution.ResolvedAssessmentObject;
 import uk.ac.ed.ph.jqtiplus.resolution.ResolvedAssessmentTest;
+import uk.ac.ed.ph.jqtiplus.running.TestSessionController;
 import uk.ac.ed.ph.jqtiplus.serialization.QtiSerializer;
 import uk.ac.ed.ph.jqtiplus.state.ItemSessionState;
 import uk.ac.ed.ph.jqtiplus.state.TestPlanNodeKey;
@@ -94,6 +95,17 @@ public interface QTI21Service {
 	
 	
 	public URI createAssessmentTestUri(File resourceDirectory);
+	
+	/**
+	 * Ensure the assessment test is cached and not expired by
+	 * the max. idle configuration. The goal is to maintain the
+	 * object in cache despite it to be strong reference by the
+	 * run controller.
+	 * 
+	 * @param resourceDirectory The directory where is the package
+	 */
+	public void touchCachedResolveAssessmentTest(File resourceDirectory);
+	
 	
 	/**
 	 * Load the assessmentTest based on the imsmanifest.xml found in the resource
@@ -203,7 +215,7 @@ public interface QTI21Service {
 	
 	public AssessmentTestSession createAssessmentTestSession(Identity identity, String anonymousIdentifier,
 			AssessmentEntry assessmentEntry, RepositoryEntry entry, String subIdent, RepositoryEntry testEntry,
-			boolean authorMode);
+			Integer compensationExtraTime, boolean authorMode);
 	
 	
 	/**
@@ -274,13 +286,25 @@ public interface QTI21Service {
 
 	public boolean isRunningAssessmentTestSession(RepositoryEntry entry, String subIdent, RepositoryEntry testEntry, List<? extends IdentityRef> identities);
 	
+	public boolean isRunningAssessmentTestSession(RepositoryEntry entry, List<String> subIdents, List<? extends IdentityRef> identities);
+	
 	/**
 	 * Add some extra time to an assessment test session.
 	 * 
 	 * @param session The session to extend
 	 * @param extraTime The extra time in seconds
+	 * @param actor The user which do the change
 	 */
 	public void extraTimeAssessmentTestSession(AssessmentTestSession session, int extraTime, Identity actor);
+	
+	/**
+	 * Add some extra time due to compensation for disadvantages to a test session.
+	 * 
+	 * @param session The session to extend
+	 * @param extraTime The extra time in seconds
+	 * @param actor The user which do the change
+	 */
+	public void compensationExtraTimeAssessmentTestSession(AssessmentTestSession session, int extraTime, Identity actor);
 	
 	/**
 	 * Reopen a closed test. The method remove end and exit date, set a current
@@ -290,7 +314,7 @@ public interface QTI21Service {
 	 */
 	public AssessmentTestSession reopenAssessmentTestSession(AssessmentTestSession session, Identity actor);
 	
-	public List<AssessmentTestSession> getRunningAssessmentTestSession(RepositoryEntry entry, String subIdent, RepositoryEntry testEntry);
+	public List<AssessmentTestSession> getRunningAssessmentTestSession(RepositoryEntryRef entry, String subIdent, RepositoryEntry testEntry);
 	
 	public TestSessionState loadTestSessionState(AssessmentTestSession session);
 	
@@ -320,7 +344,8 @@ public interface QTI21Service {
 	 * @param identity
 	 * @return
 	 */
-	public List<AssessmentTestSession> getAssessmentTestSessions(RepositoryEntryRef courseEntry, String subIdent, IdentityRef identity);
+	public List<AssessmentTestSession> getAssessmentTestSessions(RepositoryEntryRef courseEntry, String subIdent,
+			IdentityRef identity, boolean onlyValid);
 	
 	/**
 	 * Retrieve the sessions of a user with the number of corrected assessment items (only the test and its resource are fetched).
@@ -328,9 +353,11 @@ public interface QTI21Service {
 	 * @param courseEntry The course
 	 * @param subIdent The course node identifier
 	 * @param identity The user to assess
+	 * @param onlyValid true to excluded exploded or cancelled sessions
 	 * @return A list of assessment test sessions wrapped with number of corrected items
 	 */
-	public List<AssessmentTestSessionStatistics> getAssessmentTestSessionsStatistics(RepositoryEntryRef courseEntry, String subIdent, IdentityRef identity);
+	public List<AssessmentTestSessionStatistics> getAssessmentTestSessionsStatistics(RepositoryEntryRef courseEntry, String subIdent,
+			IdentityRef identity, boolean onlyValid);
 	
 	/**
 	 * Retrieve the last finished test session.
@@ -345,12 +372,12 @@ public interface QTI21Service {
 	
 	/**
 	 * Retrieve the sessions for a test. It returns only the sessions of authenticated users (fetched).
-	 * The anonymous ones are not included.
+	 * The anonymous ones are not included as exploded and cancelled.
 	 * 
-	 * @param courseEntry
-	 * @param subIdent
-	 * @param testEntry
-	 * @return
+	 * @param courseEntry The repository entry
+	 * @param subIdent Typically the course element identifier (optional)
+	 * @param testEntry The test entry
+	 * @return A list of valid test sessions
 	 */
 	public List<AssessmentTestSession> getAssessmentTestSessions(RepositoryEntryRef courseEntry, String subIdent, RepositoryEntry testEntry);
 	
@@ -407,7 +434,13 @@ public interface QTI21Service {
 	public AssessmentTestSession finishTestSession(AssessmentTestSession candidateSession, TestSessionState testSessionState, AssessmentResult assessmentResul,
 			Date timestamp, DigitalSignatureOptions signatureOptions, Identity assessedIdentity);
 	
-	public void cancelTestSession(AssessmentTestSession candidateSession, TestSessionState testSessionState);
+	/**
+	 * The test session and all files will be deleted.
+	 * 
+	 * @param candidateSession The test session
+	 * @param testSessionState The test session state
+	 */
+	public void deleteTestSession(AssessmentTestSession candidateSession, TestSessionState testSessionState);
 	
 	/**
 	 * Pull a running test
@@ -417,6 +450,14 @@ public interface QTI21Service {
 	 * @return The updated test session
 	 */
 	public AssessmentTestSession pullSession(AssessmentTestSession candidateSession, DigitalSignatureOptions signatureOptions, Identity actor);
+	
+	/**
+	 * Update the assessment entry if the test is done within a test repository entry.
+	 * 
+	 * @param candidateSession The assessment test tession.
+	 * @return The updated assessment entry
+	 */
+	public AssessmentEntry updateAssessmentEntry(AssessmentTestSession candidateSession, boolean updateScoring);
 	
 	/**
 	 * Sign the assessment result. Be careful, the file must not be changed
@@ -491,6 +532,19 @@ public interface QTI21Service {
 	
 	public File importFileSubmission(AssessmentTestSession candidateSession, String filename, byte[] data);
 	
+	
+	public File getAssessmentDocumentsDirectory(AssessmentTestSession candidateSession);
+	
+	/**
+	 * The method allow to prevent creation of a lot of empty directories.
+	 * 
+	 * @param candidateSession The assessment test session
+	 * @param itemSession The assessment item session
+	 * @param createDirectory Create a directory, if false and the directory doesn't exist, return null
+	 * @return The directory or null if @createDirectory is false and the directory doesn't exist
+	 */
+	public File getAssessmentDocumentsDirectory(AssessmentTestSession candidateSession, AssessmentItemSession itemSession);
+	
 	/**
 	 * Returns the sum of the correction time set in metadata of the test. Only
 	 * the items proposed to the assessed user are counted (with or without response
@@ -501,5 +555,10 @@ public interface QTI21Service {
 	 * @return A number of seconds, 0 if nothing found
 	 */
 	public Long getMetadataCorrectionTimeInSeconds(RepositoryEntry testEntry, AssessmentTestSession candidateSession);
+	
+
+	public void putCachedTestSessionController(AssessmentTestSession testSession, TestSessionController testSessionController);
+	
+	public TestSessionController getCachedTestSessionController(AssessmentTestSession testSession, TestSessionController testSessionController);
 
 }

@@ -25,9 +25,9 @@
 
 package org.olat.basesecurity;
 
+import java.io.IOException;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -70,7 +70,7 @@ import org.olat.course.assessment.AssessmentModule;
 import org.olat.course.assessment.model.TransientAssessmentMode;
 import org.olat.login.AuthBFWCParts;
 import org.olat.login.GuestBFWCParts;
-import org.olat.portfolio.manager.InvitationDAO;
+import org.olat.modules.portfolio.manager.InvitationDAO;
 import org.olat.user.UserManager;
 import org.olat.util.logging.activity.LoggingResourceable;
 
@@ -88,10 +88,11 @@ public class AuthHelper {
 	/**
 	 * <code>LOGOUT_PAGE</code>
 	 */
-	public  static final int LOGIN_OK = 0;
+	public static final int LOGIN_OK = 0;
 	public static final int LOGIN_FAILED = 1;
 	public static final int LOGIN_DENIED = 2;
-	public  static final int LOGIN_NOTAVAILABLE = 3;
+	public static final int LOGIN_NOTAVAILABLE = 3;
+	public static final int LOGIN_INACTIVE = 4;
 
 	private static final int MAX_SESSION_NO_LIMIT = 0;
 
@@ -121,14 +122,13 @@ public class AuthHelper {
 	public static int doLogin(Identity identity, String authProvider, UserRequest ureq) {
 		int initializeStatus = initializeLogin(identity, authProvider, ureq, false);
 		if (initializeStatus != LOGIN_OK) {
-			return initializeStatus; // login not successfull
+			return initializeStatus; // login not successful
 		}
 
 		// do logging
 		ThreadLocalUserActivityLogger.log(OlatLoggingAction.OLAT_LOGIN, AuthHelper.class, LoggingResourceable.wrap(identity));
 
-		// brasato:: fix it
-		// successfull login, reregister window
+		// successful login, reregister window
 		ChiefController occ;
 		if(ureq.getUserSession().getRoles().isGuestOnly()){
 			occ = createGuestHome(ureq);
@@ -138,20 +138,26 @@ public class AuthHelper {
 
 		Window currentWindow = occ.getWindow();
 		currentWindow.setUriPrefix(WebappHelper.getServletContextPath() + DispatcherModule.PATH_AUTHENTICATED);
-		Windows.getWindows(ureq).registerWindow(currentWindow);
+		Windows.getWindows(ureq).registerWindow(occ);
+		ureq.overrideWindowComponentID(currentWindow.getDispatchID());
 
 		RedirectMediaResource redirect;
 		String redirectTo = (String)ureq.getUserSession().getEntry("redirect-bc");
 		if(StringHelper.containsNonWhitespace(redirectTo)) {
-			String url = WebappHelper.getServletContextPath() + DispatcherModule.PATH_AUTHENTICATED + redirectTo;
+			String url = WebappHelper.getServletContextPath() + DispatcherModule.PATH_AUTHENTICATED + redirectTo + "?oow=" + currentWindow.getDispatchID();
 			redirect = new RedirectMediaResource(url);
 		} else {
 			// redirect to AuthenticatedDispatcher
 			// IMPORTANT: windowID has changed due to re-registering current window -> do not use ureq.getWindowID() to build new URLBuilder.
-			URLBuilder ubu = new URLBuilder(WebappHelper.getServletContextPath() + DispatcherModule.PATH_AUTHENTICATED, currentWindow.getInstanceId(), "1");
-			StringOutput sout = new StringOutput(30);
-			ubu.buildURI(sout, null, null);
-			redirect = new RedirectMediaResource(sout.toString());
+			URLBuilder ubu = new URLBuilder(WebappHelper.getServletContextPath() + DispatcherModule.PATH_AUTHENTICATED,
+					currentWindow.getInstanceId(), "1", currentWindow.getCsrfToken());
+			try(StringOutput sout = new StringOutput(30)) {
+				ubu.buildURI(sout, null, null);
+				redirect = new RedirectMediaResource(sout.toString());
+			} catch(IOException e) {
+				log.error("", e);
+				redirect = null;
+			}
 		}
 		ureq.getDispatchResult().setResultingMediaResource(redirect);
 		return LOGIN_OK;
@@ -192,7 +198,7 @@ public class AuthHelper {
 
 		BaseFullWebappControllerParts guestSitesAndNav = new GuestBFWCParts();
 		ChiefController cc = new BaseFullWebappController(ureq, guestSitesAndNav);
-		Windows.getWindows(ureq.getUserSession()).setChiefController(cc);
+		Windows.getWindows(ureq.getUserSession()).registerWindow(cc);
 		return cc;
 	}
 
@@ -207,9 +213,7 @@ public class AuthHelper {
 		if (!ureq.getUserSession().isAuthenticated()) throw new AssertException("not authenticated!");
 
 		BaseFullWebappControllerParts authSitesAndNav = new AuthBFWCParts();
-		ChiefController cc = new BaseFullWebappController(ureq, authSitesAndNav);
-		Windows.getWindows(ureq.getUserSession()).setChiefController(cc);
-		return cc;
+		return new BaseFullWebappController(ureq, authSitesAndNav);
 	}
 
 	/**
@@ -238,7 +242,7 @@ public class AuthHelper {
 
 	public static int doInvitationLogin(String invitationToken, UserRequest ureq, Locale locale) {
 		InvitationDAO invitationDao = CoreSpringFactory.getImpl(InvitationDAO.class);
-		boolean hasPolicies = invitationDao.hasInvitations(invitationToken, new Date());
+		boolean hasPolicies = invitationDao.hasInvitations(invitationToken);
 		if(!hasPolicies) {
 			return LOGIN_DENIED;
 		}
@@ -258,14 +262,12 @@ public class AuthHelper {
 				//already a normal olat user, cannot be invited
 				return LOGIN_DENIED;
 			} else {
-				//fxdiff FXOLAT-151: add eventually the identity to the security group
 				if(!groupDao.hasRole(invitation.getBaseGroup(), identity, GroupRoles.invitee.name())) {
 					groupDao.addMembershipTwoWay(invitation.getBaseGroup(), identity, GroupRoles.invitee.name());
 					DBFactory.getInstance().commit();
 				}
 
 				int result = doLogin(identity, BaseSecurityModule.getDefaultAuthProviderIdentifier(), ureq);
-				//fxdiff FXOLAT-151: double check: problem with the DB, invitee is not marked has such
 				if(ureq.getUserSession().getRoles().isInvitee()) {
 					return result;
 				}
@@ -285,7 +287,7 @@ public class AuthHelper {
 
 	/**
 	 * ONLY for authentication provider OLAT Authenticate Identity and do the
-	 * necessary work. Returns true if successfull, false otherwise.
+	 * necessary work. Returns true if successful, false otherwise.
 	 *
 	 * @param identity
 	 * @param authProvider
@@ -296,7 +298,11 @@ public class AuthHelper {
 		// continue only if user has login permission.
 		if (identity == null) return LOGIN_FAILED;
 		//test if a user may not logon, since he/she is in the PERMISSION_LOGON
-		if (!BaseSecurityManager.getInstance().isIdentityVisible(identity)) {
+		if (!BaseSecurityManager.getInstance().isIdentityLoginAllowed(identity, authProvider)) {
+			if(identity != null && Identity.STATUS_INACTIVE.equals(identity.getStatus())) {
+				log.info(Tracing.M_AUDIT, "was denied login because inactive: {}", identity);
+				return LOGIN_INACTIVE;
+			}
 			log.info(Tracing.M_AUDIT, "was denied login");
 			return LOGIN_DENIED;
 		}
@@ -420,7 +426,7 @@ public class AuthHelper {
 	 */
 	private static void setSessionInfoFor(Identity identity, UserSession usess, String authProvider, UserRequest ureq, boolean rest) {
 		HttpSession session = ureq.getHttpReq().getSession();
-		SessionInfo sinfo = new SessionInfo(identity.getKey(), identity.getName(), session);
+		SessionInfo sinfo = new SessionInfo(identity.getKey(), session);
 		sinfo.setFirstname(identity.getUser().getProperty(UserConstants.FIRSTNAME, ureq.getLocale()));
 		sinfo.setLastname(identity.getUser().getProperty(UserConstants.LASTNAME, ureq.getLocale()));
 		sinfo.setFromIP(ureq.getHttpReq().getRemoteAddr());

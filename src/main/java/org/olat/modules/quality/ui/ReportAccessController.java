@@ -70,7 +70,6 @@ import org.olat.modules.quality.QualityReportAccessRightProvider;
 import org.olat.modules.quality.QualityReportAccessSearchParams;
 import org.olat.modules.quality.QualityService;
 import org.olat.modules.quality.ui.ReportAccessDataModel.ReportAccessCols;
-import org.olat.modules.quality.ui.ReportMemberTableModel.ReportMemberCols;
 import org.olat.user.UserManager;
 import org.olat.user.UserPropertiesRow;
 import org.olat.user.propertyhandlers.UserPropertyHandler;
@@ -108,7 +107,6 @@ public abstract class ReportAccessController extends FormBasicController {
 	private QualityReportAccessReference reference;
 	private QualityReportAccessSearchParams searchParams;
 	private String topicIdentityName;
-	private final boolean isAdministrativeUser;
 	private final List<UserPropertyHandler> userPropertyHandlers;
 	private List<QualityReportAccess> reportAccesses;
 	
@@ -135,7 +133,7 @@ public abstract class ReportAccessController extends FormBasicController {
 			}
 		}
 		
-		isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
+		boolean isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
 		userPropertyHandlers = userManager.getUserPropertyHandlersFor(usageIdentifyer, isAdministrativeUser);
 		
 		KeyValues emailTriggerKV = getEmailTriggerKV();
@@ -198,6 +196,7 @@ public abstract class ReportAccessController extends FormBasicController {
 		rows.add(createRow(translate("report.access.name.participants.done"), Type.Participants, EvaluationFormParticipationStatus.done.name()));
 		rows.add(createRow(translate("report.access.name.repo.owner"), Type.GroupRoles, GroupRoles.owner.name()));
 		rows.add(createRow(translate("report.access.name.repo.coach"), Type.GroupRoles, GroupRoles.coach.name()));
+		rows.add(createRow(translate("report.access.name.repo.lrm"), Type.LearnResourceManager, null));
 		
 		String topicIdentityRowName = StringHelper.containsNonWhitespace(topicIdentityName)
 				? translate("report.access.name.topic.identity.name", new String[] {topicIdentityName})
@@ -275,10 +274,7 @@ public abstract class ReportAccessController extends FormBasicController {
 		}
 		
 		FlexiTableColumnModel columnsModel = FlexiTableDataModelFactory.createFlexiTableColumnModel();
-		if(isAdministrativeUser) {
-			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(ReportMemberCols.username));
-		}
-		
+
 		int colIndex = USER_PROPS_OFFSET;
 		for (int i = 0; i < userPropertyHandlers.size(); i++) {
 			UserPropertyHandler userPropertyHandler	= userPropertyHandlers.get(i);
@@ -289,7 +285,7 @@ public abstract class ReportAccessController extends FormBasicController {
 		
 		membersTableModel = new ReportMemberTableModel(columnsModel, getLocale()); 
 		membersTableEl = uifactory.addTableElement(getWindowControl(), "memberstable", membersTableModel, 20, false, getTranslator(), membersLayout);
-		membersTableEl.setAndLoadPersistedPreferences(ureq, "quality-report-members");
+		membersTableEl.setAndLoadPersistedPreferences(ureq, "quality-report-members-v2");
 		membersTableEl.setEmtpyTableMessageKey("report.member.empty.table");
 		membersTableEl.setSelectAllEnable(true);
 		membersTableEl.setMultiSelect(true);

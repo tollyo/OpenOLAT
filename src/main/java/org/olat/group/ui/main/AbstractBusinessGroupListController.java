@@ -839,6 +839,7 @@ public abstract class AbstractBusinessGroupListController extends FormBasicContr
 			@Override
 			public Step execute(UserRequest uureq, WindowControl wControl, StepsRunContext runContext) {
 				//mails are send by the last controller of the wizard
+				wControl.setInfo(translate("msg.send.ok"));
 				return StepsMainRunController.DONE_MODIFIED;
 			}
 		};
@@ -1135,7 +1136,7 @@ public abstract class AbstractBusinessGroupListController extends FormBasicContr
 	protected final int loadModel(BusinessGroupQueryParams params) {
 		this.lastSearchParams = params;
 		if(params == null) {
-			groupTableModel.setEntries(Collections.<BGTableItem>emptyList());
+			groupTableModel.setObjects(Collections.<BGTableItem>emptyList());
 			tableEl.reset(true, true, true);
 			return 0;
 		} else {
@@ -1148,7 +1149,7 @@ public abstract class AbstractBusinessGroupListController extends FormBasicContr
 				}
 			}
 			
-			groupTableModel.setEntries(items);
+			groupTableModel.setObjects(items);
 			tableEl.reset(true, true, true);
 			return items.size();
 		}

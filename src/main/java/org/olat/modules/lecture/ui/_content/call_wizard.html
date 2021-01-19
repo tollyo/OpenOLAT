@@ -9,9 +9,9 @@
 		<thead>
 			<tr>
 				#foreach($check in $checks)
-					<th>$foreach.count</th>
+					<th scope="col">$foreach.count</th>
 				#end
-				<th> </th>
+				<th scope="col"> </th>
 			</tr>
 		</thead>
 		<tbody>
@@ -53,4 +53,7 @@
 <div class="o_button_group">
 	$r.render("cancel")
 	$r.render("save")
+	#if($r.available("close"))
+		$r.render("close")
+	#end
 </div>

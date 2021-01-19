@@ -60,6 +60,8 @@ import org.olat.util.logging.activity.LoggingResourceable;
  */
 public class OverviewAuthoringController extends BasicController implements Activateable2, GenericEventListener {
 	
+	private static final String REPOSITORY_PATH = "[RepositorySite:0]";
+	
 	private MainPanel mainPanel;
 	private final VelocityContainer mainVC;
 	private final SegmentViewComponent segmentView;
@@ -67,12 +69,17 @@ public class OverviewAuthoringController extends BasicController implements Acti
 	private Link favoriteLink;
 	private final Link searchLink;
 	private final Link myEntriesLink;
-	private AuthorListController currentCtrl, markedCtrl, myEntriesCtrl, searchEntriesCtrl;
+	private AuthorListController markedCtrl;
+	private AuthorListController currentCtrl;
+	private AuthorListController myEntriesCtrl;
+	private AuthorListController searchEntriesCtrl;
 	private AuthorDeletedListController deletedEntriesCtrl;
 
 	private final boolean isAdministrator;
 	private final boolean isGuestOnly;
-	private boolean favoritDirty, myDirty, deletedDirty;
+	private boolean myDirty;
+	private boolean favoritDirty;
+	private boolean deletedDirty;
 	private final EventBus eventBus;
 	
 	public OverviewAuthoringController(UserRequest ureq, WindowControl wControl) {
@@ -91,16 +98,21 @@ public class OverviewAuthoringController extends BasicController implements Acti
 		segmentView = SegmentViewFactory.createSegmentView("segments", mainVC, this);
 		segmentView.setReselect(true);
 		
+		BusinessControlFactory bFactory = BusinessControlFactory.getInstance();
 		if(!isGuestOnly) {
 			favoriteLink = LinkFactory.createLink("search.mark", mainVC, this);
+			favoriteLink.setUrl(bFactory.getAuthenticatedURLFromBusinessPathStrings(REPOSITORY_PATH, "[Favorits:0]"));
 			segmentView.addSegment(favoriteLink, false);
 		}
 		myEntriesLink = LinkFactory.createLink("search.my", mainVC, this);
+		myEntriesLink.setUrl(bFactory.getAuthenticatedURLFromBusinessPathStrings(REPOSITORY_PATH, "[My:0]"));
 		segmentView.addSegment(myEntriesLink, false);
 		searchLink = LinkFactory.createLink("search.generic", mainVC, this);
+		searchLink.setUrl(bFactory.getAuthenticatedURLFromBusinessPathStrings(REPOSITORY_PATH, "[Search:0]"));
 		segmentView.addSegment(searchLink, false);
 		if(roles.isAuthor() || isAdministrator) {
 			deletedLink = LinkFactory.createLink("search.deleted", mainVC, this);
+			deletedLink.setUrl(bFactory.getAuthenticatedURLFromBusinessPathStrings(REPOSITORY_PATH, "[Deleted:0]"));
 			segmentView.addSegment(deletedLink, false);
 		}
 

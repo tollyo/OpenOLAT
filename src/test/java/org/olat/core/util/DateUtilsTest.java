@@ -22,9 +22,14 @@ package org.olat.core.util;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.olat.core.util.DateUtils.toDate;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.Date;
+import java.util.EnumSet;
+import java.util.GregorianCalendar;
+import java.util.List;
 
+import org.assertj.core.api.SoftAssertions;
 import org.junit.Test;
 
 /**
@@ -34,6 +39,32 @@ import org.junit.Test;
  *
  */
 public class DateUtilsTest {
+	
+	@Test
+	public void shouldSetTime() {
+		Date date = new GregorianCalendar(2020, 5, 1, 10, 0, 0).getTime();
+		
+		date = DateUtils.setTime(date, 20, 10, 5);
+		
+		assertThat(date).isEqualTo(new GregorianCalendar(2020, 5, 1, 20, 10, 5).getTime());
+	}
+
+	@Test
+	public void shouldCopyTime() {
+		SoftAssertions softly = new SoftAssertions();
+		
+		softly.assertThat(DateUtils.copyTime(
+				new GregorianCalendar(2020, 5, 1, 10, 0, 0).getTime(),
+				new GregorianCalendar(2020, 8, 20, 8, 3, 2).getTime())
+			).isEqualTo(new GregorianCalendar(2020, 5, 1, 8, 3, 2).getTime());
+		
+		softly.assertThat(DateUtils.copyTime(
+				new GregorianCalendar(2020, 5, 1, 10, 0, 0).getTime(),
+				new GregorianCalendar(2020, 5, 1, 10, 0, 0).getTime())
+			).isEqualTo(new GregorianCalendar(2020, 5, 1, 10, 0, 0).getTime());
+		
+		softly.assertAll();
+	}
 	
 	@Test
 	public void shouldGetLaterIfFirstIsLater() {
@@ -68,6 +99,57 @@ public class DateUtilsTest {
 		
 		assertThat(later).isEqualTo(expected);
 	}
+	
+	@Test
+	public void shouldGetDaysInRange() {
+		Date start = new GregorianCalendar(2020, 5, 1, 10, 0, 0).getTime();
+		Date end = new GregorianCalendar(2020, 5, 10, 0, 0, 0).getTime();
+		
+		List<Date> days = DateUtils.getDaysInRange(start, end);
+		
+		assertThat(days)
+				.containsExactly(
+					new GregorianCalendar(2020, 5, 1, 10, 0, 0).getTime(),
+					new GregorianCalendar(2020, 5, 2, 10, 0, 0).getTime(),
+					new GregorianCalendar(2020, 5, 3, 10, 0, 0).getTime(),
+					new GregorianCalendar(2020, 5, 4, 10, 0, 0).getTime(),
+					new GregorianCalendar(2020, 5, 5, 10, 0, 0).getTime(),
+					new GregorianCalendar(2020, 5, 6, 10, 0, 0).getTime(),
+					new GregorianCalendar(2020, 5, 7, 10, 0, 0).getTime(),
+					new GregorianCalendar(2020, 5, 8, 10, 0, 0).getTime(),
+					new GregorianCalendar(2020, 5, 9, 10, 0, 0).getTime())
+				.doesNotContain(
+					// because of the time
+					end
+				);
+	}
+	
 
+	@Test
+	public void shouldGetDaysOfWeekInRange() {
+		Date start = new GregorianCalendar(2020, 4, 1, 10, 0, 0).getTime();
+		Date end = new GregorianCalendar(2020, 5, 10, 0, 0, 0).getTime();
+		
+		EnumSet<DayOfWeek> daysOfWeek = EnumSet.of(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY);
+		List<Date> days = DateUtils.getDaysInRange(start, end, daysOfWeek);
+		
+		assertThat(days)
+				.containsExactly(
+					new GregorianCalendar(2020, 4, 4, 10, 0, 0).getTime(),
+					new GregorianCalendar(2020, 4, 6, 10, 0, 0).getTime(),
+					new GregorianCalendar(2020, 4, 11, 10, 0, 0).getTime(),
+					new GregorianCalendar(2020, 4, 13, 10, 0, 0).getTime(),
+					new GregorianCalendar(2020, 4, 18, 10, 0, 0).getTime(),
+					new GregorianCalendar(2020, 4, 20, 10, 0, 0).getTime(),
+					new GregorianCalendar(2020, 4, 25, 10, 0, 0).getTime(),
+					new GregorianCalendar(2020, 4, 27, 10, 0, 0).getTime(),
+					new GregorianCalendar(2020, 5, 1, 10, 0, 0).getTime(),
+					new GregorianCalendar(2020, 5, 3, 10, 0, 0).getTime(),
+					new GregorianCalendar(2020, 5, 8, 10, 0, 0).getTime())
+				.doesNotContain(
+					end
+				);
+
+	}
 
 }

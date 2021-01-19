@@ -23,6 +23,8 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.UUID;
 
 import org.jboss.arquillian.container.test.api.RunAsClient;
@@ -36,6 +38,7 @@ import org.olat.ims.qti21.QTI21AssessmentResultsOptions;
 import org.olat.repository.model.SingleRoleRepositoryEntrySecurity.Role;
 import org.olat.selenium.page.LoginPage;
 import org.olat.selenium.page.NavigationPage;
+import org.olat.selenium.page.Participant;
 import org.olat.selenium.page.User;
 import org.olat.selenium.page.course.AssessmentToolPage;
 import org.olat.selenium.page.course.CourseEditorPageFragment;
@@ -44,6 +47,7 @@ import org.olat.selenium.page.course.MembersPage;
 import org.olat.selenium.page.graphene.OOGraphene;
 import org.olat.selenium.page.qti.QTI21ConfigurationCEPage;
 import org.olat.selenium.page.qti.QTI21CorrectionPage;
+import org.olat.selenium.page.qti.QTI21GradingPage;
 import org.olat.selenium.page.qti.QTI21Page;
 import org.olat.selenium.page.repository.UserAccess;
 import org.olat.selenium.page.user.UserToolsPage;
@@ -419,6 +423,125 @@ public class ImsQTI21Test extends Deployments {
 			.assertOnAssessmentTestScore(2);
 	}
 	
+
+	/**
+	 * Upload a test in QTI 2.1 format, create a course, bind
+	 * the test in a course element, customize the options
+	 * with full window mode, show scores, assessment results
+	 * and a start and end dates for the assessment.<br>
+	 * Then a user will run it and check if the assessment results appears
+	 * after the time reserved to the test ended.
+	 * 
+	 * @param participantBrowser
+	 * @throws IOException
+	 * @throws URISyntaxException
+	 */
+	@Test
+	@RunAsClient
+	public void qti21Course_dateTest(@Drone @Participant WebDriver participantBrowser)
+	throws IOException, URISyntaxException {
+		
+		UserVO author = new UserRestClient(deploymentUrl).createRandomAuthor();
+		UserVO participant = new UserRestClient(deploymentUrl).createRandomUser("Hakufu");
+		LoginPage authorLoginPage = LoginPage.load(browser, deploymentUrl);
+		authorLoginPage.loginAs(author.getLogin(), author.getPassword());
+		
+		//upload a test
+		String qtiTestTitle = "Timed QTI 2.1 " + UUID.randomUUID();
+		URL qtiTestUrl = JunitTestHelper.class.getResource("file_resources/qti21/simple_QTI_21_test.zip");
+		File qtiTestFile = new File(qtiTestUrl.toURI());
+		NavigationPage navBar = NavigationPage.load(browser);
+		navBar
+			.openAuthoringEnvironment()
+			.uploadResource(qtiTestTitle, qtiTestFile);
+		
+		//create a course
+		String courseTitle = "Course QTI 2.1 " + UUID.randomUUID();
+		navBar
+			.openAuthoringEnvironment()
+			.createCourse(courseTitle)
+			.clickToolbarBack();
+		
+		String testNodeTitle = "QTI21Test-8";
+		
+		//create a course element of type CP with the CP that we create above
+		CourseEditorPageFragment courseEditor = CoursePageFragment.getCourse(browser)
+			.edit();
+		courseEditor
+			.createNode("iqtest")
+			.nodeTitle(testNodeTitle)
+			.selectTabLearnContent()
+			.chooseTest(qtiTestTitle);
+		
+		QTI21ConfigurationCEPage configPage = new QTI21ConfigurationCEPage(browser);
+		configPage
+			.selectLayoutConfiguration()
+			.overrideConfiguration()
+			.fullWindow()
+			.saveLayoutConfiguration();
+		
+		Calendar cal = Calendar.getInstance();
+		int currentSeconds = cal.get(Calendar.SECOND);
+		cal.set(Calendar.SECOND, 0);
+		cal.add(Calendar.MINUTE, -1);
+		Date start = cal.getTime();
+		int addMinutes = (currentSeconds < 30) ? 2 : 3;
+		cal.add(Calendar.MINUTE, addMinutes);
+		Date end = cal.getTime();
+		configPage
+			.selectConfiguration()
+			.setTime(start, end)
+			.showScoreOnHomepage(true)
+			.showResultsOnHomepage(Boolean.TRUE, QTI21AssessmentResultsOptions.allOptions())
+			.saveConfiguration();
+		
+		//publish the course
+		courseEditor
+			.publish()
+			.quickPublish();
+		
+		//open the course and see the CP
+		CoursePageFragment course = courseEditor
+			.clickToolbarBack();
+		
+		// add a participant
+		course
+			.members()
+			.quickAdd(participant);
+		
+		//a user search the course and make the test
+		LoginPage userLoginPage = LoginPage.load(participantBrowser, deploymentUrl);
+		userLoginPage
+			.loginAs(participant.getLogin(), participant.getPassword())
+			.resume();
+		NavigationPage userNavBar = NavigationPage.load(participantBrowser);
+		userNavBar
+			.openMyCourses()
+			.openSearch()
+			.extendedSearch(courseTitle)
+			.select(courseTitle);
+		
+		// open the course and see the test
+		CoursePageFragment participantCourse = CoursePageFragment.getCourse(participantBrowser);		
+		participantCourse
+			.clickTree()
+			.selectWithTitle(testNodeTitle);
+		QTI21Page qtiPage = QTI21Page
+				.getQTI21Page(participantBrowser);
+		qtiPage
+			.assertOnStart()
+			.start()
+			.answerSingleChoiceWithParagraph("Right") 
+			.saveAnswer()
+			.assertOnAssessmentResults(180)
+			.closeAssessmentResults()
+			.assertOnCourseAttempts(1)
+			.assertOnCourseAssessmentTestScore(1)
+			.assertOnCourseAssessmentTestPassed()
+			.assertOnAssessmentResults();
+	}
+	
+	
 	/**
 	 * Test suspend. An author upload a test, set "enable suspend"
 	 * and make the test visible to registered users. A second user
@@ -648,7 +771,7 @@ public class ImsQTI21Test extends Deployments {
 	public void qti21Course_lmsHidden_results()
 	throws IOException, URISyntaxException {
 		
-		UserVO author = new UserRestClient(deploymentUrl).createAuthor();
+		UserVO author = new UserRestClient(deploymentUrl).createRandomAuthor();
 		LoginPage authorLoginPage = LoginPage.load(browser, deploymentUrl);
 		authorLoginPage.loginAs(author.getLogin(), author.getPassword());
 		
@@ -738,6 +861,7 @@ public class ImsQTI21Test extends Deployments {
 			.closeAssessmentResults()
 			.assertOnCourseAttempts(1)
 			.assertOnCourseAssessmentTestScore(1)
+			.assertOnCourseAssessmentTestPassed()
 			.assertOnAssessmentResults();
 	}
 
@@ -888,6 +1012,7 @@ public class ImsQTI21Test extends Deployments {
 			.assertOnCourseAttempts(1);
 	}
 	
+
 	/**
 	 * An author create a course with a test to overview
 	 * the progress of a participant doing a test.
@@ -902,7 +1027,7 @@ public class ImsQTI21Test extends Deployments {
 	public void qti21CourseTestCockpitProgress(@Drone @User WebDriver participantBrowser)
 	throws IOException, URISyntaxException {
 		
-		UserVO author = new UserRestClient(deploymentUrl).createAuthor();
+		UserVO author = new UserRestClient(deploymentUrl).createRandomAuthor();
 		UserVO participant = new UserRestClient(deploymentUrl).createRandomUser("Ryomou");
 
 		LoginPage loginPage = LoginPage.load(browser, deploymentUrl);
@@ -1007,7 +1132,8 @@ public class ImsQTI21Test extends Deployments {
 		// participant ends the test
 		qtiPage
 			.endTest()//auto close because 1 part, no feedbacks
-			.assertOnCourseAssessmentTestScore(2);
+			.assertOnCourseAssessmentTestScore(2)
+			.assertOnCourseAssessmentTestPassed();
 		
 		// author wait the status changes
 		assessmentTool
@@ -1148,6 +1274,377 @@ public class ImsQTI21Test extends Deployments {
 		qtiPage = QTI21Page
 			.getQTI21Page(participantBrowser)
 			.assertOnCourseAssessmentTestScore(2);
+	}
+	
+	
+	/**
+	 * An author create a test with essay and single choice, configures it
+	 * with grading, add a grader then makes a course. A user play the test,
+	 * the grader correct it, the author set the test as passed and free the
+	 * results. The user reloads the results to see passed!
+	 * 
+	 * @param participantBrowser The participant browser
+	 * @param graderBrowser The grader browser
+	 * @throws IOException
+	 * @throws URISyntaxException
+	 */
+	@Test
+	@RunAsClient
+	public void qti21CourseTestGradingWorkflow(@Drone @Participant WebDriver participantBrowser,
+		@Drone @User WebDriver graderBrowser)
+	throws IOException, URISyntaxException {
+		
+		UserVO author = new UserRestClient(deploymentUrl).createRandomAuthor();
+		UserVO participant = new UserRestClient(deploymentUrl).createRandomUser("Hakufu");
+		UserVO grader = new UserRestClient(deploymentUrl).createRandomUser("Hakufu");
+		
+		LoginPage loginPage = LoginPage.load(browser, deploymentUrl);
+		loginPage.loginAs(author.getLogin(), author.getPassword());
+		
+		//upload a test and prepare the grading configuration
+		String qtiTestTitle = "Correction 2.1 " + UUID.randomUUID();
+		URL qtiTestUrl = JunitTestHelper.class.getResource("file_resources/qti21/test_sc_essay_mc.zip");
+		File qtiTestFile = new File(qtiTestUrl.toURI());
+		NavigationPage navBar = NavigationPage.load(browser);
+		navBar
+			.openAuthoringEnvironment()
+			.uploadResource(qtiTestTitle, qtiTestFile)
+			.clickToolbarRootCrumb();
+			
+		QTI21Page qtiPage = QTI21Page
+				.getQTI21Page(browser);
+		QTI21GradingPage gradingPage = qtiPage
+			.grading();
+		gradingPage
+			.settings()
+			.enable()
+			.setPeriods(9, 5, 7)
+			.selectMailTemplate()
+			.save();
+		
+		gradingPage
+			.graders()
+			.addGrader(grader)
+			.assertGrader(grader);
+
+		qtiPage
+			.clickToolbarBack();
+		
+		//create a course
+		String courseTitle = "Grading QTI 2.1 " + UUID.randomUUID();
+		navBar
+			.openAuthoringEnvironment()
+			.createCourse(courseTitle)
+			.clickToolbarBack();
+		
+		String testNodeTitle = "QTI21Grading-1";
+		
+		//create a course element of type CP with the CP that we create above
+		CourseEditorPageFragment courseEditor = CoursePageFragment.getCourse(browser)
+			.edit();
+		courseEditor
+			.createNode("iqtest")
+			.nodeTitle(testNodeTitle)
+			.selectTabLearnContent()
+			.chooseTest(qtiTestTitle);
+		OOGraphene.closeWarningBox(browser);//close the warning
+		
+		QTI21ConfigurationCEPage configPage = new QTI21ConfigurationCEPage(browser);
+		configPage
+			.selectConfiguration()
+			.setCorrectionMode("grading")
+			.saveConfiguration();
+		
+		courseEditor
+			.autoPublish()
+			.settings()
+			.accessConfiguration()
+			.setUserAccess(UserAccess.membersOnly)
+			.save();
+		
+		//add a participant
+		CoursePageFragment courseRuntime = courseEditor
+			.clickToolbarBack();
+		courseRuntime
+			.publish()
+			.members()
+			.quickAdd(participant);
+		
+		//a user search the course and make the test
+		LoginPage userLoginPage = LoginPage.load(participantBrowser, deploymentUrl);
+		userLoginPage
+			.loginAs(participant.getLogin(), participant.getPassword())
+			.resume();
+		NavigationPage userNavBar = NavigationPage.load(participantBrowser);
+		userNavBar
+			.openMyCourses()
+			.openSearch()
+			.extendedSearch(courseTitle)
+			.select(courseTitle);
+		
+		// open the course and see the test
+		CoursePageFragment course = CoursePageFragment.getCourse(participantBrowser);		
+		course
+			.clickTree()
+			.selectWithTitle(testNodeTitle);
+		QTI21Page participantQtiPage = QTI21Page
+				.getQTI21Page(participantBrowser);
+		participantQtiPage
+			.assertOnStart()
+			.start()
+			.assertOnAssessmentItem()
+			.answerSingleChoiceWithParagraph("Correct answer")
+			.saveAnswer()
+			.assertOnAssessmentItem("Essay")
+			.answerEssay("Bla bla bla")
+			.saveAnswer()
+			.answerMultipleChoice("Good choice", "Bad choice")
+			.saveAnswer()
+			.endTest()
+			.assertOnCourseAssessmentTestWaitingCorrection();
+		
+		// grader assignment
+		LoginPage graderLoginPage = LoginPage.load(graderBrowser, deploymentUrl);
+		graderLoginPage
+			.loginAs(grader.getLogin(), grader.getPassword())
+			.resume();
+		
+		NavigationPage graderNavBar = NavigationPage.load(graderBrowser);
+		graderNavBar
+			.openCoaching()
+			.assertOnGrading()
+			.startGrading(testNodeTitle)
+			.assertOnAssessmentItemNotCorrected("Essay", 0)
+			.selectAssessmentItem("Essay")
+			.setScore("1.0")
+			.save()
+			.assertOnStatusOk()
+			.back()
+			.publish()
+			.confirmDialog();
+		
+		// author check the assignment
+		navBar
+			.openAuthoringEnvironment()
+			.selectResource(qtiTestTitle);
+		qtiPage
+			.grading()
+			.graders()
+			.assertGraderAssignmentsDone(grader, 1);
+		// go in assessment tool to free the results
+		navBar
+			.openAuthoringEnvironment()
+			.selectResource(courseTitle);
+		
+		courseRuntime
+			.assessmentTool()
+			.users()
+			.assertOnUsers(participant)
+			.selectUser(participant)
+			.selectUsersCourseNode(testNodeTitle)
+			.reopenAssessment()
+			.setAssessmentPassed(Boolean.TRUE)
+			.setAssessmentVisibility(true)
+			.closeAssessment()
+			.assertUserPassedCourseNode(testNodeTitle);
+		
+		// participant checks its result
+		course
+			.clickTree()
+			.selectWithTitle(testNodeTitle);
+		participantQtiPage
+			.assertOnCourseAssessmentTestScore(2)
+			.assertOnCourseAssessmentTestPassed();
+	}
+	
+
+	/**
+	 * An author create a test with essay and single choice, configures it
+	 * with grading, forget to add the grader, then makes a course. A user
+	 * play the test, the author add a grader to the assignment and the grader
+	 * correct it, the author set the test as passed and free the results.
+	 * The user reloads the results to see passed!
+	 * 
+	 * @param participantBrowser The participant browser
+	 * @param graderBrowser The grader browser
+	 * @throws IOException
+	 * @throws URISyntaxException
+	 */
+	@Test
+	@RunAsClient
+	public void qti21CourseTestGradingAfterwardsAssignment(@Drone @Participant WebDriver participantBrowser,
+		@Drone @User WebDriver graderBrowser)
+	throws IOException, URISyntaxException {
+		
+		UserVO author = new UserRestClient(deploymentUrl).createRandomAuthor();
+		UserVO participant = new UserRestClient(deploymentUrl).createRandomUser("Hakufu");
+		UserVO grader = new UserRestClient(deploymentUrl).createRandomUser("Hakufu");
+		
+		LoginPage loginPage = LoginPage.load(browser, deploymentUrl);
+		loginPage.loginAs(author.getLogin(), author.getPassword());
+		
+		//upload a test and prepare the grading configuration
+		String qtiTestTitle = "Correction 2.1 " + UUID.randomUUID();
+		URL qtiTestUrl = JunitTestHelper.class.getResource("file_resources/qti21/test_sc_essay_mc.zip");
+		File qtiTestFile = new File(qtiTestUrl.toURI());
+		NavigationPage navBar = NavigationPage.load(browser);
+		navBar
+			.openAuthoringEnvironment()
+			.uploadResource(qtiTestTitle, qtiTestFile)
+			.clickToolbarRootCrumb();
+			
+		QTI21Page qtiPage = QTI21Page
+				.getQTI21Page(browser);
+		QTI21GradingPage gradingPage = qtiPage
+			.grading();
+		gradingPage
+			.settings()
+			.enable()
+			.setPeriods(9, 5, 7)
+			.selectMailTemplate()
+			.save();
+
+		qtiPage
+			.clickToolbarBack();
+		
+		//create a course
+		String courseTitle = "Grading QTI 2.1 " + UUID.randomUUID();
+		navBar
+			.openAuthoringEnvironment()
+			.createCourse(courseTitle)
+			.clickToolbarBack();
+		
+		String testNodeTitle = "QTI21Grading-1";
+		
+		//create a course element of type CP with the CP that we create above
+		CourseEditorPageFragment courseEditor = CoursePageFragment.getCourse(browser)
+			.edit();
+		courseEditor
+			.createNode("iqtest")
+			.nodeTitle(testNodeTitle)
+			.selectTabLearnContent()
+			.chooseTest(qtiTestTitle);
+		OOGraphene.closeWarningBox(browser);//close the warning
+		
+		QTI21ConfigurationCEPage configPage = new QTI21ConfigurationCEPage(browser);
+		configPage
+			.selectConfiguration()
+			.setCorrectionMode("grading")
+			.saveConfiguration();
+		
+		courseEditor
+			.autoPublish()
+			.settings()
+			.accessConfiguration()
+			.setUserAccess(UserAccess.membersOnly)
+			.save();
+		
+		//add a participant
+		CoursePageFragment courseRuntime = courseEditor
+			.clickToolbarBack();
+		courseRuntime
+			.publish()
+			.members()
+			.quickAdd(participant);
+		
+		//a user search the course and make the test
+		LoginPage userLoginPage = LoginPage.load(participantBrowser, deploymentUrl);
+		userLoginPage
+			.loginAs(participant.getLogin(), participant.getPassword())
+			.resume();
+		NavigationPage userNavBar = NavigationPage.load(participantBrowser);
+		userNavBar
+			.openMyCourses()
+			.openSearch()
+			.extendedSearch(courseTitle)
+			.select(courseTitle);
+		
+		// open the course and see the test
+		CoursePageFragment course = CoursePageFragment.getCourse(participantBrowser);		
+		course
+			.clickTree()
+			.selectWithTitle(testNodeTitle);
+		QTI21Page participantQtiPage = QTI21Page
+				.getQTI21Page(participantBrowser);
+		participantQtiPage
+			.assertOnStart()
+			.start()
+			.assertOnAssessmentItem()
+			.answerSingleChoiceWithParagraph("Correct answer")
+			.saveAnswer()
+			.assertOnAssessmentItem("Essay")
+			.answerEssay("Bla bla bla")
+			.saveAnswer()
+			.answerMultipleChoice("Good choice", "Bad choice")
+			.saveAnswer()
+			.endTest()
+			.assertOnCourseAssessmentTestWaitingCorrection();
+
+		// author returns to test and assign the test to a new grader
+		navBar
+			.openAuthoringEnvironment()
+			.selectResource(qtiTestTitle);
+		
+		gradingPage = qtiPage
+			.grading();
+		gradingPage
+			.assignments()
+			.assertAssignmentUnassigned(testNodeTitle)
+			.openAssignmentUnassignedTool(testNodeTitle)
+			.addGrader(grader);
+		
+		// grader assignment
+		LoginPage graderLoginPage = LoginPage.load(graderBrowser, deploymentUrl);
+		graderLoginPage
+			.loginAs(grader.getLogin(), grader.getPassword())
+			.resume();
+		
+		NavigationPage graderNavBar = NavigationPage.load(graderBrowser);
+		graderNavBar
+			.openCoaching()
+			.assertOnGrading()
+			.startGrading(testNodeTitle)
+			.assertOnAssessmentItemNotCorrected("Essay", 0)
+			.selectAssessmentItem("Essay")
+			.setScore("1.0")
+			.save()
+			.assertOnStatusOk()
+			.back()
+			.publish()
+			.confirmDialog();
+		
+		// author check the assignment
+		navBar
+			.openAuthoringEnvironment()
+			.selectResource(qtiTestTitle);
+		qtiPage
+			.grading()
+			.graders()
+			.assertGraderAssignmentsDone(grader, 1);
+		// go in assessment tool to free the results
+		navBar
+			.openAuthoringEnvironment()
+			.selectResource(courseTitle);
+		
+		courseRuntime
+			.assessmentTool()
+			.users()
+			.assertOnUsers(participant)
+			.selectUser(participant)
+			.selectUsersCourseNode(testNodeTitle)
+			.reopenAssessment()
+			.setAssessmentPassed(Boolean.TRUE)
+			.setAssessmentVisibility(true)
+			.closeAssessment()
+			.assertUserPassedCourseNode(testNodeTitle);
+		
+		// participant checks its result
+		course
+			.clickTree()
+			.selectWithTitle(testNodeTitle);
+		participantQtiPage
+			.assertOnCourseAssessmentTestScore(2)
+			.assertOnCourseAssessmentTestPassed();
 	}
 	
 	/**

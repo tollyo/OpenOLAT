@@ -26,11 +26,15 @@
 
 package org.olat.core.gui.components.form.flexible.impl.elements;
 
+import java.util.List;
+
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.ComponentRenderer;
 import org.olat.core.gui.components.form.flexible.impl.FormBaseComponentImpl;
 import org.olat.core.gui.control.JSAndCSSAdder;
 import org.olat.core.gui.render.ValidationResult;
+
+import edu.emory.mathcs.backport.java.util.Arrays;
 
 /**
  * Description:<br>
@@ -46,6 +50,10 @@ class TextAreaElementComponent extends FormBaseComponentImpl {
 	private int rows;
 	private boolean autoHeightEnabled = false;
 	private boolean fixedFontWidth = false;
+	private boolean originalLineBreaks = false;
+	private boolean lineNumbersEnabled = false;
+	private boolean stripedBackgroundEnabled = false;
+	private List<Integer> errorRows;
 
 	/**
 	 * Constructor for a text area element
@@ -57,14 +65,17 @@ class TextAreaElementComponent extends FormBaseComponentImpl {
 	 * @param isAutoHeightEnabled true: element expands to fit content height,
 	 *          (max 100 lines); false: specified rows used
 	 * @param fixedFontWidth 
+	 * @param originalLineBreaks Try to maintain the original line breaks and prevent the browser to add its own
 	 */
-	public TextAreaElementComponent(TextAreaElementImpl element, int rows, int cols, boolean isAutoHeightEnabled, boolean fixedFontWidth) {
+	public TextAreaElementComponent(TextAreaElementImpl element, int rows, int cols,
+			boolean isAutoHeightEnabled, boolean fixedFontWidth, boolean originalLineBreaks) {
 		super(element.getName());
 		this.element = element;
 		setCols(cols);
 		setRows(rows);
 		this.autoHeightEnabled = isAutoHeightEnabled;
 		this.fixedFontWidth = fixedFontWidth;
+		this.originalLineBreaks = originalLineBreaks;
 	}
 
 	TextAreaElementImpl getTextAreaElementImpl() {
@@ -102,6 +113,62 @@ class TextAreaElementComponent extends FormBaseComponentImpl {
 
 	public boolean isFixedFontWidth() {
 		return fixedFontWidth;
+	}
+	
+	public void setFixedFontWidth(boolean fixedFontWidth) {
+		this.fixedFontWidth = fixedFontWidth;
+		setDirty(true);
+	}
+	
+	public boolean isOriginalLineBreaks() {
+		return originalLineBreaks;
+	}
+	
+	public void setOriginalLineBreaks(boolean originalLineBreaks) {
+		this.originalLineBreaks = originalLineBreaks;
+		setDirty(true);
+	}
+	
+	public boolean isLineNumbersEnabled() {
+		return lineNumbersEnabled;
+	}
+	
+	public void setLineNumbersEnabled(boolean lineNumbersEnabled) {
+		this.lineNumbersEnabled = lineNumbersEnabled;
+		setDirty(true);
+	}
+	
+	public boolean isStripedBackgroundEnabled() {
+		return stripedBackgroundEnabled;
+	}
+	
+	public void setStripedBackgroundEnabled(boolean stripedBackgroundEnabled) {
+		this.stripedBackgroundEnabled = stripedBackgroundEnabled;
+		setDirty(true);
+	}
+	
+	public void setErrors(List<Integer> rows) {
+		if (rows == null || rows.isEmpty()) {
+			return;
+		}
+		
+		this.errorRows = rows;
+		
+		setDirty(true);
+	}
+	
+	public List<Integer> getErrors() {
+		return errorRows;
+	}
+	
+	public String getErrorsAsString() {
+		String[] errorsArray = new String[errorRows.size()];
+		
+		for (int i = 0; i < errorRows.size(); i++) {
+			errorsArray[i] = errorRows.get(i).toString();
+		}
+		
+		return Arrays.toString(errorsArray);
 	}
 
 	@Override

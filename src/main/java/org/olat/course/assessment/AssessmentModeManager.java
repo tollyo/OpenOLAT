@@ -51,6 +51,8 @@ public interface AssessmentModeManager {
 	public AssessmentMode createAssessmentMode(RepositoryEntry entry);
 	
 	public AssessmentMode createAssessmentMode(LectureBlock lectureBlock, int leadTime, int followUpTime, String ips, String sebKeys);
+	
+	public AssessmentMode createAssessmentMode(AssessmentMode assessmentMode);
 
 	/**
 	 * Create and persist a relation between the specified assessment mode
@@ -62,6 +64,8 @@ public interface AssessmentModeManager {
 	 */
 	public AssessmentModeToGroup createAssessmentModeToGroup(AssessmentMode mode, BusinessGroup group);
 	
+	public void deleteAssessmentModeToGroup(AssessmentModeToGroup mode);
+	
 	/**
 	 * Create and persist a relation between the specified assessment mode
 	 * and an area.
@@ -71,6 +75,8 @@ public interface AssessmentModeManager {
 	 * @return A relation assessment mode to area
 	 */
 	public AssessmentModeToArea createAssessmentModeToArea(AssessmentMode mode, BGArea area);
+	
+	public void deleteAssessmentModeToArea(AssessmentModeToArea modeToArea);
 	
 	/**
 	 * Create and persist a relation between the specified assessment mode
@@ -82,7 +88,9 @@ public interface AssessmentModeManager {
 	 */
 	public AssessmentModeToCurriculumElement createAssessmentModeToCurriculumElement(AssessmentMode mode, CurriculumElement curriculumElement);
 	
-
+	public void deleteAssessmentModeToCurriculumElement(AssessmentModeToCurriculumElement modeToCurriculumElement);
+	
+	
 	public AssessmentMode persist(AssessmentMode assessmentMode);
 	
 	/**
@@ -105,7 +113,7 @@ public interface AssessmentModeManager {
 	/**
 	 * Delete a specific assessment mode.
 	 * 
-	 * @param assessmentMode
+	 * @param assessmentMode The assessment mode to delete
 	 */
 	public void delete(AssessmentMode assessmentMode);
 	
@@ -118,7 +126,7 @@ public interface AssessmentModeManager {
 	/**
 	 * Search the whole assessment modes on the system.
 	 * 
-	 * @param params
+	 * @param params The search parameters
 	 * @return A list of assessment modes
 	 */
 	public List<AssessmentMode> findAssessmentMode(SearchAssessmentModeParams params);
@@ -141,15 +149,19 @@ public interface AssessmentModeManager {
 	public List<AssessmentMode> getPlannedAssessmentMode(RepositoryEntryRef entry, Date from, Date to);
 	
 	/**
-	 * Load the assessment mode for a specific user now.
+	 * Load the assessment mode for a specific user now. The status
+	 * of the assessment mode is checked and if the user has some
+	 * disadvantage compensations.
 	 * 
-	 * @param identity
-	 * @return
+	 * @param identity The identity
+	 * @return The active assessment mode for the specified user
 	 */
 	public List<AssessmentMode> getAssessmentModeFor(IdentityRef identity);
 	
 	/**
 	 * This return all modes between the begin date minus lead time and end time.
+	 * Or if the assessment modes are stopped but some users with disadvantage
+	 * compensations are still at work.
 	 * 
 	 * @return The list of modes
 	 */
@@ -157,6 +169,8 @@ public interface AssessmentModeManager {
 	
 	/**
 	 * Return true if the course is in assessment mode at the specified time.
+	 * Disadvantage compensations are taken in account.
+	 * 
 	 * @param entry The course
 	 * @param date The date
 	 * @return true if the course is in assessment mode
@@ -177,27 +191,27 @@ public interface AssessmentModeManager {
 	
 	/**
 	 * Return the list of assessed users specified in the configuration.
-	 * @param assessmentMode
-	 * @return
+	 * 
+	 * @param assessmentMode The assessment mode
+	 * @return A list of identity keys
 	 */
 	public Set<Long> getAssessedIdentityKeys(AssessmentMode assessmentMode);
 	
 	public boolean isNodeInUse(RepositoryEntryRef entry, CourseNode node);
 	
-	
 	/**
 	 * 
-	 * @param ipList
-	 * @param address
-	 * @return
+	 * @param ipList A list of IPs as string
+	 * @param address An address, IP or domain
+	 * @return true if the specified address match the ips list
 	 */
 	public boolean isIpAllowed(String ipList, String address);
 	
 	/**
 	 * 
-	 * @param request
-	 * @param safeExamBrowserKey
-	 * @return
+	 * @param request The HTTP request
+	 * @param safeExamBrowserKey The key
+	 * @return true if the request is allowed based on the specified key
 	 */
 	public boolean isSafelyAllowed(HttpServletRequest request, String safeExamBrowserKeys);
 

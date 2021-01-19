@@ -22,21 +22,28 @@ package org.olat.modules.quality.manager;
 import static java.util.Collections.singletonList;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.olat.modules.quality.QualityReportAccessReference.of;
+import static org.olat.test.JunitTestHelper.random;
 
+import java.util.Collections;
 import java.util.List;
-import java.util.UUID;
 
 import org.assertj.core.api.SoftAssertions;
 import org.junit.Before;
 import org.junit.Test;
+import org.olat.basesecurity.BaseSecurityManager;
 import org.olat.basesecurity.Group;
 import org.olat.basesecurity.GroupRoles;
 import org.olat.basesecurity.IdentityRelationshipService;
+import org.olat.basesecurity.OrganisationRoles;
+import org.olat.basesecurity.OrganisationService;
 import org.olat.basesecurity.RelationRight;
 import org.olat.basesecurity.RelationRole;
 import org.olat.basesecurity.manager.GroupDAO;
 import org.olat.core.commons.persistence.DB;
 import org.olat.core.id.Identity;
+import org.olat.core.id.Organisation;
+import org.olat.core.id.RolesByOrganisation;
+import org.olat.course.certificate.CertificateEmailRightProvider;
 import org.olat.modules.curriculum.CurriculumElement;
 import org.olat.modules.curriculum.CurriculumRoles;
 import org.olat.modules.curriculum.CurriculumService;
@@ -46,9 +53,11 @@ import org.olat.modules.forms.EvaluationFormParticipationStatus;
 import org.olat.modules.forms.EvaluationFormSession;
 import org.olat.modules.quality.QualityDataCollection;
 import org.olat.modules.quality.QualityDataCollectionRef;
+import org.olat.modules.quality.QualityDataCollectionStatus;
 import org.olat.modules.quality.QualityReportAccess;
 import org.olat.modules.quality.QualityReportAccess.EmailTrigger;
 import org.olat.modules.quality.QualityReportAccess.Type;
+import org.olat.modules.quality.QualityReportAccessRightProvider;
 import org.olat.modules.quality.QualityReportAccessSearchParams;
 import org.olat.modules.quality.QualityService;
 import org.olat.modules.quality.generator.QualityGenerator;
@@ -83,6 +92,10 @@ public class QualityReportAccessDAOTest extends OlatTestCase {
 	private GroupDAO groupDao;
 	@Autowired
 	private IdentityRelationshipService identityRelationshipService;
+	@Autowired
+	private BaseSecurityManager baseSecurityManager;
+	@Autowired
+	private OrganisationService organisatioService;
 	
 	@Autowired
 	private QualityReportAccessDAO sut;
@@ -197,7 +210,7 @@ public class QualityReportAccessDAOTest extends OlatTestCase {
 	public void shouldDeleteByDataCollection() {
 		QualityDataCollectionRef dc = qualityTestHelper.createDataCollection();
 		sut.create(of(dc), QualityReportAccess.Type.TopicIdentity, null);
-		sut.create(of(dc), QualityReportAccess.Type.CurriculumRoles, null);
+		sut.create(of(dc), QualityReportAccess.Type.ReportMember, null);
 		QualityDataCollectionRef dcOther = qualityTestHelper.createDataCollection();
 		QualityReportAccess reportAccessOther = sut.create(of(dcOther), QualityReportAccess.Type.TopicIdentity, null);
 		dbInstance.commitAndCloseSession();
@@ -219,7 +232,7 @@ public class QualityReportAccessDAOTest extends OlatTestCase {
 	public void shouldDeleteByGenerator() {
 		QualityGenerator generator = qualityTestHelper.createGenerator();
 		sut.create(of(generator), QualityReportAccess.Type.TopicIdentity, null);
-		sut.create(of(generator), QualityReportAccess.Type.CurriculumRoles, null);
+		sut.create(of(generator), QualityReportAccess.Type.ReportMember, null);
 		QualityGenerator generatorOther = qualityTestHelper.createGenerator();
 		QualityReportAccess reportAccessOther = sut.create(of(generatorOther), QualityReportAccess.Type.TopicIdentity, null);
 		dbInstance.commitAndCloseSession();
@@ -280,7 +293,7 @@ public class QualityReportAccessDAOTest extends OlatTestCase {
 	public void shouldFilterByDataCollection() {
 		QualityDataCollectionRef dc = qualityTestHelper.createDataCollection();
 		QualityReportAccess access1 = sut.create(of(dc), QualityReportAccess.Type.TopicIdentity, null);
-		QualityReportAccess access2 = sut.create(of(dc), QualityReportAccess.Type.CurriculumRoles, null);
+		QualityReportAccess access2 = sut.create(of(dc), QualityReportAccess.Type.ReportMember, null);
 		QualityDataCollectionRef dcOther = qualityTestHelper.createDataCollection();
 		QualityReportAccess accessOther = sut.create(of(dcOther), QualityReportAccess.Type.TopicIdentity, null);
 		dbInstance.commitAndCloseSession();
@@ -298,7 +311,7 @@ public class QualityReportAccessDAOTest extends OlatTestCase {
 	public void shouldFilterByGenerator() {
 		QualityGenerator generator = qualityTestHelper.createGenerator();
 		QualityReportAccess access1 = sut.create(of(generator), QualityReportAccess.Type.TopicIdentity, null);
-		QualityReportAccess access2 = sut.create(of(generator), QualityReportAccess.Type.CurriculumRoles, null);
+		QualityReportAccess access2 = sut.create(of(generator), QualityReportAccess.Type.ReportMember, null);
 		QualityGenerator generatorOther = qualityTestHelper.createGenerator();
 		QualityReportAccess accessOther = sut.create(of(generatorOther), QualityReportAccess.Type.TopicIdentity, null);
 		dbInstance.commitAndCloseSession();
@@ -484,8 +497,8 @@ public class QualityReportAccessDAOTest extends OlatTestCase {
 		Identity relSourceOtherRight = JunitTestHelper.createAndPersistIdentityAsUser("rtOtherRight");
 		Identity coachOther = JunitTestHelper.createAndPersistIdentityAsUser("cOther");
 		List<RelationRight> rights = identityRelationshipService.getAvailableRights();
-		RelationRight right = rights.get(0);
-		RelationRight rightOther = rights.get(1);
+		RelationRight right = rights.stream().filter(r -> r.getRight().equals(QualityReportAccessRightProvider.RELATION_RIGHT)).findFirst().get();
+		RelationRight rightOther = rights.stream().filter(r -> r.getRight().equals(CertificateEmailRightProvider.RELATION_RIGHT)).findFirst().get();
 		RelationRole role = identityRelationshipService.createRole(random(), singletonList(right));
 		RelationRole roleOtherRole = identityRelationshipService.createRole(random(), singletonList(right));
 		RelationRole roleOtherRight = identityRelationshipService.createRole(random(), singletonList(rightOther));
@@ -520,9 +533,56 @@ public class QualityReportAccessDAOTest extends OlatTestCase {
 						relSourceOtherRole,
 						coachOther);
 	}
-
-	private String random() {
-		return UUID.randomUUID().toString();
+	
+	@Test
+	public void shouldLoadReceviersForLearnResourceManagers() {
+		Identity executor = JunitTestHelper.createAndPersistIdentityAsRndUser("e1");
+		Organisation organisation1 = qualityTestHelper.createOrganisation();
+		Organisation organisation11 = qualityTestHelper.createOrganisation(organisation1);
+		Organisation organisation12 = qualityTestHelper.createOrganisation(organisation1);
+		
+		// learn resource manager
+		Identity learnresourceManager = JunitTestHelper.createAndPersistIdentityAsRndUser("lrm1");
+		RolesByOrganisation roles = new RolesByOrganisation(organisation11, singletonList(OrganisationRoles.learnresourcemanager));
+		baseSecurityManager.updateRoles(null, learnresourceManager, roles);
+		
+		// learn resource manager of parent organisation
+		Identity learnresourceManagerParent = JunitTestHelper.createAndPersistIdentityAsRndUser("lrm1P");
+		RolesByOrganisation rolesParent = new RolesByOrganisation(organisation1, singletonList(OrganisationRoles.learnresourcemanager));
+		baseSecurityManager.updateRoles(null, learnresourceManagerParent, rolesParent);
+		
+		// learn of other organisation branch
+		Identity learnresourceManagerOther = JunitTestHelper.createAndPersistIdentityAsRndUser("lrm2");
+		RolesByOrganisation rolesOther = new RolesByOrganisation(organisation12, singletonList(OrganisationRoles.learnresourcemanager));
+		baseSecurityManager.updateRoles(null, learnresourceManagerOther, rolesOther);
+		
+		// user manager
+		Identity userManager = JunitTestHelper.createAndPersistIdentityAsRndUser("um");
+		RolesByOrganisation umRoles = new RolesByOrganisation(organisation11, singletonList(OrganisationRoles.usermanager));
+		baseSecurityManager.updateRoles(null, userManager, umRoles);
+		dbInstance.commitAndCloseSession();
+		
+		QualityDataCollection dc = qualityTestHelper.createDataCollection();
+		dc = qualityService.updateDataCollectionStatus(dc, QualityDataCollectionStatus.FINISHED);
+		RepositoryEntry entry = JunitTestHelper.createAndPersistRepositoryEntry();
+		repositoryService.addOrganisation(entry, organisation11);
+		repositoryService.removeOrganisation(entry, organisatioService.getDefaultOrganisation());
+		List<EvaluationFormParticipation> participations = qualityService.addParticipations(dc, Collections.singletonList(executor));
+		qualityService.createContextBuilder(dc, participations.get(0), entry, GroupRoles.participant).build();
+		dbInstance.commitAndCloseSession();
+		
+		QualityReportAccess reportAccess = qualityService.createReportAccess(of(dc), Type.LearnResourceManager, null);
+		dbInstance.commitAndCloseSession();
+		
+		List<Identity> receivers = sut.loadRecipients(reportAccess);
+		
+		assertThat(receivers)
+				.containsExactlyInAnyOrder(
+						learnresourceManager,
+						learnresourceManagerParent)
+				.doesNotContain(
+						learnresourceManagerOther,
+						userManager);
 	}
 
 }

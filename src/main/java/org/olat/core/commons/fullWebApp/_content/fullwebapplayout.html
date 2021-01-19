@@ -6,22 +6,21 @@
 <meta name="google" content="notranslate" />
 <meta name="description" content="$r.translate("meta.description")" />
 <meta name="keywords" content="$r.translate("meta.keywords")" /> 
-<meta name="dcterms.creator" content="OpenOLAT - http://www.openolat.org" />
+<meta name="dcterms.creator" content="OpenOLAT - https://www.openolat.org" />
 <meta name="dcterms.subject" content="OpenOLAT - infinite learning - Your Open Source Learning Management System" />
-<meta name="dcterms.contributor" content="see http://www.openolat.org" />
+<meta name="dcterms.contributor" content="see https://www.openolat.org" />
 <meta name="dcterms.date" content="2010-03-16" />
 <meta name="dcterms.type" content="Interactive Resource" />
-<meta name="dcterms.identifier" content="http://www.openolat.org" />
-<meta name="dcterms.rights" content="http://www.openolat.org" />
+<meta name="dcterms.identifier" content="https://www.openolat.org" />
+<meta name="dcterms.rights" content="https://www.openolat.org" />
 ## hide toolbar on ios with minimal-ui
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta http-equiv="Content-type" content="text/html; charset=utf-8" />
-## <!-- IE cache -->
 <script>
-/* <![CDATA[ */ 
 var o_info = new Object();
 o_info.initialPageLoadFinished = false;
 o_info.o_winid = '$o_winid';
+window.name  = '$o_winid';
 #if($userJSON)o_info.o_user = $userJSON; #end 
 o_info.uriprefix="$r.relWinLink()";
 o_info.bc="$o_bc";
@@ -46,6 +45,8 @@ o_info.edusharing_enabled = true;
 #end
 ## Initialize zindex manager
 o_info.zseed = 0;
+o_info.newWindow=null;
+o_info.submit=null;
 #if($enforceTopFrame)
 if (top!=self){top.location=self.location+"?o_winrndo=1";}
 #end
@@ -94,18 +95,16 @@ function o_mathjax(fct_success) {
 $!analytics
 ##
 
-/* ]]> */
-</script>
-<script>
-/* <![CDATA[ */ 
 try{
 	if(o_info.startBusinessPath != null && o_info.startBusinessPath.length > 0
 			&& window.history && !(typeof window.history === "undefined") && window.history.pushState) {
 		window.history.pushState('', document.title, o_info.startBusinessPath);
 		o_info.startBusinessPath = null;
 	}
+	if (document.location.href.indexOf('oow') != -1) {
+		window.history.replaceState(window.history.state, document.title, window.location.href.split("?")[0]);
+	}
 } catch(e) { }
-/* ]]> */
 </script>
 ## jQuery libraries
 <script src='$r.staticLink("js/jquery/jquery-3.4.1.min.js")'></script>
@@ -120,6 +119,7 @@ try{
 	<script src='$r.staticLink("js/functions.js")'></script>
 	<script src='$r.staticLink("js/jquery/transit/jquery.transit.js")'></script>
 	<script src='$r.staticLink("js/iframeResizer/iframeResizer.min.js")'></script>
+	<script src='$r.staticLink("js/openolat/textarea.js")'></script>
 	## Bootstrap js
 	##<script src='$r.staticLink("bootstrap/javascripts/bootstrap/affix.js")'></script>
 	<script src='$r.staticLink("bootstrap/javascripts/bootstrap/alert.js")'></script>
@@ -143,7 +143,7 @@ try{
 
 #if($r.available("guidebug"))
 	<link href='$r.staticLink("js/jquery/tagsinput/bootstrap-tagsinput.css")' rel="stylesheet" />
-	<link href='$r.staticLink("js/jquery/fullcalendar/fullcalendar.css")' rel="stylesheet" />
+	<link href='$r.staticLink("js/fullcalendar/main.css")' rel="stylesheet" />
 	<link href='$r.staticLink("js/jquery/cropper/cropper.css")' rel="stylesheet" />
 	<link href='$r.staticLink("js/jquery/sliderpips/jquery-ui-slider-pips.css")' rel="stylesheet" />
 	<link href='$r.staticLink("js/jquery/ui/jquery-ui-1.11.4.custom.min.css")' rel="stylesheet" />
@@ -152,7 +152,6 @@ try{
 	<link href='$r.staticLink("js/js.plugins.min.css")' rel="stylesheet" />
 #end
 <script>
-/* <![CDATA[ */ 
 	jQuery.noConflict();
 	
 	## Initialize js translator factory with the js translator mapper path
@@ -161,9 +160,26 @@ try{
 	## History and back button support
 	jQuery(window).on("popstate", function(e) {
 		if(e.originalEvent.state && e.originalEvent.state.businessPath) {
-			window.location.href = e.originalEvent.state.businessPath;
+			if (e.originalEvent.state.businessPath.indexOf('oow') == -1) {
+				var windowedPath = e.originalEvent.state.businessPath + '?oow=' + window.name;
+				window.history.replaceState(e.originalEvent.state, document.title, windowedPath);
+				window.location.reload();
+			} else {
+				window.location.href = e.originalEvent.state.businessPath;
+			}
 		}
 	});
+	
+	var closing = function(e) {
+		if(navigator.sendBeacon) {
+			var beaconUrl = '$r.formURI("close-window")';
+			if(beaconUrl.indexOf("/dmz/") == -1) {
+				navigator.sendBeacon(beaconUrl, null);
+			}
+		}
+	};
+	window.onbeforeunload = closing;
+	window.onunload = closing;
 ## same configuration in 
 jQuery(function() {
 	if ((window.unsafeWindow == null ? window : unsafeWindow).MathJax == null) {
@@ -173,7 +189,6 @@ jQuery(function() {
 		}
 	}
 });
-/* ]]> */
 </script>
 
 ## LAYOUT
@@ -243,7 +258,7 @@ $r.renderForce("development")
 ## IE can't render empty div's properly which results in an ugly white bar.
 <div id="o_messages" class="hidden-print">$r.renderForce("guimessage")</div>
 ## ---- END #o_messages ---
-	
+<a id='o_top' aria-hidden="true"></a>	
 ## ---- START #o_header ---
 #if($screenMode.standardScreen)
 <div id="o_header_wrapper"> 
@@ -259,7 +274,7 @@ $r.renderForce("development")
 </div>
 #end
 ## ---- END #o_header ---	
-<a id='o_top' aria-hidden='true'></a>
+
 ## ---- START #o_navbar ---
 #if($screenMode.standardScreen)
 <div id="o_offcanvas_right" class="o_navbar o_navbar-offcanvas " role="navigation">
@@ -292,12 +307,10 @@ $r.renderForce("development")
 	<div id="o_go_full_width" title="$r.translateInAttribute("content.width.standard")" class="btn btn-default btn-xs o_noprint"><i class="o_icon o_icon_width_expand o_icon-fw"> </i></div>
 </div>
 <div><script>
-/* <![CDATA[ */ 
-	jQuery(document).ready(function() {
-		jQuery("#o_go_standard_width").click(function() { OPOL.setContainerFullWidth(0); $r.openNoResponseJavaScriptCommand("width.standard")); });
-		jQuery("#o_go_full_width").click(function() { OPOL.setContainerFullWidth(1); $r.openNoResponseJavaScriptCommand("width.full")); });
-	});
-/* ]]> */
+jQuery(document).ready(function() {
+	jQuery("#o_go_standard_width").click(function() { OPOL.setContainerFullWidth(0); $r.openNoResponseJavaScriptCommand("width.standard")); });
+	jQuery("#o_go_full_width").click(function() { OPOL.setContainerFullWidth(1); $r.openNoResponseJavaScriptCommand("width.full")); });
+});
 </script></div>
 #end
 ## ---- END #o_navbar ---
@@ -330,6 +343,7 @@ $r.render("stickymsg")
 ## This prevents an ugly IE bug that appears when the modal dialog is at the top of the page.
 ## IE can't render empty div's properly which results in an ugly white bar.
 $r.render("modalpanel")
+$r.render("topmodalpanel")
 ## ---- END #o_modal ---
 
 ## ----- START #o_form_dirty_message ----------
@@ -361,7 +375,14 @@ $r.render("modalpanel")
 ## ---- END #o_form_dirty_message ---
 
 ## the div for the busy-wait animated-gif
-<div id="o_ajax_busy"><i class="o_icon o_icon_busy o_icon-5x o_icon-spin"></i></div>
+<div id="o_ajax_busy">
+	<i class="o_icon o_icon_busy o_icon-5x o_icon-spin"></i>	
+	<div id="o_ajax_progress">
+		<div class="o_label">$r.translate("ajax.busy.progress")</div>
+		<div class="progress"><div class="progress-bar progress-bar-striped active" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%;"></div></div>
+		<div class="o_progress_info text-muted small"> </div>
+	</div>
+</div>
 
 ## hidden div for EM-PX factor readout 
 <div id="o_width_1em" style="width:1em; position: absolute; left: -1000px;"></div>

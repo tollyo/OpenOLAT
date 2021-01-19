@@ -138,7 +138,7 @@ public class UsrPropCfgTableController extends FormBasicController {
 		for (UserPropertyHandler handler : myHandlerList) {
 			handlerName = handler.getName();
 			// the group field
-			groupDropdown = uifactory.addDropdownSingleselect(FT_NAME_PREFIX_GRPN + handlerName, propTableFlc, selectableGroups,
+			groupDropdown = uifactory.addDropdownSingleselect(FT_NAME_PREFIX_GRPN + handlerName, null, propTableFlc, selectableGroups,
 					selectableGroups, null);
 
 			if (Arrays.asList(selectableGroups).contains(handler.getGroup())) {
@@ -162,23 +162,23 @@ public class UsrPropCfgTableController extends FormBasicController {
 
 			// the "translate" link
 			if (isPropertyHandlerTranslated(handler)) {
-				translateLink = uifactory.addFormLink(FT_NAME_PREFIX_TRANSL + handlerName, "upc.edittranslate", "label", propTableFlc, Link.LINK);
+				translateLink = uifactory.addFormLink(FT_NAME_PREFIX_TRANSL + handlerName, "upc.edittranslate", null, propTableFlc, Link.LINK);
 			} else {
-				translateLink = uifactory.addFormLink(FT_NAME_PREFIX_TRANSL + handlerName, "upc.translate", "label", propTableFlc, Link.LINK);
+				translateLink = uifactory.addFormLink(FT_NAME_PREFIX_TRANSL + handlerName, "upc.translate", null, propTableFlc, Link.LINK);
 				translateLink.setCustomEnabledLinkCSS("o_ochre");
 			}
 			translateLink.setUserObject(handler);
 
 			// the "handler-config" link
 			if (handlerConfigCtrlFactory.hasConfig(handler)) {
-				handlerLink = uifactory.addFormLink(FT_NAME_PREFIX_HDNL + handlerName, "upc.hndlconfig", "label", propTableFlc, Link.LINK);
+				handlerLink = uifactory.addFormLink(FT_NAME_PREFIX_HDNL + handlerName, "upc.hndlconfig", null, propTableFlc, Link.LINK);
 				handlerLink.setUserObject(handler);
 			}
 
 			// put the translation (in the current language) for the property
 			translatedName = I18nManager.getInstance().getLocalizedString(UserPropertyHandler.class.getPackage().getName(),
 					handler.i18nFormElementLabelKey(), null, getLocale(), true, true);
-			uifactory.addStaticTextElement(FT_NAME_PREFIX_TRANSNAME + handlerName,  (translatedName == null ? "-" : translatedName)  ,
+			uifactory.addStaticTextElement(FT_NAME_PREFIX_TRANSNAME + handlerName, null, (translatedName == null ? "-" : translatedName),
 					propTableFlc);
 		}
 		propTableFlc.contextPut("rows", myHandlerList);
@@ -216,7 +216,8 @@ public class UsrPropCfgTableController extends FormBasicController {
 				String key2Translate2 = handler.i18nColumnDescriptorLabelKey();
 
 				String[] keys2Translate = { key2Translate1, key2Translate2 };
-				singleKeyTrnsCtrl = new SingleKeyTranslatorController(ureq, getWindowControl(), keys2Translate, UserPropertyHandler.class);
+				singleKeyTrnsCtrl = new SingleKeyTranslatorController(ureq, getWindowControl(), keys2Translate,
+						UserPropertyHandler.class, SingleKeyTranslatorController.InputType.TEXT_ELEMENT, null);
 				listenTo(singleKeyTrnsCtrl);
 				removeAsListenerAndDispose(translatorCallout);
 				translatorCallout = new CloseableCalloutWindowController(ureq, getWindowControl(), singleKeyTrnsCtrl.getInitialComponent(),

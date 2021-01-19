@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import org.apache.logging.log4j.Logger;
 import org.hibernate.LazyInitializationException;
 import org.junit.Assert;
 import org.junit.Test;
@@ -49,28 +50,24 @@ import org.olat.core.id.OLATResourceable;
 import org.olat.core.id.Organisation;
 import org.olat.core.id.Roles;
 import org.olat.core.logging.AssertException;
-import org.apache.logging.log4j.Logger;
 import org.olat.core.logging.Tracing;
 import org.olat.core.util.CodeHelper;
 import org.olat.core.util.resource.OresHelper;
 import org.olat.group.BusinessGroup;
 import org.olat.group.BusinessGroupService;
 import org.olat.group.manager.BusinessGroupRelationDAO;
-import org.olat.repository.LeavingStatusList;
-import org.olat.repository.RepositoryEntry;
-import org.olat.repository.RepositoryEntryAllowToLeaveOptions;
-import org.olat.repository.RepositoryEntryManagedFlag;
-import org.olat.repository.RepositoryEntryOrder;
-import org.olat.repository.RepositoryEntrySecurity;
-import org.olat.repository.RepositoryEntryStatusEnum;
-import org.olat.repository.RepositoryManager;
-import org.olat.repository.RepositoryService;
 import org.olat.repository.manager.RepositoryEntryLifecycleDAO;
 import org.olat.repository.manager.RepositoryEntryRelationDAO;
 import org.olat.repository.model.RepositoryEntryLifecycle;
 import org.olat.repository.model.RepositoryEntryMembership;
 import org.olat.resource.OLATResource;
 import org.olat.resource.OLATResourceManager;
+import org.olat.resource.accesscontrol.ACService;
+import org.olat.resource.accesscontrol.Offer;
+import org.olat.resource.accesscontrol.OfferAccess;
+import org.olat.resource.accesscontrol.manager.ACMethodDAO;
+import org.olat.resource.accesscontrol.model.AccessMethod;
+import org.olat.resource.accesscontrol.model.TokenAccessMethod;
 import org.olat.test.JunitTestHelper;
 import org.olat.test.OlatTestCase;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -103,7 +100,11 @@ public class RepositoryManagerTest extends OlatTestCase {
 	@Autowired
 	private RepositoryEntryRelationDAO repositoryEntryRelationDao;
 	@Autowired
+	private ACService acService;
+	@Autowired
 	private MarkManager markManager;
+	@Autowired
+	private ACMethodDAO acMethodManager;
 	@Autowired
 	private RepositoryEntryLifecycleDAO lifecycleDao;
 
@@ -243,12 +244,12 @@ public class RepositoryManagerTest extends OlatTestCase {
 		repositoryEntryRelationDao.addRole(participant, re, GroupRoles.participant.name());
 		dbInstance.commitAndCloseSession();
 		
-		List<RepositoryEntry> entries = repositoryManager.queryByOwner(owner, true);
+		List<RepositoryEntry> entries = repositoryManager.queryByOwner(owner, true, null);
 		Assert.assertNotNull(entries);
 		Assert.assertEquals(1, entries.size());
 		Assert.assertTrue(entries.contains(re));
 		
-		List<RepositoryEntry> partEntries = repositoryManager.queryByOwner(participant, true);
+		List<RepositoryEntry> partEntries = repositoryManager.queryByOwner(participant, true, null);
 		Assert.assertNotNull(partEntries);
 		Assert.assertEquals(0, partEntries.size());
 	}
@@ -262,7 +263,7 @@ public class RepositoryManagerTest extends OlatTestCase {
 		repositoryEntryRelationDao.addRole(id, re, GroupRoles.owner.name());
 		dbInstance.commitAndCloseSession();
 		
-		List<RepositoryEntry> entries = repositoryManager.queryByOwner(id, true);
+		List<RepositoryEntry> entries = repositoryManager.queryByOwner(id, true, null);
 		Assert.assertNotNull(entries);
 		Assert.assertEquals(1, entries.size());
 		Assert.assertTrue(entries.contains(re));
@@ -426,11 +427,12 @@ public class RepositoryManagerTest extends OlatTestCase {
 		Identity participant = JunitTestHelper.createAndPersistIdentityAsRndUser("webdav-courses-2");
 		RepositoryEntry course = JunitTestHelper.deployBasicCourse(owner);
 		markManager.setMark(course, participant, null, "[RepositoryEntry:" + course.getKey() + "]");
+		repositoryEntryRelationDao.addRole(participant, course, GroupRoles.participant.name());
 		dbInstance.commitAndCloseSession();
 		
 		//participant bookmarks
 		Roles roles = Roles.userRoles();
-		List<RepositoryEntry> courses = repositoryManager.getLearningResourcesAsBookmark(participant, roles, "CourseModule", 0, -1);
+		List<RepositoryEntry> courses = repositoryManager.getLearningResourcesAsBookmarkedMember(participant, roles, "CourseModule", 0, -1);
 		Assert.assertNotNull(courses);
 		Assert.assertEquals(1, courses.size());
 	}
@@ -445,14 +447,71 @@ public class RepositoryManagerTest extends OlatTestCase {
 		RepositoryEntry course = JunitTestHelper.deployBasicCourse(owner);
 		markManager.setMark(course, participant, null, "[RepositoryEntry:" + course.getKey() + "]");
 		dbInstance.commitAndCloseSession();
-		repositoryManager.setAccess(course, RepositoryEntryStatusEnum.preparation, false, false);
+		repositoryManager.setAccess(course, RepositoryEntryStatusEnum.published, false, false);
 		dbInstance.commitAndCloseSession();
 		
 		//participant bookmarks
 		Roles roles = Roles.userRoles();
-		List<RepositoryEntry> courses = repositoryManager.getLearningResourcesAsBookmark(participant, roles, "CourseModule", 0, -1);
+		List<RepositoryEntry> courses = repositoryManager.getLearningResourcesAsBookmarkedMember(participant, roles, "CourseModule", 0, -1);
 		Assert.assertNotNull(courses);
 		Assert.assertEquals(0, courses.size());
+	}
+	
+	/**
+	 * Check that the method return only courses within the permissions of the user.
+	 */
+	@Test
+	public void getLearningResourcesAsBookmark_notPublished() {
+		Identity owner = JunitTestHelper.createAndPersistIdentityAsRndUser("webdav-courses-1");
+		Identity participant = JunitTestHelper.createAndPersistIdentityAsRndUser("webdav-courses-2");
+		RepositoryEntry course = JunitTestHelper.deployBasicCourse(owner);
+		markManager.setMark(course, participant, null, "[RepositoryEntry:" + course.getKey() + "]");
+		repositoryEntryRelationDao.addRole(participant, course, GroupRoles.participant.name());
+		dbInstance.commitAndCloseSession();
+		repositoryManager.setAccess(course, RepositoryEntryStatusEnum.coachpublished, false, false);
+		dbInstance.commitAndCloseSession();
+		
+		//participant bookmarks
+		Roles roles = Roles.userRoles();
+		List<RepositoryEntry> courses = repositoryManager.getLearningResourcesAsBookmarkedMember(participant, roles, "CourseModule", 0, -1);
+		Assert.assertNotNull(courses);
+		Assert.assertEquals(0, courses.size());
+	}
+	
+	/**
+	 * Check that the method return only courses within the permissions of the user.
+	 */
+	@Test
+	public void getLearningResourcesAsBookmark_noPermissionsBookable() {
+		Identity owner = JunitTestHelper.createAndPersistIdentityAsRndUser("webdav-courses-1");
+		Identity participant = JunitTestHelper.createAndPersistIdentityAsRndUser("webdav-courses-2");
+		RepositoryEntry course = JunitTestHelper.deployBasicCourse(owner);
+		markManager.setMark(course, participant, null, "[RepositoryEntry:" + course.getKey() + "]");
+		repositoryManager.setAccess(course, false, false, true, RepositoryEntryAllowToLeaveOptions.never, null);
+		repositoryManager.setAccess(course, RepositoryEntryStatusEnum.published, false, false);
+		
+		//create and save an offer
+		Offer offer = acService.createOffer(course.getOlatResource(), course.getDisplayname());
+		offer = acService.save(offer);
+		dbInstance.commitAndCloseSession();
+
+		//create a link offer to method
+		List<AccessMethod> methods = acMethodManager.getAvailableMethodsByType(TokenAccessMethod.class);
+		AccessMethod method = methods.get(0);
+		OfferAccess access = acMethodManager.createOfferAccess(offer, method);
+		acMethodManager.save(access);
+
+		dbInstance.commitAndCloseSession();
+
+		//participant bookmarks
+		Roles roles = Roles.userRoles();
+		List<RepositoryEntry> courses = repositoryManager.getLearningResourcesAsBookmarkedMember(participant, roles, "CourseModule", 0, -1);
+		Assert.assertNotNull(courses);
+		Assert.assertEquals(0, courses.size());
+		
+		// beacause it triggers issues with other tests
+		repositoryManager.setAccess(course, RepositoryEntryStatusEnum.preparation, false, false);
+		
 	}
 	
 	@Test
@@ -670,7 +729,7 @@ public class RepositoryManagerTest extends OlatTestCase {
 		
 		List<String> resourceTypes = Collections.singletonList(re.getOlatResource().getResourceableTypeName());
 		List<RepositoryEntry> entries = repositoryManager
-				.queryResourcesLimitType(id, Roles.authorRoles(), false, resourceTypes, "re-member", "me", "no", true, true);
+				.queryResourcesLimitType(id, Roles.authorRoles(), false, resourceTypes, "re-member", "me", "no", id, true, true);
 		Assert.assertNotNull(entries);
 	}
 	
@@ -688,7 +747,7 @@ public class RepositoryManagerTest extends OlatTestCase {
 			// create course and persist as OLATResourceImpl
 			Identity owner = (i % 2 > 0) ? id1 : id2;
 
-			OLATResourceable resourceable = OresHelper.createOLATResourceableInstance(resourceType, new Long(i));
+			OLATResourceable resourceable = OresHelper.createOLATResourceableInstance(resourceType, Long.valueOf(i));
 			OLATResource r =  OLATResourceManager.getInstance().createOLATResourceInstance(resourceable);
 			dbInstance.getCurrentEntityManager().persist(r);
 			
@@ -717,7 +776,8 @@ public class RepositoryManagerTest extends OlatTestCase {
 		List<String> typelist = Collections.singletonList(resourceType);
 		// finally the search query
 		long startSearchReferencable = System.currentTimeMillis();
-		List<RepositoryEntry> results = repositoryManager.queryResourcesLimitType(id1, id1Roles, false, typelist, null, null, null, true, false);
+		List<RepositoryEntry> results = repositoryManager.queryResourcesLimitType(id1, id1Roles, false, typelist,
+				null, null, null, null, true, false);
 		long endSearchReferencable = System.currentTimeMillis();
 		log.info("found " + results.size() + " repo entries " + (endSearchReferencable - startSearchReferencable) + "ms");
 
@@ -745,7 +805,7 @@ public class RepositoryManagerTest extends OlatTestCase {
 	@Test
 	public void getRepositoryentryMembership() {
 		//create a repository entry with an owner and a participant
-		Identity admin = securityManager.findIdentityByName("administrator");
+		Identity admin = JunitTestHelper.findIdentityByLogin("administrator");
 		Identity id1 = JunitTestHelper.createAndPersistIdentityAsRndUser("re-m-is1-");
 		Identity id2 = JunitTestHelper.createAndPersistIdentityAsRndUser("re-m-is2-");
 		Identity id3 = JunitTestHelper.createAndPersistIdentityAsRndUser("re-m-is3-");
@@ -1121,7 +1181,7 @@ public class RepositoryManagerTest extends OlatTestCase {
 	}
 
 	private RepositoryEntry createRepositoryEntry(final String type, Identity owner, long i) {
-		OLATResourceable resourceable = OresHelper.createOLATResourceableInstance(type, new Long(i));
+		OLATResourceable resourceable = OresHelper.createOLATResourceableInstance(type, Long.valueOf(i));
 		OLATResource r =  resourceManager.createOLATResourceInstance(resourceable);
 		dbInstance.saveObject(r);
 		

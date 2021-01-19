@@ -21,6 +21,7 @@
 package org.olat.course.nodes;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
@@ -44,6 +45,7 @@ import org.olat.core.util.Util;
 import org.olat.core.util.ValidationStatus;
 import org.olat.core.util.nodes.INode;
 import org.olat.course.ICourse;
+import org.olat.course.assessment.handler.AssessmentConfig.Mode;
 import org.olat.course.condition.Condition;
 import org.olat.course.condition.interpreter.ConditionInterpreter;
 import org.olat.course.editor.ConditionAccessEditConfig;
@@ -51,25 +53,23 @@ import org.olat.course.editor.CourseEditorEnv;
 import org.olat.course.editor.NodeEditController;
 import org.olat.course.editor.StatusDescription;
 import org.olat.course.export.CourseEnvironmentMapper;
+import org.olat.course.learningpath.ui.TabbableLeaningPathNodeConfigController;
+import org.olat.course.nodes.portfolio.PortfolioAssessmentConfig;
 import org.olat.course.nodes.portfolio.PortfolioCourseNodeConfiguration;
 import org.olat.course.nodes.portfolio.PortfolioCourseNodeConfiguration.DeadlineType;
 import org.olat.course.nodes.portfolio.PortfolioCourseNodeEditController;
 import org.olat.course.nodes.portfolio.PortfolioCourseNodeRunController;
+import org.olat.course.nodes.portfolio.PortfolioLearningPathNodeHandler;
 import org.olat.course.run.navigation.NodeRunConstructionResult;
 import org.olat.course.run.userview.CourseNodeSecurityCallback;
 import org.olat.course.run.userview.NodeEvaluation;
 import org.olat.course.run.userview.UserCourseEnvironment;
 import org.olat.modules.ModuleConfiguration;
 import org.olat.modules.portfolio.PortfolioService;
-import org.olat.portfolio.EPTemplateMapResource;
-import org.olat.portfolio.manager.EPFrontendManager;
-import org.olat.portfolio.manager.EPStructureManager;
-import org.olat.portfolio.model.structel.PortfolioStructure;
+import org.olat.modules.portfolio.handler.BinderTemplateResource;
 import org.olat.repository.RepositoryEntry;
 import org.olat.repository.RepositoryEntryImportExport;
 import org.olat.repository.RepositoryManager;
-import org.olat.repository.handlers.RepositoryHandler;
-import org.olat.repository.handlers.RepositoryHandlerFactory;
 
 
 /**
@@ -88,6 +88,7 @@ public class PortfolioCourseNode extends AbstractAccessableCourseNode {
 	
 	public static final String EDIT_CONDITION_ID = "editportfolio";
 	
+	@SuppressWarnings("deprecation")
 	private static final String PACKAGE_EP = Util.getPackageName(PortfolioCourseNodeRunController.class);
 	public static final String TYPE = "ep";
 	
@@ -106,19 +107,8 @@ public class PortfolioCourseNode extends AbstractAccessableCourseNode {
 		ModuleConfiguration config = getModuleConfiguration();
 		if (isNewNode) {
 			MSCourseNode.initDefaultConfig(config);
-			config.setConfigurationVersion(CURRENT_CONFIG_VERSION);
 		} 
-		if (config.getConfigurationVersion() < 2) {
-			if(config.get(PortfolioCourseNodeConfiguration.REPO_SOFT_KEY) == null) {
-				Object mapKey = config.get(PortfolioCourseNodeConfiguration.MAP_KEY);
-				if(mapKey instanceof Long) {
-					EPStructureManager eSTMgr = (EPStructureManager) CoreSpringFactory.getBean("epStructureManager");
-					RepositoryEntry re = eSTMgr.loadPortfolioRepositoryEntryByMapKey((Long)mapKey);
-					config.set(PortfolioCourseNodeConfiguration.REPO_SOFT_KEY, re.getSoftkey());
-				}
-			}
-			config.setConfigurationVersion(2);
-		}
+		config.setConfigurationVersion(CURRENT_CONFIG_VERSION);
 	}
 	
 	@Override
@@ -157,7 +147,13 @@ public class PortfolioCourseNode extends AbstractAccessableCourseNode {
 			String message = trans.translate("guestnoaccess.message");
 			controller = MessageUIFactory.createInfoMessage(ureq, wControl, title, message);
 		} else {
-			controller = new PortfolioCourseNodeRunController(ureq, wControl, userCourseEnv, this);
+			RepositoryEntry mapEntry = getReferencedRepositoryEntry();
+			if(mapEntry != null && BinderTemplateResource.TYPE_NAME.equals(mapEntry.getOlatResource().getResourceableTypeName())) {
+				controller = new PortfolioCourseNodeRunController(ureq, wControl, userCourseEnv, this);
+			} else {
+				Translator trans = Util.createPackageTranslator(PortfolioCourseNodeRunController.class, ureq.getLocale());
+				controller = MessageUIFactory.createInfoMessage(ureq, wControl, "", trans.translate("error.portfolioV1"));
+			}
 		}
 		Controller ctrl = TitledWrapperHelper.getWrapper(ureq, wControl, controller, this, "o_ep_icon");
 		return new NodeRunConstructionResult(ctrl);
@@ -191,12 +187,6 @@ public class PortfolioCourseNode extends AbstractAccessableCourseNode {
 			if(entry != null) {
 				return entry;
 			}
-		}
-		Long mapKey = (Long)getModuleConfiguration().get(PortfolioCourseNodeConfiguration.MAP_KEY);
-		if(mapKey != null) {
-			EPStructureManager eSTMgr = (EPStructureManager) CoreSpringFactory.getBean("epStructureManager");
-			RepositoryEntry re = eSTMgr.loadPortfolioRepositoryEntryByMapKey(mapKey);
-			return re;
 		}
 		return null;
 	}
@@ -264,13 +254,56 @@ public class PortfolioCourseNode extends AbstractAccessableCourseNode {
 		}
 		return sd;
 	}
-	
 	@Override
 	public StatusDescription[] isConfigValid(CourseEditorEnv cev) {
 		oneClickStatusCache = null;
 		List<StatusDescription> statusDescs = isConfigValidWithTranslator(cev, PACKAGE_EP, getConditionExpressions());
+		statusDescs.addAll(validateInternalConfiguration());
 		oneClickStatusCache = StatusDescriptionHelper.sort(statusDescs);
 		return oneClickStatusCache;
+	}
+	
+	private boolean isFullyAssessedScoreConfigError() {
+		boolean hasScore = Mode.none != new PortfolioAssessmentConfig(getModuleConfiguration()).getScoreMode();
+		boolean isScoreTrigger = CoreSpringFactory.getImpl(PortfolioLearningPathNodeHandler.class)
+				.getConfigs(this)
+				.isFullyAssessedOnScore(null, null)
+				.isEnabled();
+		return isScoreTrigger && !hasScore;
+	}
+	
+	private List<StatusDescription> validateInternalConfiguration() {
+		List<StatusDescription> sdList = new ArrayList<>(1);
+		
+		if (isFullyAssessedScoreConfigError()) {
+			addStatusErrorDescription("error.fully.assessed.score", "error.fully.assessed.score",
+					TabbableLeaningPathNodeConfigController.PANE_TAB_LEARNING_PATH, sdList);
+		}
+		if (isFullyAssessedPassedConfigError()) {
+			addStatusErrorDescription("error.fully.assessed.passed", "error.fully.assessed.passed",
+					TabbableLeaningPathNodeConfigController.PANE_TAB_LEARNING_PATH, sdList);
+		}
+		
+		return sdList;
+	}
+	
+	private boolean isFullyAssessedPassedConfigError() {
+		boolean hasPassed = Mode.none != new PortfolioAssessmentConfig(getModuleConfiguration()).getPassedMode();
+		boolean isPassedTrigger = CoreSpringFactory.getImpl(PortfolioLearningPathNodeHandler.class)
+				.getConfigs(this)
+				.isFullyAssessedOnPassed(null, null)
+				.isEnabled();
+		return isPassedTrigger && !hasPassed;
+	}
+	
+	private void addStatusErrorDescription(String shortDescKey, String longDescKey, String pane,
+			List<StatusDescription> status) {
+		String[] params = new String[] { getShortTitle() };
+		StatusDescription sd = new StatusDescription(StatusDescription.ERROR, shortDescKey, longDescKey, params,
+				PACKAGE_EP);
+		sd.setDescriptionForUnit(getIdent());
+		sd.setActivateableViewIdentifier(pane);
+		status.add(sd);
 	}
 
 	@Override
@@ -298,18 +331,6 @@ public class PortfolioCourseNode extends AbstractAccessableCourseNode {
 	public void importNode(File importDirectory, ICourse course, Identity owner, Organisation organisation, Locale locale, boolean withReferences) {
 		RepositoryEntryImportExport rie = new RepositoryEntryImportExport(importDirectory, getIdent());
 		if (withReferences && rie.anyExportedPropertiesAvailable()) {
-
-			RepositoryHandler handler = RepositoryHandlerFactory.getInstance().getRepositoryHandler(EPTemplateMapResource.TYPE_NAME);
-			RepositoryEntry re = handler.importResource(owner, rie.getInitialAuthor(), rie.getDisplayName(),
-					rie.getDescription(), false, organisation, locale, rie.importGetExportedFile(), null);
-			if(re != null) {
-				EPFrontendManager ePFMgr = CoreSpringFactory.getImpl(EPFrontendManager.class);
-				PortfolioStructure map = ePFMgr.loadPortfolioStructure(re.getOlatResource());
-				PortfolioCourseNodeEditController.setReference(re, map, getModuleConfiguration());
-			} else {
-				PortfolioCourseNodeEditController.removeReference(getModuleConfiguration());
-			}
-		} else {
 			PortfolioCourseNodeEditController.removeReference(getModuleConfiguration());
 		}
 	}

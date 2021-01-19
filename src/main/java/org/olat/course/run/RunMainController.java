@@ -30,6 +30,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
+import org.apache.logging.log4j.Logger;
 import org.olat.core.commons.fullWebApp.LayoutMain3ColsController;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
@@ -85,17 +86,23 @@ import org.olat.course.assessment.AssessmentMode;
 import org.olat.course.assessment.AssessmentMode.Status;
 import org.olat.course.condition.ConditionNodeAccessProvider;
 import org.olat.course.config.CourseConfig;
+import org.olat.course.disclaimer.CourseDisclaimerManager;
+import org.olat.course.disclaimer.ui.CourseDisclaimerConsentController;
 import org.olat.course.editor.PublishEvent;
 import org.olat.course.groupsandrights.CourseGroupManager;
 import org.olat.course.nodeaccess.NodeAccessService;
 import org.olat.course.nodeaccess.NodeAccessType;
 import org.olat.course.nodes.CourseNode;
+import org.olat.course.nodes.STCourseNode;
 import org.olat.course.run.glossary.CourseGlossaryFactory;
 import org.olat.course.run.glossary.CourseGlossaryToolLinkController;
 import org.olat.course.run.navigation.NavigationHandler;
 import org.olat.course.run.navigation.NodeClickedRef;
 import org.olat.course.run.scoring.AssessmentEvaluation;
+import org.olat.course.run.tools.CourseTool;
+import org.olat.course.run.tools.OpenCourseToolEvent;
 import org.olat.course.run.userview.AssessmentModeTreeFilter;
+import org.olat.course.run.userview.CourseTreeNode;
 import org.olat.course.run.userview.InvisibleTreeFilter;
 import org.olat.course.run.userview.UserCourseEnvironmentImpl;
 import org.olat.course.run.userview.VisibilityFilter;
@@ -116,6 +123,8 @@ import org.springframework.beans.factory.annotation.Autowired;
  */
 public class RunMainController extends MainLayoutBasicController implements GenericEventListener, Activateable2 {
 
+	private static final Logger log = Tracing.createLoggerFor(RunMainController.class);
+
 	public static final String REBUILD = "rebuild";
 	public static final String ORES_TYPE_COURSE_RUN = OresHelper.calculateTypeName(RunMainController.class, CourseModule.ORES_TYPE_COURSE);
 	private final OLATResourceable courseRunOres; //course run ores for course run channel 
@@ -130,7 +139,8 @@ public class RunMainController extends MainLayoutBasicController implements Gene
 	private UserCourseEnvironmentImpl uce;
 	private TooledStackedPanel toolbarPanel;
 	private LayoutMain3ColsController columnLayoutCtr;
-
+	private CourseDisclaimerConsentController disclaimerController;
+	
 	private CourseContentController contentCtrl;
 	private CoursePaginationController paginationCtrl;
 	private ProgressBar courseProgress;
@@ -144,7 +154,6 @@ public class RunMainController extends MainLayoutBasicController implements Gene
 	private boolean needsRebuildAfter = false;
 	private boolean needsRebuildAfterPublish = false;
 	private boolean needsRebuildAfterRunDone = false;
-	private boolean assessmentChangedEventReceived = false;
 	
 	private String courseTitle;
 	private Link nextLink, previousLink;
@@ -154,6 +163,10 @@ public class RunMainController extends MainLayoutBasicController implements Gene
 	private RepositoryService repositoryService;
 	@Autowired
 	private NodeAccessService nodeAccessService;
+	@Autowired
+	private CourseModule courseModule;
+	@Autowired 
+	private CourseDisclaimerManager disclaimerManager;
 	
 	/**
 	 * Constructor for the run main controller
@@ -268,7 +281,17 @@ public class RunMainController extends MainLayoutBasicController implements Gene
 		// see function gotonode in functions.js to see why we need the repositoryentry-key here:
 		// it is to correctly apply external links using course-internal links via javascript
 		coursemain.contextPut("courserepokey", courseRepositoryEntry.getKey());
-		coursemain.put("coursemain", columnLayoutCtr.getInitialComponent());
+		
+		// if a disclaimer is enabled, show it first
+		if (courseModule.isDisclaimerEnabled() && course.getCourseEnvironment().getCourseConfig().isDisclaimerEnabled() && 
+				!disclaimerManager.isAccessGranted(courseRepositoryEntry, getIdentity(), ureq.getUserSession().getRoles())) {
+			disclaimerController = new CourseDisclaimerConsentController(ureq, getWindowControl(), courseRepositoryEntry);
+			listenTo(disclaimerController);
+			coursemain.put("coursemain", disclaimerController.getInitialComponent());
+		} else {
+			coursemain.put("coursemain", columnLayoutCtr.getInitialComponent());
+		}
+		
 		// on initial call we have to set the data-nodeid manually. later it
 		// will be updated by updateCourseDataAttributes() automatically, but
 		// only when course visible to users (menu tree not null)
@@ -366,7 +389,6 @@ public class RunMainController extends MainLayoutBasicController implements Gene
 		} else {
 			waitingLists = Collections.emptyList();
 		}
-		uce.setCourseReadOnly(reSecurity.isReadOnly());
 		uce.setGroupMemberships(coachedGroups, participatedGroups, waitingLists);
 		needsRebuildAfterRunDone = true;
 	}
@@ -409,8 +431,8 @@ public class RunMainController extends MainLayoutBasicController implements Gene
 		} else {
 			List<TreeNode> flatTree = new ArrayList<>();
 			TreeHelper.makeTreeFlat(luTree.getTreeModel().getRootNode(), flatTree);
+			hasPrevious = getPreviousNonDelegatingNode(flatTree, luTree.getSelectedNode()) != null;;
 			int index = flatTree.indexOf(luTree.getSelectedNode());
-			hasPrevious = index > 0;
 			hasNext = index  >= 0 && index+1 < flatTree.size();
 		}
 		
@@ -447,6 +469,7 @@ public class RunMainController extends MainLayoutBasicController implements Gene
 		// the new node controller. It is important that the old node controller is 
 		// disposed before the new one to not get conflicts with cacheable mappers that
 		// might be used in both controllers with the same ID (e.g. the course folder)
+		
 		if (currentNodeController != null && !currentNodeController.isDisposed() && !navHandler.isListening(currentNodeController)) {
 			currentNodeController.dispose();
 		}
@@ -622,6 +645,17 @@ public class RunMainController extends MainLayoutBasicController implements Gene
 						getWindowControl().setWarning(translate("msg.nodenotavailableanymore"));
 					}
 				}
+			} else if ("activateCourseTool".equals(event.getCommand())) {
+				String toolname = ureq.getParameter("toolname");
+				if (toolname != null) {
+					try {
+						toolname = toolname.toLowerCase();
+						CourseTool tool = CourseTool.valueOf(toolname);
+						fireEvent(ureq, new OpenCourseToolEvent(tool));
+					} catch (Exception e) {
+						getWindowControl().setWarning(translate("msg.tool.not.available", new String[] { toolname } ));
+					}
+				}
 			}
 		}
 	}
@@ -718,6 +752,11 @@ public class RunMainController extends MainLayoutBasicController implements Gene
 			} else if (event == CoursePaginationController.UNCONFIRMED_EVENT) {
 				doAssessmentConfirmation(false);
 			}
+		} else if (source == disclaimerController) {
+			if (event == Event.DONE_EVENT) {
+				coursemain.put("coursemain", columnLayoutCtr.getInitialComponent());
+				coursemain.setDirty(true);
+			}
 		}
 	}
 	
@@ -737,12 +776,36 @@ public class RunMainController extends MainLayoutBasicController implements Gene
 		List<TreeNode> flatList = new ArrayList<>();
 		TreeNode currentNode = luTree.getSelectedNode();
 		TreeHelper.makeTreeFlat(luTree.getTreeModel().getRootNode(), flatList);
-		int index = flatList.indexOf(currentNode);
-		if(index-1 >= 0 && index-1 < flatList.size()) {
-			TreeNode previousNode = flatList.get(index - 1);
-			TreeEvent tev = new TreeEvent(MenuTree.COMMAND_TREENODE_CLICKED, previousNode.getIdent());
+		TreeNode previousNonDelegatingNode = getPreviousNonDelegatingNode(flatList, currentNode);
+		if (previousNonDelegatingNode != null) {
+			TreeEvent tev = new TreeEvent(MenuTree.COMMAND_TREENODE_CLICKED, previousNonDelegatingNode.getIdent());
 			doNodeClick(ureq, tev);
 		}
+	}
+	
+	private TreeNode getPreviousNonDelegatingNode(List<TreeNode> flatList, TreeNode treeNode) {
+		int index = flatList.indexOf(treeNode);
+		if (index-1 >= 0 && index-1 < flatList.size()) {
+			TreeNode previousNode = flatList.get(index - 1);
+			if (previousNode != null) {
+				if (isPreviuosDelegatingNode(previousNode, treeNode)) {
+					return getPreviousNonDelegatingNode(flatList, previousNode);
+				}
+				return previousNode;
+			}
+		}
+		return null;
+	}
+	
+	private boolean isPreviuosDelegatingNode(TreeNode previousNode, TreeNode currentNode) {
+		// Delegating wiki or content package
+		boolean previousCourseTreeNode = previousNode instanceof CourseTreeNode;
+		boolean currentNoCourseTreeNode = !(currentNode instanceof CourseTreeNode);
+		if (currentNoCourseTreeNode && previousCourseTreeNode) return true;
+		
+		// If it is delegating but not accessible it's ok, because the no access message is shown.
+		CourseNode previousCourseNode = previousCourseTreeNode? ((CourseTreeNode)previousNode).getCourseNode(): null;
+		return STCourseNode.isDelegatingSTCourseNode(previousCourseNode) && previousNode.isAccessible();
 	}
 	
 	private void doAssessmentConfirmation(boolean confirmed) {
@@ -752,11 +815,6 @@ public class RunMainController extends MainLayoutBasicController implements Gene
 	}
 
 	private void doNodeClick(UserRequest ureq, TreeEvent tev) {
-		if(assessmentChangedEventReceived) {
-			uce.getScoreAccounting().evaluateAll();
-			assessmentChangedEventReceived = false;
-		}
-		
 		// goto node:
 		// after a click in the tree, evaluate the model anew, and set the
 		// selection of the tree again
@@ -808,11 +866,21 @@ public class RunMainController extends MainLayoutBasicController implements Gene
 		if (currentNodeController != null && !currentNodeController.isDisposed() && !navHandler.isListening(currentNodeController)) {
 			currentNodeController.dispose();
 		}
-		currentNodeController = nclr.getRunController();
 		updateLastUsage(nclr.getCalledCourseNode());
-		Component nodeComp = currentNodeController.getInitialComponent();
-		contentP.setContent(nodeComp);
-		addToHistory(ureq, currentNodeController);
+		try {
+			currentNodeController = nclr.getRunController();
+			Component nodeComp = currentNodeController.getInitialComponent();
+			contentP.setContent(nodeComp);
+			addToHistory(ureq, currentNodeController);
+		} catch (Exception e) {
+			log.error("Error on course node clicked! repositoryEntry={}, node={}, selectedNode={}, subTreeListener={}, identity={}"
+					, course.getCourseEnvironment().getCourseGroupManager().getCourseEntry().getKey()
+					, nclr.getCalledCourseNode().getIdent()
+					, nclr.getSelectedNodeId()
+					, nclr.isHandledBySubTreeModelListener()
+					, getIdentity());
+			log.error("", e);
+		}
 		
 		// set glossary wrapper dirty after menu click to make it reload the glossary
 		// stuff properly when in AJAX mode
@@ -854,9 +922,9 @@ public class RunMainController extends MainLayoutBasicController implements Gene
 				// do not re-evaluate things if only comment has been changed
 				if (assessmentChangeType.equals(AssessmentChangedEvent.TYPE_SCORE_EVAL_CHANGED)
 						|| assessmentChangeType.equals(AssessmentChangedEvent.TYPE_ATTEMPTS_CHANGED)) {
-					//LD: do not recalculate the score now, but at the next click, since the event comes before DB commit
-					//uce.getScoreAccounting().evaluateAll(); 
-					assessmentChangedEventReceived = true;										
+					uce.getScoreAccounting().evaluateAll();
+					updateProgressUI();
+					updateAfterChanges(getCurrentCourseNode(), luTree.getSelectedNodeId());
 				}
 				// raise a flag to indicate refresh
 				needsRebuildAfterRunDone = true;

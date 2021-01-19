@@ -31,9 +31,9 @@ import org.jboss.arquillian.drone.api.annotation.Drone;
 import org.jboss.arquillian.junit.Arquillian;
 import org.jboss.arquillian.test.api.ArquillianResource;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.olat.course.learningpath.FullyAssessedTrigger;
 import org.olat.repository.RepositoryEntryStatusEnum;
 import org.olat.selenium.page.LoginPage;
 import org.olat.selenium.page.NavigationPage;
@@ -43,11 +43,17 @@ import org.olat.selenium.page.User;
 import org.olat.selenium.page.core.ContactPage;
 import org.olat.selenium.page.core.FolderPage;
 import org.olat.selenium.page.core.MenuTreePageFragment;
+import org.olat.selenium.page.course.AssessmentToolPage;
+import org.olat.selenium.page.course.BigBlueButtonPage;
+import org.olat.selenium.page.course.CheckListConfigPage;
+import org.olat.selenium.page.course.CheckListPage;
 import org.olat.selenium.page.course.ContactConfigPage;
 import org.olat.selenium.page.course.CourseEditorPageFragment;
 import org.olat.selenium.page.course.CoursePageFragment;
 import org.olat.selenium.page.course.DialogConfigurationPage;
 import org.olat.selenium.page.course.DialogPage;
+import org.olat.selenium.page.course.DocumentConfigurationPage;
+import org.olat.selenium.page.course.DocumentPage;
 import org.olat.selenium.page.course.ForumCEPage;
 import org.olat.selenium.page.course.InfoMessageCEPage;
 import org.olat.selenium.page.course.LTIConfigurationPage;
@@ -57,9 +63,9 @@ import org.olat.selenium.page.course.MemberListPage;
 import org.olat.selenium.page.course.MembersPage;
 import org.olat.selenium.page.course.ParticipantFolderPage;
 import org.olat.selenium.page.course.STConfigurationPage;
+import org.olat.selenium.page.course.STConfigurationPage.DisplayType;
 import org.olat.selenium.page.course.SinglePage;
 import org.olat.selenium.page.course.SinglePageConfigurationPage;
-import org.olat.selenium.page.course.STConfigurationPage.DisplayType;
 import org.olat.selenium.page.forum.ForumPage;
 import org.olat.selenium.page.graphene.OOGraphene;
 import org.olat.selenium.page.repository.AuthoringEnvPage;
@@ -1277,6 +1283,113 @@ public class CourseElementTest extends Deployments {
 		folder.openDropBox()
 			.assertOnFile(participantImageFile.getName());
 	}
+	
+
+	/**
+	 * An author creates a course with a document course element,
+	 * upload a PDF in the editor, publish the course and go to
+	 * the course element check if the document is there.
+	 * 
+	 * @throws IOException
+	 * @throws URISyntaxException
+	 */
+	@Test
+	@RunAsClient
+	public void courseWithDocument()
+	throws IOException, URISyntaxException {
+						
+		UserVO author = new UserRestClient(deploymentUrl).createAuthor();
+
+		LoginPage loginPage = LoginPage.load(browser, deploymentUrl);
+		loginPage.loginAs(author.getLogin(), author.getPassword());
+		
+		//create a course
+		String courseTitle = "DocCourse" + UUID.randomUUID();
+		NavigationPage navBar = NavigationPage.load(browser);
+		navBar
+			.openAuthoringEnvironment()
+			.createCourse(courseTitle)
+			.clickToolbarBack();
+		
+		//create a course element of type Test with the test that we create above
+		String nodeTitle = "Document";
+		CourseEditorPageFragment courseEditor = CoursePageFragment.getCourse(browser)
+			.edit();
+		courseEditor
+			.createNode("document")
+			.nodeTitle(nodeTitle);
+		
+		URL pdfDocumentUrl = JunitTestHelper.class.getResource("file_resources/handInTopic1.pdf");
+		File pdfDocumentFile = new File(pdfDocumentUrl.toURI());
+		
+		DocumentConfigurationPage docConfig = new DocumentConfigurationPage(browser);
+		docConfig
+			.selectConfiguration()
+			.uploadDocument(pdfDocumentFile);
+		
+		courseEditor
+			.autoPublish();
+		
+		DocumentPage doc = new DocumentPage(browser);
+		doc.assertDocumentLink(pdfDocumentFile.getName());
+	}
+	
+
+	/**
+	 * An author upload a PDF document as learn resource, after that she creates
+	 * a course with a document course element, selects the PDF in the editor,
+	 * publish the course and go to the course element see if the document is
+	 * there.
+	 * 
+	 * @throws IOException
+	 * @throws URISyntaxException
+	 */
+	@Test
+	@RunAsClient
+	public void courseWithDocumentFromRepository()
+	throws IOException, URISyntaxException {
+						
+		UserVO author = new UserRestClient(deploymentUrl).createAuthor();
+
+		LoginPage loginPage = LoginPage.load(browser, deploymentUrl);
+		loginPage.loginAs(author.getLogin(), author.getPassword());
+		
+		URL pdfDocumentUrl = JunitTestHelper.class.getResource("file_resources/handInTopic1.pdf");
+		File pdfDocumentFile = new File(pdfDocumentUrl.toURI());
+		
+		//create a course
+		String docTitle = "PDF-" + UUID.randomUUID();
+		NavigationPage navBar = NavigationPage.load(browser);
+		navBar
+			.openAuthoringEnvironment()
+			.uploadResource(docTitle, pdfDocumentFile);
+
+		//create a course
+		String courseTitle = "PDFDoc-" + UUID.randomUUID();
+		navBar
+			.openAuthoringEnvironment()
+			.createCourse(courseTitle)
+			.clickToolbarBack();
+		
+		//create a course element of type Test with the test that we create above
+		String nodeTitle = "PDF";
+		CourseEditorPageFragment courseEditor = CoursePageFragment.getCourse(browser)
+			.edit();
+		courseEditor
+			.createNode("document")
+			.nodeTitle(nodeTitle);
+		
+		DocumentConfigurationPage docConfig = new DocumentConfigurationPage(browser);
+		docConfig
+			.selectConfiguration()
+			.selectDocument(docTitle);
+		
+		courseEditor
+			.autoPublish();
+		
+		DocumentPage doc = new DocumentPage(browser);
+		doc.assertDocumentLink(pdfDocumentFile.getName());
+	}
 
 
 	/**
@@ -1292,13 +1405,12 @@ public class CourseElementTest extends Deployments {
 	 * @throws URISyntaxException
 	 */
 	@Test
-	@Ignore
 	@RunAsClient
 	public void courseWithForum_concurrent(@Drone @Participant WebDriver kanuBrowser,
 			@Drone @Student WebDriver reiBrowser)
 	throws IOException, URISyntaxException {
 		
-		UserVO author = new UserRestClient(deploymentUrl).createAuthor();
+		UserVO author = new UserRestClient(deploymentUrl).createRandomAuthor();
 		UserVO kanu = new UserRestClient(deploymentUrl).createRandomUser("Kanu");
 		UserVO rei = new UserRestClient(deploymentUrl).createRandomUser("Rei");
 		LoginPage loginPage = LoginPage.load(browser, deploymentUrl);
@@ -1316,12 +1428,30 @@ public class CourseElementTest extends Deployments {
 		String foTitle = "FO - " + UUID.randomUUID();
 		CourseEditorPageFragment courseEditor = CoursePageFragment.getCourse(browser)
 			.edit();
+		// setup peekview
+		STConfigurationPage stConfig = new STConfigurationPage(browser);
+		stConfig
+			.selectOverview()
+			.setDisplay(DisplayType.peekview);
+		// create forum
 		courseEditor
 			.createNode("fo")
 			.nodeTitle(foTitle)
-		//publish the course
+		// publish the course
 			.publish()
-			.quickPublish(UserAccess.registred);
+			.quickPublish(UserAccess.membersOnly);
+	
+		MembersPage membersPage = courseEditor		
+			.clickToolbarBack()
+			.members();
+	
+		membersPage
+			.importMembers()
+			.setMembers(kanu, rei)
+			.nextUsers()
+			.nextOverview()
+			.nextPermissions()
+			.finish();
 		
 		//go to the forum
 		courseEditor
@@ -1345,13 +1475,13 @@ public class CourseElementTest extends Deployments {
 			.openMyCourses()
 			.openSearch()
 			.extendedSearch(courseTitle)
-			.select(courseTitle)
-			.start();
+			.select(courseTitle);
 		
 		//go to the forum
 		new CoursePageFragment(kanuBrowser)
 			.clickTree()
-			.selectWithTitle(foTitle.substring(0, 20));
+			.selectWithTitle(foTitle.substring(0, 20))
+			.assertWithTitleSelected(foTitle.substring(0, 20));
 		
 		ForumPage kanuForum = ForumPage
 			.getCourseForumPage(kanuBrowser)
@@ -1368,8 +1498,8 @@ public class CourseElementTest extends Deployments {
 			.openMyCourses()
 			.openSearch()
 			.extendedSearch(courseTitle)
-			.select(courseTitle)
-			.start();
+			.select(courseTitle);
+		
 		//select the thread in peekview
 		ForumPage reiForum = new ForumPage(reiBrowser)
 			.openThreadInPeekview("The best anime ever");
@@ -1785,6 +1915,69 @@ public class CourseElementTest extends Deployments {
 	
 	/**
 	 * An author creates a course with a single page course element,
+	 * create the HTML page in the course editor with the default button,
+	 * add an image and publish the course and go to the page to verify
+	 * if the content and the image are there.
+	 * 
+	 * @throws IOException
+	 * @throws URISyntaxException
+	 */
+	@Test
+	@RunAsClient
+	public void courseEditSinglePage()
+	throws IOException, URISyntaxException {
+						
+		UserVO author = new UserRestClient(deploymentUrl).createAuthor();
+
+		LoginPage loginPage = LoginPage.load(browser, deploymentUrl);
+		loginPage.loginAs(author.getLogin(), author.getPassword());
+		
+		//create a course
+		String courseTitle = "Single Course" + UUID.randomUUID();
+		NavigationPage navBar = NavigationPage.load(browser);
+		navBar
+			.openAuthoringEnvironment()
+			.createCourse(courseTitle)
+			.clickToolbarBack();
+		
+		//create a course element of type Test with the test that we create above
+		String nodeTitle = "EditableSinglePage";
+		CourseEditorPageFragment courseEditor = CoursePageFragment.getCourse(browser)
+			.edit();
+		courseEditor
+			.createNode("sp")
+			.nodeTitle(nodeTitle);
+
+		String content = "A new single page with some content";
+		URL imageUrl = JunitTestHelper.class.getResource("file_resources/IMG_1483.png");
+		File imageFile = new File(imageUrl.toURI());
+		
+		SinglePageConfigurationPage spConfiguration = new SinglePageConfigurationPage(browser);
+		spConfiguration
+			.selectConfiguration()
+			.openDefaultPage()
+			.setContent(content)
+			.uploadImage(imageFile)
+			.saveContent();
+		
+		spConfiguration
+			.assertOnPreview();
+		
+		CoursePageFragment courseRuntime = courseEditor
+			.autoPublish();
+		
+		courseRuntime
+			.clickTree()
+			.selectWithTitle(nodeTitle);
+		
+		SinglePage singlePage = new SinglePage(browser);
+		singlePage
+			.assertInPage(content)
+			.assertImageInPage(imageFile.getName());
+	}
+	
+	/**
+	 * An author creates a course with a single page course element,
 	 * upload a PDF, publish the course and go to the page to check
 	 * if the file is available.
 	 * 
@@ -1961,5 +2154,292 @@ public class CourseElementTest extends Deployments {
 			//.answerSingleChoice("Venus")
 			.saveAndCloseSurvey()
 			.assertOnSurveyClosed();
+	}
+	
+	
+
+	/**
+	 * 
+	 * @param loginPage
+	 * @throws IOException
+	 * @throws URISyntaxException
+	 */
+	@Test
+	@RunAsClient
+	public void courseWithBigBlueButton()
+	throws IOException, URISyntaxException {
+
+		UserVO author = new UserRestClient(deploymentUrl).createAuthor();
+		LoginPage loginPage = LoginPage.load(browser, deploymentUrl);
+		loginPage.loginAs(author.getLogin(), author.getPassword());
+		
+		//create a course
+		String courseTitle = "Course-With-BBB-" + UUID.randomUUID();
+		NavigationPage navBar = NavigationPage.load(browser);
+		navBar
+			.openAuthoringEnvironment()
+			.createCourse(courseTitle, true)
+			.clickToolbarBack();
+		
+		String nodeTitle = "BBB Node-1";
+		//create a course element of type CP with the CP that we create above
+		CoursePageFragment course = CoursePageFragment.getCourse(browser);
+		CourseEditorPageFragment courseEditor = course
+			.edit();
+		courseEditor
+			.createNode("bigbluebutton")
+			.nodeTitle(nodeTitle);
+		
+		//publish the course
+		courseEditor
+			.publish()
+			.quickPublish(UserAccess.membersOnly);
+		courseEditor
+			.clickToolbarBack();
+		
+		course
+			.clickTree()
+			.selectWithTitle(nodeTitle);
+		
+		String meetingName = "Quick meeting";
+		BigBlueButtonPage bigBlueButton = new BigBlueButtonPage(browser);
+		bigBlueButton
+			.assertOnRuntime()
+			.selectEditMeetingsList()
+			.addSingleMeeting(meetingName, "Classroom")
+			.assertOnList(meetingName)
+			.selectMeetingsList()
+			.assertOnList(meetingName)
+			.selectMeeting(meetingName)
+			.assertOnMeeting(meetingName)
+			.assertOnJoin();
+	}
+	
+	
+	/**
+	 * An author create a course with a course element
+	 * with one check box. It add one participant. The
+	 * participant log in, go to the course to check its
+	 * box and see if it has done the course with 100%.
+	 * 
+	 * @param loginPage The login page
+	 * @throws IOException
+	 * @throws URISyntaxException
+	 */
+	@Test
+	@RunAsClient
+	public void courseWithCheckboxWithScore(@Drone @User WebDriver participantBrowser)
+	throws IOException, URISyntaxException {
+						
+		UserVO author = new UserRestClient(deploymentUrl).createAuthor();
+		UserVO participant = new UserRestClient(deploymentUrl).createRandomUser("nezuko");
+
+		LoginPage loginPage = LoginPage.load(browser, deploymentUrl);
+		loginPage.loginAs(author.getLogin(), author.getPassword());
+		
+		//create a course
+		String courseTitle = "Check Course" + UUID.randomUUID();
+		NavigationPage navBar = NavigationPage.load(browser);
+		CoursePageFragment courseRuntime = navBar
+			.openAuthoringEnvironment()
+			.createCourse(courseTitle, true)
+			.clickToolbarBack();
+		
+		//add participant
+		MembersPage members = courseRuntime
+			.members();
+		members
+			.importMembers()
+			.setMembers(participant)
+			.nextUsers()
+			.nextOverview()
+			.selectRepositoryEntryRole(false, false, true)
+			.nextPermissions()
+			.finish();
+		// back to course
+		members
+			.clickToolbarBack();
+		
+		//create a course element of type Test with the test that we create above
+		String nodeTitle = "CheckNode";
+		CourseEditorPageFragment courseEditor = CoursePageFragment.getCourse(browser)
+			.edit();
+		courseEditor
+			.createNode("checklist")
+			.nodeTitle(nodeTitle);
+		
+		String checkboxTitle = "Do some programming";
+		
+		CheckListConfigPage checkConfig = new CheckListConfigPage(browser);
+		checkConfig
+			.selectListConfiguration()
+			.addCheckbox(checkboxTitle, 4)
+			.assertOnCheckboxInList(checkboxTitle);
+		
+		checkConfig
+			.selectAssessmentConfiguration()
+			.setScoring(0, 4, 3)
+			.saveAssessmentConfiguration();
+		
+		courseEditor
+			.selectTabLearnPath()
+			.setCompletionCriterion(FullyAssessedTrigger.passed)
+			.save();
+		
+		courseEditor
+			.autoPublish()
+			.publish()
+			.settings()
+			.accessConfiguration()
+			.setUserAccess(UserAccess.membersOnly)
+			.save()
+			.clickToolbarBack();
+		
+		// participant comes in
+
+		LoginPage participantLoginPage = LoginPage.load(participantBrowser, deploymentUrl);
+		participantLoginPage
+			.loginAs(participant.getLogin(), participant.getPassword());
+
+		NavigationPage participantNavBar = NavigationPage.load(participantBrowser);
+		participantNavBar
+			.openMyCourses()
+			.select(courseTitle);
+		
+		CoursePageFragment course = new CoursePageFragment(participantBrowser);
+		course
+			.clickTree()
+			.selectWithTitle(nodeTitle);
+
+		CheckListPage checkPage = new CheckListPage(participantBrowser);
+		checkPage
+			.assertOnCheckbox(checkboxTitle)
+			.check(checkboxTitle);
+		// student has done the course
+		course
+			.assertOnLearnPathNodeDone(nodeTitle)
+			.assertOnLearnPathPercent(100);
+		
+		// open the assessment tool and check the participant passed the node
+		// and the course
+		AssessmentToolPage assessmentTool = new CoursePageFragment(browser)
+			.assessmentTool();
+		assessmentTool
+			.users()
+			.assertOnUsers(participant)
+			.selectUser(participant)
+			.assertPassed(participant)
+			.assertUserPassedCourseNode(nodeTitle);
+	}
+	
+	/**
+	 * An author create a course with a course element
+	 * with one check box. It add one participant and he
+	 * checks the box.
+	 * 
+	 * @param loginPage The login page
+	 * @throws IOException
+	 * @throws URISyntaxException
+	 */
+	@Test
+	@RunAsClient
+	public void courseWithCheckbox()
+	throws IOException, URISyntaxException {
+						
+		UserVO author = new UserRestClient(deploymentUrl).createAuthor();
+		UserVO participant = new UserRestClient(deploymentUrl).createRandomUser("nezuko");
+
+		LoginPage loginPage = LoginPage.load(browser, deploymentUrl);
+		loginPage.loginAs(author.getLogin(), author.getPassword());
+		
+		//create a course
+		String courseTitle = "Checklist" + UUID.randomUUID();
+		NavigationPage navBar = NavigationPage.load(browser);
+		CoursePageFragment courseRuntime = navBar
+			.openAuthoringEnvironment()
+			.createCourse(courseTitle, true)
+			.clickToolbarBack();
+		
+		//add participant
+		MembersPage members = courseRuntime
+			.members();
+		members
+			.importMembers()
+			.setMembers(participant)
+			.nextUsers()
+			.nextOverview()
+			.selectRepositoryEntryRole(false, false, true)
+			.nextPermissions()
+			.finish();
+		// back to course
+		members
+			.clickToolbarBack();
+		
+		//create a course element of type Test with the test that we create above
+		String nodeTitle = "Liste de controle";
+		CourseEditorPageFragment courseEditor = CoursePageFragment.getCourse(browser)
+			.edit();
+		courseEditor
+			.createNode("checklist")
+			.nodeTitle(nodeTitle);
+		
+		String checkboxTitle = "Do some stuff";
+		
+		CheckListConfigPage checkConfig = new CheckListConfigPage(browser);
+		checkConfig
+			.selectListConfiguration()
+			.addCheckbox(checkboxTitle, -1)
+			.assertOnCheckboxInList(checkboxTitle);
+		
+		checkConfig
+			.selectAssessmentConfiguration()
+			.disableScoring()
+			.saveAssessmentConfiguration();
+		
+		courseEditor
+			.selectTabLearnPath()
+			.setCompletionCriterion(FullyAssessedTrigger.confirmed)
+			.save();
+		
+		courseEditor
+			.autoPublish()
+			.publish()
+			.settings()
+			.accessConfiguration()
+			.setUserAccess(UserAccess.membersOnly)
+			.save()
+			.clickToolbarBack();
+		
+		//log out
+		new UserToolsPage(browser)
+			.logout();
+		
+		// participant comes in
+		LoginPage.load(browser, deploymentUrl)
+			.loginAs(participant.getLogin(), participant.getPassword());
+
+		NavigationPage participantNavBar = NavigationPage.load(browser);
+		participantNavBar
+			.openMyCourses()
+			.select(courseTitle);
+		
+		CoursePageFragment course = new CoursePageFragment(browser);
+		course
+			.clickTree()
+			.selectWithTitle(nodeTitle);
+
+		CheckListPage checkPage = new CheckListPage(browser);
+		checkPage
+			.assertOnCheckbox(checkboxTitle)
+			.check(checkboxTitle);
+		// check doesn't influence the learn path
+		course
+			.assertOnLearnPathNodeReady(nodeTitle)
+			.assertOnLearnPathPercent(0);
+		// student has done the course
+		course
+			.confirmNode()
+			.assertOnLearnPathNodeDone(nodeTitle)
+			.assertOnLearnPathPercent(100);
 	}
 }

@@ -27,9 +27,15 @@
 package org.olat.core.gui;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.olat.core.commons.fullWebApp.LockResourceInfos;
+import org.olat.core.gui.components.Component;
+import org.olat.core.gui.components.ComponentHelper;
 import org.olat.core.gui.components.Window;
 import org.olat.core.gui.control.ChiefController;
 import org.olat.core.gui.control.Disposable;
@@ -37,6 +43,7 @@ import org.olat.core.gui.control.winmgr.WindowManagerImpl;
 import org.olat.core.gui.util.bandwidth.SlowBandWidthSimulator;
 import org.olat.core.gui.util.bandwidth.SlowBandWidthSimulatorImpl;
 import org.olat.core.util.FIFOMap;
+import org.olat.core.util.StringHelper;
 import org.olat.core.util.UserSession;
 
 /**
@@ -48,13 +55,12 @@ public class Windows implements Disposable, Serializable {
 	private static final long serialVersionUID = -106724331637750672L;
 	private static final String SESSIONID_NAME_FOR_WINDOWS = Windows.class.getName();
 
-	private transient FIFOMap<UriPrefixIdPair,Window> windows = new FIFOMap<>(100); // one user may at most save 100
+	private transient FIFOMap<UriPrefixIdPair,ChiefController> windows = new FIFOMap<>(100); // one user may at most save 100
 	// windows in a session
 	private int windowId = 1;
 	private Boolean fullScreen;
 	private final AtomicInteger assessmentStarted = new AtomicInteger();
 	private transient WindowManager windowManagerImpl;
-	private transient ChiefController chiefController;
 
 	private transient SlowBandWidthSimulator sbws;
 	
@@ -87,6 +93,25 @@ public class Windows implements Disposable, Serializable {
 		}
 		return ws;
 	}
+	
+	public boolean disposeClosedWindows(UserRequest ureq) {
+		String winId = ureq.getWindowID();
+		String winCmpId = ureq.getWindowComponentID();
+		
+		boolean canBeRemoved = false;
+		Map<UriPrefixIdPair,ChiefController> entries = windows.copyEntries();
+		for(Map.Entry<UriPrefixIdPair,ChiefController> entry:entries.entrySet()) {
+			Window window = entry.getValue().getWindow();
+			if(window.getInstanceId().equals(winId) || window.getDispatchID().equals(winCmpId)) {
+				window.setMarkToBeRemoved(false);
+			} else if(window.canBeRemoved()) {
+				window.getWindowBackOffice().dispose();
+				windows.remove(entry.getKey());
+				canBeRemoved = true;
+			}
+		}
+		return canBeRemoved;
+	}
 
 	/**
 	 * @param wId
@@ -94,6 +119,20 @@ public class Windows implements Disposable, Serializable {
 	 */
 	public boolean isExisting(String uriPrefix, String wId) {
 		return (getWindow(uriPrefix, wId) != null);
+	}
+	
+	public boolean isExisting(UserRequest ureq) {
+		return (getWindow(ureq) != null);
+	}
+	
+	public Window getFirstWindow() {
+		Map<UriPrefixIdPair,ChiefController> entries = windows.copyEntries();
+		for(Map.Entry<UriPrefixIdPair,ChiefController> entry:entries.entrySet()) {
+			if("/auth/".equals(entry.getKey().uriPrefix)) {
+				return entry.getValue().getWindow();
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -105,9 +144,73 @@ public class Windows implements Disposable, Serializable {
 	 */
 	public Window getWindow(UserRequest ureq) {
 		String windowID = ureq.getWindowID();
-		if (windowID == null) return null;
+		String componentId = ureq.getComponentID();
+		String windowComponentId = ureq.getWindowComponentID();
+		
+		Window window = null;
+		if (StringHelper.containsNonWhitespace(windowID)) {
+			String uriPrefix = ureq.getUriPrefix();
+			window = getWindow(uriPrefix, windowID);
+		}
+		
+		if(window == null && StringHelper.containsNonWhitespace(windowComponentId)) {
+			List<ChiefController> chiefControllers = windows.values();
+			for(ChiefController cc:chiefControllers) {
+				if(windowComponentId.equals(cc.getWindow().getDispatchID())) {
+					window = cc.getWindow();
+					break;
+				}
+			}
+		}
+		
+		if(window == null && StringHelper.containsNonWhitespace(componentId)) {
+			List<ChiefController> chiefControllers = windows.values();
+			for(ChiefController cc:chiefControllers) {
+				Window w = cc.getWindow();
+				List<Component> cmps = new ArrayList<>();
+				Component cmp = ComponentHelper.findDescendantOrSelfByID(w.getContentPane(), componentId, cmps);
+				if(cmp != null) {
+					window = w;
+					break;
+				}
+			}
+		}
+		return window;
+	}
+	
+	public ChiefController getChiefController(UserRequest ureq) {
 		String uriPrefix = ureq.getUriPrefix();
-		return getWindow(uriPrefix, windowID);
+		String windowID = ureq.getWindowID();
+		String componentId = ureq.getComponentID();
+		String windowComponentId = ureq.getWindowComponentID();
+		
+		ChiefController chief = null;
+		if (windowID != null) {
+			chief = windows.get(new UriPrefixIdPair(uriPrefix, windowID));
+		}
+		
+		if(chief == null && StringHelper.containsNonWhitespace(windowComponentId)) {
+			List<ChiefController> chiefControllers = windows.values();
+			for(ChiefController cc:chiefControllers) {
+				if(windowComponentId.equals(cc.getWindow().getDispatchID())) {
+					chief = cc;
+					break;
+				}
+			}
+		}
+		
+		if(chief == null && StringHelper.containsNonWhitespace(componentId)) {
+			List<ChiefController> chiefControllers = windows.values();
+			for(ChiefController cc:chiefControllers) {
+				List<Component> path = new ArrayList<>();
+				Component cmp = ComponentHelper.findDescendantOrSelfByID(cc.getWindow().getContentPane(), componentId, path);
+				if(cmp != null) {
+					chief = cc;
+					break;
+				}
+			}
+		}
+		return chief;
 	}
 
 	/**
@@ -117,8 +220,8 @@ public class Windows implements Disposable, Serializable {
 	 * @return null if the window is not existing (here in windows)
 	 */
 	private Window getWindow(String uriPrefix, String windowID) {
-		Window w = windows.get(new UriPrefixIdPair(uriPrefix, windowID));
-		return w;
+		ChiefController chief = windows.get(new UriPrefixIdPair(uriPrefix, windowID));
+		return chief == null ? null : chief.getWindow();
 	}
 
 	/**
@@ -137,7 +240,8 @@ public class Windows implements Disposable, Serializable {
 	 * 
 	 * @param w
 	 */
-	public void registerWindow(Window w) {
+	public void registerWindow(ChiefController chief) {
+		Window w = chief.getWindow();
 		String uriPrefix = w.getUriPrefix();
 		String id = w.getInstanceId();
 		if (windows.get(new UriPrefixIdPair(uriPrefix, id)) != null) {
@@ -145,7 +249,7 @@ public class Windows implements Disposable, Serializable {
 		}
 		String wiid = String.valueOf(windowId++); // ok since per user session, not
 		w.setInstanceId(wiid);
-		windows.put(new UriPrefixIdPair(uriPrefix, wiid), w);
+		windows.put(new UriPrefixIdPair(uriPrefix, wiid), chief);
 	}
 
 	/**
@@ -165,7 +269,30 @@ public class Windows implements Disposable, Serializable {
 	 * @return the iterator with windows in it
 	 */
 	public Iterator<Window> getWindowIterator() {
-		return windows.getValueIterator();
+		List<Window> ws = new ArrayList<>(windows.size());
+		List<ChiefController> chiefControllers = windows.values();
+		for(ChiefController chiefController:chiefControllers) {
+			ws.add(chiefController.getWindow());
+		}
+		return ws.iterator();
+	}
+	
+	/**
+	 * Search all the windows to find the first locked chief controller
+	 * and returns informations about the locked resource.
+	 * 
+	 * @return Informations about the current locked resource, or null if the
+	 * 		user has not a chief controller locked.
+	 */
+	public LockResourceInfos getLockResourceInfos() {
+		List<ChiefController> chiefControllers = windows.values();
+		for(ChiefController chiefController:chiefControllers) {
+			LockResourceInfos lockInfos = chiefController.getLockResourceInfos();
+			if(lockInfos != null) {
+				return lockInfos;
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -173,13 +300,6 @@ public class Windows implements Disposable, Serializable {
 	 */
 	public int getWindowCount() {
 		return windows.size();
-	}
-
-	/**
-	 * @return Returns the windowId.
-	 */
-	public int getWindowId() {
-		return windowId;
 	}
 
 	/**
@@ -201,22 +321,13 @@ public class Windows implements Disposable, Serializable {
 		return assessmentStarted;
 	}
 
-	public ChiefController getChiefController() {
-		return chiefController;
-	}
-
-	public void setChiefController(ChiefController chiefController) {
-		this.chiefController = chiefController;
-	}
-
 	@Override
 	public void dispose() {
-		if(chiefController != null) {
-			chiefController.dispose();
+		List<ChiefController> chiefControllers = windows.values();
+		for(ChiefController chiefController:chiefControllers) {
+			chiefController.getWindow().getWindowBackOffice().dispose();
 		}
-		if(windowManagerImpl != null) {
-			windowManagerImpl.dispose();
-		}
+		windows.clear();
 	}
 
 	/**

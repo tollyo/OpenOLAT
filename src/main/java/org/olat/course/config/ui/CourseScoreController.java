@@ -33,16 +33,19 @@ import org.olat.core.gui.components.util.KeyValues;
 import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.Event;
 import org.olat.core.gui.control.WindowControl;
+import org.olat.core.gui.control.generic.closablewrapper.CloseableModalController;
 import org.olat.core.id.OLATResourceable;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.Util;
 import org.olat.course.CourseFactory;
 import org.olat.course.ICourse;
 import org.olat.course.assessment.CourseAssessmentService;
+import org.olat.course.config.ui.AssessmentResetController.AssessmentResetEvent;
 import org.olat.course.nodes.STCourseNode;
 import org.olat.course.run.RunMainController;
 import org.olat.course.tree.CourseEditorTreeNode;
 import org.olat.modules.ModuleConfiguration;
+import org.olat.modules.assessment.AssessmentService;
 import org.olat.repository.RepositoryEntry;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -67,11 +70,16 @@ public class CourseScoreController extends FormBasicController {
 	private MultipleSelectionElement passedPointsEl;
 	private TextElement passedPointsCutEl;
 	
+	private CloseableModalController cmc;
+	private AssessmentResetController assessmentResetCtrl;
+	
 	private final RepositoryEntry courseEntry;
 	private final boolean editable;
 	
 	@Autowired
 	private CourseAssessmentService courseAssessmentService;
+	@Autowired
+	private AssessmentService assessmentService;
 
 	public CourseScoreController(UserRequest ureq, WindowControl wControl, RepositoryEntry entry, boolean editable) {
 		super(ureq, wControl);
@@ -122,6 +130,7 @@ public class CourseScoreController extends FormBasicController {
 
 	@Override
 	protected void initForm(FormItemContainer formLayout, Controller listener, UserRequest ureq) {
+		flc.removeAll();
 		setFormTitle("options.score.title");
 		
 		KeyValues scoreKV = new KeyValues();
@@ -213,13 +222,37 @@ public class CourseScoreController extends FormBasicController {
 	}
 	
 	@Override
+	protected void event(UserRequest ureq, Controller source, Event event) {
+		if(source == assessmentResetCtrl) {
+			if (event instanceof AssessmentResetEvent) {
+				AssessmentResetEvent are = (AssessmentResetEvent)event;
+				doSettingsConfirmed(ureq, are);
+			} else if (event == AssessmentResetController.RESET_SETTING_EVENT) {
+				initForm(ureq);
+			}
+			cmc.deactivate();
+			cleanUp();
+		} else if(source == cmc) {
+			cleanUp();
+		}
+		super.event(ureq, source, event);
+	}
+
+	private void cleanUp() {
+		removeAsListenerAndDispose(assessmentResetCtrl);
+		removeAsListenerAndDispose(cmc);
+		assessmentResetCtrl = null;
+		cmc = null;
+	}
+
+	@Override
 	protected boolean validateFormLogic(UserRequest ureq) {
-		boolean allOk = true;
+		boolean allOk = super.validateFormLogic(ureq);
 		
 		allOk &= validateInteger(passedNumberCutEl, 1, Integer.MAX_VALUE, true, "error.positiv.int");
 		allOk &= validateInteger(passedPointsCutEl, 1, Integer.MAX_VALUE, true, "error.positiv.int");
 		
-		return allOk & super.validateFormLogic(ureq);
+		return allOk;
 	}
 
 	private boolean validateInteger(TextElement el, int min, int max, boolean mandatory, String i18nKey) {
@@ -248,12 +281,44 @@ public class CourseScoreController extends FormBasicController {
 		return allOk;
 	}
 
+	private void doConfirmSetting(UserRequest ureq) {
+		assessmentResetCtrl = new AssessmentResetController(ureq, getWindowControl(), true, true);
+		listenTo(assessmentResetCtrl);
+		cmc = new CloseableModalController(getWindowControl(), translate("close"),
+				assessmentResetCtrl.getInitialComponent(), true, translate("assessment.reset.title"), true);
+		listenTo(cmc);
+		cmc.activate();
+	}
+
 	@Override
 	protected void formOK(UserRequest ureq) {
+		doConfirmSetting(ureq);
+	}
+	
+	private void doSettingsConfirmed(UserRequest ureq, AssessmentResetEvent are) {
+		boolean saved = doSave();
+		
+		if (saved) {
+			if (are.isResetOverriden()) {
+				assessmentService.resetAllOverridenRootPassed(courseEntry);
+			}
+			if (are.isResetPassed()) {
+				assessmentService.resetAllRootPassed(courseEntry);
+			}
+			if (are.isRecalculateAll()) {
+				ICourse course = CourseFactory.loadCourse(courseEntry);
+				courseAssessmentService.evaluateAll(course);
+			}
+			
+			fireEvent(ureq, Event.CHANGED_EVENT);
+		}
+	}
+
+	private boolean doSave() {
 		OLATResourceable courseOres = courseEntry.getOlatResource();
-		if(CourseFactory.isCourseEditSessionOpen(courseOres.getResourceableId())) {
+		if (CourseFactory.isCourseEditSessionOpen(courseOres.getResourceableId())) {
 			showWarning("error.editoralreadylocked", new String[] { "???" });
-			return;
+			return false;
 		}
 		
 		ICourse course = CourseFactory.openCourseEditSession(courseOres.getResourceableId());
@@ -331,9 +396,7 @@ public class CourseScoreController extends FormBasicController {
 		CourseFactory.saveCourse(courseEntry.getOlatResource().getResourceableId());
 		CourseFactory.closeCourseEditSession(course.getResourceableId(), true);
 		
-		courseAssessmentService.evaluateAll(course);
-		
-		fireEvent(ureq, Event.CHANGED_EVENT);
+		return true;
 	}
 
 	@Override

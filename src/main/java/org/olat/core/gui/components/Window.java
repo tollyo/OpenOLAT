@@ -44,6 +44,7 @@ import org.olat.core.CoreSpringFactory;
 import org.olat.core.commons.persistence.DBFactory;
 import org.olat.core.commons.services.analytics.AnalyticsModule;
 import org.olat.core.commons.services.analytics.AnalyticsSPI;
+import org.olat.core.commons.services.csp.CSPModule;
 import org.olat.core.dispatcher.DispatcherModule;
 import org.olat.core.dispatcher.mapper.MapperService;
 import org.olat.core.dispatcher.mapper.manager.MapperKey;
@@ -94,6 +95,7 @@ import org.olat.core.logging.OLATRuntimeException;
 import org.olat.core.logging.Tracing;
 import org.olat.core.util.Formatter;
 import org.olat.core.util.StringHelper;
+import org.olat.core.util.Util;
 import org.olat.core.util.component.ComponentTraverser;
 import org.olat.core.util.component.ComponentVisitor;
 
@@ -106,6 +108,8 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 	
 	private static final Logger log = Tracing.createLoggerFor(Window.class);
 	private static final DispatchResult NO_DISPATCHRESULT = new DispatchResult(false, false, false);
+	
+	private static final int WINDOW_CLOSED_TIMEOUT = 5 * 60 * 1000;
 	
 	private static final String LOG_SEPARATOR = "^$^";
 	/**
@@ -141,6 +145,8 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 
 		
 	public static final Event AFTER_VALIDATING = new Event("before_validate");
+	
+	public static final Event CLOSE_WINDOW = new Event("close-window");
 
 	/**
 	 * fired just before the targetcomponent.dispatch takes places
@@ -154,6 +160,7 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 	public static final String NO_RESPONSE_VALUE_MARKER = "oo-no-response";
 	
 	private String uriPrefix;
+	private final String csrfToken;
 	private ComponentCollection contentPane;
 	private String latestTimestamp;
 	private AsyncMediaResponsible asyncMediaResponsible;
@@ -164,6 +171,8 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 	
 	private Theme guiTheme;
 	
+	private boolean markToBeRemoved;
+	private long markToBeRemovedTimestamp = -1l;
 	private boolean validatingCausedRerendering = false;
 	
 	// for debugging and errortracing reasons
@@ -188,10 +197,11 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 	
 	/**
 	 * @param name
-	 * @param chiefController
+	 * @param wbackoffice
 	 */
-	public Window(String name, WindowBackOfficeImpl wbackoffice) {
+	public Window(String name, String csrfToken, WindowBackOfficeImpl wbackoffice) {
 		super(name);
+		this.csrfToken = csrfToken;
 		this.wbackofficeImpl = wbackoffice;
 		jsAndCssAdder = wbackoffice.createJSAndCSSAdder();
 		// set default theme
@@ -213,7 +223,7 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 
 	/**
 	 * 
-	 * @param guiThemeBaseUri the URI of the base folder of the current Gui theme, r.g.  'http://www.myserver.com/olat/raw/themes/default/'
+	 * @param guiTheme the URI of the base folder of the current Gui theme, r.g.  'http://www.myserver.com/olat/raw/themes/default/'
 	 */
 	public void setGuiTheme(Theme guiTheme) {
 		this.guiTheme = guiTheme;
@@ -233,8 +243,9 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 		return title;
 	}
 
-	/** 
-	 * @param title The new title of this window (for browser history)
+	/**
+	 * @param translator
+	 * @param newTitle The new title of this window (for browser history)
 	 */
 	public void setTitle(Translator translator, String newTitle) {
 		this.title = translator.translate("page.appname") + " - " + newTitle;
@@ -277,9 +288,27 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 		throw new AssertException("please use getContentPane(): " + name);
 	}
 
+	public boolean isMarkToBeRemoved() {
+		return markToBeRemoved;
+	}
+
+	public void setMarkToBeRemoved(boolean markToBeRemoved) {
+		this.markToBeRemoved = markToBeRemoved;
+		if(markToBeRemoved) {
+			markToBeRemovedTimestamp = System.currentTimeMillis();
+		} else {
+			markToBeRemovedTimestamp = -1l;
+		}
+	}
+	
+	public boolean canBeRemoved() {
+		return (markToBeRemoved && markToBeRemovedTimestamp > 0 && System.currentTimeMillis() - markToBeRemovedTimestamp > WINDOW_CLOSED_TIMEOUT);
+	}
+
 	/**
 	 * @see org.olat.core.gui.components.Component#dispatchRequest(org.olat.core.gui.UserRequest)
 	 */
+	@Override
 	protected void doDispatchRequest(UserRequest ureq) {
 		dispatchRequest(ureq, false);
 	}
@@ -293,6 +322,10 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 		final HttpServletResponse response = ureq.getHttpResp();
 		final String timestampID = ureq.getTimestampID() == null ? "1" : ureq.getTimestampID();
 		final String componentID = ureq.getComponentID();
+		final boolean closeWindow = "close-window".equals(ureq.getParameter("cid"));
+		if(!closeWindow) {
+			setMarkToBeRemoved(false);
+		}
 
 		// case windowId timestamp componentId
 		// --------------------------------------------
@@ -403,7 +436,12 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 							forceReload = dispatchResult.isForceReload();
 							if (isDebugLog) {
 								long durationAfterDoDispatchToComponent = System.currentTimeMillis() - debug_start;
-								log.debug("Perf-Test: Window durationAfterDoDispatchToComponent=" + durationAfterDoDispatchToComponent);
+								log.debug("Perf-Test: Window durationAfterDoDispatchToComponent={}", durationAfterDoDispatchToComponent);
+							}
+							if(closeWindow) {
+								fireEvent(ureq, CLOSE_WINDOW);
+								ureq.getHttpResp().setStatus(HttpServletResponse.SC_NOT_MODIFIED);
+								return;
 							}
 						}	
 							
@@ -567,6 +605,7 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 							log.debug("Perf-Test: Window durationBeforeServeResource=" + durationBeforeServeResource);
 						}
 						
+						DBFactory.getInstance().commit();
 						wbackofficeImpl.pushCommands(ureq, request, response);
 					}  catch (InvalidRequestParameterException e) {
 						try {
@@ -589,7 +628,7 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 							Window errWindow = msgcc.getWindow();
 							errWindow.setUriPrefix(getUriPrefix());
 							// register window
-							Windows.getWindows(ureq).registerWindow(errWindow);
+							Windows.getWindows(ureq).registerWindow(msgcc);
 							// redirect to the error window
 							String newWinUri = buildRenderOnlyURIFor(errWindow);
 							Command rmrcom = CommandFactory.createParentRedirectTo(newWinUri);
@@ -615,6 +654,9 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 				inline = true;
 				validate = true;
 				wbackofficeImpl.fireCycleEvent(BEFORE_RENDER_ONLY);
+				if(closeWindow) {
+					fireEvent(ureq, CLOSE_WINDOW);
+				}
 			} else if (validatingCausedRerendering && timestampID.equals("-1")) {
 				// the first request after the 302 redirect cause by a component validation 
 				// -> just rerender, but clear the flag for further async media requests
@@ -687,6 +729,11 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 					long diff = dstop - dstart;
 					debugMsg.append("disp_comp:").append(diff).append(LOG_SEPARATOR);
 				}
+				if(closeWindow) {
+					fireEvent(ureq, CLOSE_WINDOW);
+					ureq.getHttpResp().setStatus(HttpServletResponse.SC_NOT_MODIFIED);
+					return;
+				}
 				if (didDispatch) { // the component with the given id was found
 					mr = ureq.getDispatchResult().getResultingMediaResource();
 					if (mr == null) {
@@ -712,13 +759,13 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 					Windows ws = Windows.getWindows(ureq);
 					if (!ws.isRegistered(resWindow)) {
 						resWindow.setUriPrefix(uriPrefix);
-						ws.registerWindow(resWindow);
+						ws.registerWindow(resWindow.getWindowBackOffice().getChiefController());
 					}
 					// render initial state of new window by redirecting (302) to the new
 					// window id. needed for asyncronous data like images loaded
 					
 					// todo maybe better delegate window registry to the windowbackoffice?
-					URLBuilder ubu = new URLBuilder(uriPrefix, resWindow.getInstanceId(), String.valueOf(resWindow.timestamp));
+					URLBuilder ubu = new URLBuilder(uriPrefix, resWindow.getInstanceId(), String.valueOf(resWindow.timestamp), csrfToken);
 					try(StringOutput sout = new StringOutput(30)) {
 						ubu.buildURI(sout, null, null);
 						mr = new RedirectMediaResource(sout.toString());
@@ -726,9 +773,9 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 						if (isDebugLog) {
 							long diff = System.currentTimeMillis() - debug_start;
 							debugMsg.append("rdirnw:").append(diff).append(LOG_SEPARATOR);
-							log.debug(debugMsg.toString());
+							log.debug(debugMsg);
 							long durationDispatchRequest = System.currentTimeMillis() - debug_start;
-							log.debug("Perf-Test: Window return from 2 durationDispatchRequest=" + durationDispatchRequest);
+							log.debug("Perf-Test: Window return from 2 durationDispatchRequest={}", durationDispatchRequest);
 						}
 					} catch(IOException e) {
 						log.error("", e);
@@ -751,7 +798,6 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 					// the component just got dispatched
 					if (validate) { // do not validate if a previous validate lead to a
 						// redirect; validating makes no sense here
-						//long t1 = System.currentTimeMillis();
 						ValidatingVisitor vv = new ValidatingVisitor(gsettings, jsAndCssAdder);
 						ComponentTraverser ct = new ComponentTraverser(vv, top, false);
 						ct.visitAll(ureq);
@@ -774,9 +820,9 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 							if (isDebugLog) {
 								long diff = System.currentTimeMillis() - debug_start;
 								debugMsg.append("rdirva:").append(diff).append(LOG_SEPARATOR);
-								log.debug(debugMsg.toString());
+								log.debug(debugMsg);
 								long durationDispatchRequest = System.currentTimeMillis() - debug_start;
-								log.debug("Perf-Test: Window return form 3 durationDispatchRequest=" + durationDispatchRequest);
+								log.debug("Perf-Test: Window return form 3 durationDispatchRequest={}", durationDispatchRequest);
 							}
 							return;
 						}
@@ -796,7 +842,7 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 						// coding effort: setting an appropriate business path and launching for each controller.
 						// note: the businesspath may also be used as a easy (but of course not perfect) back-button-solution:
 						// if the timestamp of a request is outdated, simply jump to its bookmarked business control path.
-						URLBuilder ubu = new URLBuilder(uriPrefix, getInstanceId(), newTimestamp);
+						URLBuilder ubu = new URLBuilder(uriPrefix, getInstanceId(), newTimestamp, csrfToken);
 						RenderResult renderResult = new RenderResult();
 						
 						// if we have an around-component-interception
@@ -807,7 +853,7 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 							renderResult.setInterceptHandlerRenderInstance(dhri);
 						}
 						
-						Renderer fr = Renderer.getInstance(top, top.getTranslator(), ubu, renderResult, gsettings);
+						Renderer fr = Renderer.getInstance(top, top.getTranslator(), ubu, renderResult, gsettings, ureq.getUserSession().getCsrfToken());
 						long rstart = 0;
 						if (isDebugLog) {
 							rstart = System.currentTimeMillis();
@@ -850,6 +896,7 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 						debugMsg.append("inl_serve:").append(diff).append(LOG_SEPARATOR);
 					}
 			} 
+			DBFactory.getInstance().commit();
 			//else serve mediaresource, but postpone serving to when lock has been released,
 			// otherwise e.g. a large download blocks the window, so that the user cannot click until the download is finished
 		} // end of synchronized(this)
@@ -914,20 +961,6 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 			return new JSCommand(sb.toString());
 		}
 		return null;
-	}
-	
-	public String renderComponent(Component cmp) {
-		RenderResult renderResult = new RenderResult();
-		URLBuilder ubu = new URLBuilder(getUriPrefix(), getInstanceId(), getTimestamp());
-		Renderer fr = Renderer.getInstance(cmp.getParent(), cmp.getTranslator(), ubu, renderResult, wbackofficeImpl.getGlobalSettings());
-		
-		try(StringOutput sb = StringOutputPool.allocStringBuilder(2048)) {
-			fr.render(cmp, sb, null);
-			return StringOutputPool.freePop(sb);
-		} catch(IOException e) {
-			log.error("", e);
-			return null;
-		}
 	}
 
 	/**
@@ -1034,7 +1067,7 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 								toRender.setDomReplaceable(false);
 								wrapper.setContent(toRender);
 								String newTimestamp = String.valueOf(timestamp);
-								URLBuilder ubu = new URLBuilder(uriPrefix,getInstanceId(), newTimestamp);
+								URLBuilder ubu = new URLBuilder(uriPrefix,getInstanceId(), newTimestamp, csrfToken);
 
 								renderResult = new RenderResult();
 
@@ -1046,7 +1079,7 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 									renderResult.setInterceptHandlerRenderInstance(dhri);
 								}
 
-								Renderer fr = Renderer.getInstance(wrapper,null, ubu, renderResult, gsettings);
+								Renderer fr = Renderer.getInstance(wrapper,null, ubu, renderResult, gsettings, csrfToken);
 								jsol = StringOutputPool.allocStringBuilder(2048);
 								fr.renderBodyOnLoadJSFunctionCall(jsol,toRender);
 								hdr = StringOutputPool.allocStringBuilder(2048);
@@ -1090,10 +1123,6 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 								jo.put("cname", toRender.getComponentName());
 								jo.put("clisteners",toRender.getListenerInfo());
 								jo.put("hfragsize", result.length());
-							}
-							
-							if(cid == null) {
-								System.out.println();
 							}
 							
 							jo.put("cid", cid);
@@ -1142,13 +1171,11 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 	 * 
 	 * @param win the window id the new url
 	 * @param timestampId
-	 * @param componentId
 	 * @param moduleUri
-	 * @param bc the businesscontrolpath
 	 * @return the new (relative) url as a string
 	 */
 	public String buildURIFor(Window win, String timestampId, String moduleUri) {
-		URLBuilder ubu = new URLBuilder(uriPrefix, win.getInstanceId(), timestampId);
+		URLBuilder ubu = new URLBuilder(uriPrefix, win.getInstanceId(), timestampId, csrfToken);
 		try(StringOutput so = new StringOutput()) {
 			ubu.buildURI(so, null, null, moduleUri, 0);
 			return so.toString();
@@ -1167,7 +1194,7 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 	}
 	
 	public URLBuilder getURLBuilder() {
-		return new URLBuilder(getUriPrefix(), getInstanceId(), getTimestamp());
+		return new URLBuilder(getUriPrefix(), getInstanceId(), getTimestamp(), csrfToken);
 	}
 	
 	/**
@@ -1215,7 +1242,21 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 			
 			// dispatch
 			wbackofficeImpl.fireCycleEvent(Window.ABOUT_TO_DISPATCH);
-			target.dispatchRequest(ureq);
+			
+			boolean validCsrf = csrfToken.equals(ureq.getRequestCsrfToken());
+			if(!(target instanceof CsrfDelegate) && !validCsrf) {
+				log.warn("CSRF mismatch");
+				if(CoreSpringFactory.getImpl(CSPModule.class).isCsrfEnabled()) {
+					String warning = Util.createPackageTranslator(Window.class, ureq.getLocale()).translate("warning.invalid.csrf");
+					getWindowBackOffice().getChiefController().getWindowControl().setWarning(warning);
+					ureq.getHttpResp().setStatus(403);
+					return new DispatchResult(toDispatch, incTimestamp, false);
+				} else {
+					target.dispatchRequest(ureq);
+				}
+			} else {
+				target.dispatchRequest(ureq);
+			}
 		
 			List<Component> ancestors = ComponentHelper.findAncestorsOrSelfByID(getContentPane(), target);
 			for(Component ancestor:ancestors) {
@@ -1242,7 +1283,7 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 		}
 		
 		ChiefController chief = wbackofficeImpl.getChiefController();
-		boolean reload = chief == null ? false : chief.wishReload(ureq, true);
+		boolean reload = chief != null && chief.wishReload(ureq, true);
 		return new DispatchResult(toDispatch, incTimestamp, reload);
 	}
 	
@@ -1318,6 +1359,10 @@ public class Window extends AbstractComponent implements CustomCSSDelegate {
 	 */
 	public void setUriPrefix(String uriPrefix) {
 		this.uriPrefix = uriPrefix;
+	}
+	
+	public String getCsrfToken() {
+		return csrfToken;
 	}
 
 	/**

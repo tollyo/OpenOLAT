@@ -34,7 +34,6 @@ import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 
 import org.apache.logging.log4j.Logger;
-import org.olat.admin.user.delete.service.UserDeletionManager;
 import org.olat.basesecurity.BaseSecurity;
 import org.olat.basesecurity.BaseSecurityModule;
 import org.olat.core.commons.services.webdav.WebDAVManager;
@@ -90,8 +89,6 @@ public class WebDAVManagerImpl implements WebDAVManager, InitializingBean {
 	private WebDAVAuthManager webDAVAuthManager;
 	@Autowired
 	private WebDAVModule webdavModule;
-	@Autowired
-	private UserDeletionManager userDeletionManager;
 
 	@Autowired
 	public WebDAVManagerImpl(CoordinatorManager coordinatorManager) {
@@ -281,9 +278,9 @@ public class WebDAVManagerImpl implements WebDAVManager, InitializingBean {
 	private boolean proposeBasicAuthentication(HttpServletRequest request) {
 		String userAgent = ServletUtil.getUserAgent(request);
 		if(StringHelper.containsNonWhitespace(userAgent)) {
-			String[] blackList = webdavModule.getBasicAuthenticationBlackList();
-			for(String blackListedAgent:blackList) {
-				if(userAgent.contains(blackListedAgent) && webdavModule.isDigestAuthenticationEnabled()) {
+			String[] exclusionList = webdavModule.getBasicAuthenticationExclusionList();
+			for(String exclusion:exclusionList) {
+				if(userAgent.contains(exclusion) && webdavModule.isDigestAuthenticationEnabled()) {
 					return false;
 				}
 			}
@@ -293,7 +290,7 @@ public class WebDAVManagerImpl implements WebDAVManager, InitializingBean {
 
 	protected UserSession handleDigestAuthentication(DigestAuthentication digestAuth, HttpServletRequest request) {
 		Identity identity = webDAVAuthManager.digestAuthentication(request.getMethod(), digestAuth);
-		if(identity != null && securityManager.isIdentityVisible(identity)) {
+		if(identity != null && securityManager.isIdentityLoginAllowed(identity, WebDAVAuthManager.PROVIDER_HA1)) {
 			log.info("WebDAV Digest authentication of: {}", identity);
 			return afterAuthorization(identity, request);
 		}
@@ -314,8 +311,8 @@ public class WebDAVManagerImpl implements WebDAVManager, InitializingBean {
 			// and set valid true if valid.
 			// In this example, we simply check
 			// that neither field is blank
-			Identity identity = webDAVAuthManager.authenticate(null, userID, password);
-			if (identity != null && securityManager.isIdentityVisible(identity)) {
+			Identity identity = webDAVAuthManager.authenticate(userID, password);
+			if (identity != null && securityManager.isIdentityLoginAllowed(identity, WebDAVAuthManager.PROVIDER_WEBDAV)) {
 				log.debug("WebDAV Basic authentication of: {}", identity);
 				return afterAuthorization(identity, request);
 			}
@@ -333,12 +330,12 @@ public class WebDAVManagerImpl implements WebDAVManager, InitializingBean {
 		
 			sessionManager.signOffAndClear(usess);
 			usess.setIdentity(identity);
-			userDeletionManager.setIdentityAsActiv(identity);
+			securityManager.setIdentityLastLogin(identity);
 			// set the roles (admin, author, guest)
 			Roles roles = securityManager.getRoles(identity);
 			usess.setRoles(roles);
 			// set session info
-			SessionInfo sinfo = new SessionInfo(identity.getKey(), identity.getName(), request.getSession());
+			SessionInfo sinfo = new SessionInfo(identity.getKey(), request.getSession());
 			User usr = identity.getUser();
 			sinfo.setFirstname(usr.getProperty(UserConstants.FIRSTNAME, null));
 			sinfo.setLastname(usr.getProperty(UserConstants.LASTNAME, null));

@@ -679,6 +679,11 @@ public class RepositoryEntryListController extends FormBasicController
 		if(row.isClosed()) {
 			selectLink.setIconLeftCSS("o_icon o_CourseModule_icon_closed");
 		}
+		if(row.isMember()) {
+			String businessPath = "[RepositoryEntry:" + row.getKey() + "]";
+			selectLink.setUrl(BusinessControlFactory.getInstance()
+				.getAuthenticatedURLFromBusinessPathString(businessPath));
+		}
 		selectLink.setUserObject(row);
 		row.setSelectLink(selectLink);
 	}
@@ -698,6 +703,9 @@ public class RepositoryEntryListController extends FormBasicController
 		startLink.setUserObject(row);
 		startLink.setCustomEnabledLinkCSS(iconCss);
 		startLink.setIconRightCSS("o_icon o_icon_start");
+		String businessPath = "[RepositoryEntry:" + row.getKey() + "]";
+		startLink.setUrl(BusinessControlFactory.getInstance()
+				.getAuthenticatedURLFromBusinessPathString(businessPath));
 		row.setStartLink(startLink);
 	}	
 	
@@ -706,6 +714,11 @@ public class RepositoryEntryListController extends FormBasicController
 		FormLink detailsLink = uifactory.addFormLink("details_" + row.getKey(), "details", "details", null, null, Link.LINK);
 		detailsLink.setCustomEnabledLinkCSS("o_details");
 		detailsLink.setUserObject(row);
+		if (row.isMember()) {
+			String businessPath = "[RepositoryEntry:" + row.getKey() + "][Infos:0]";
+			detailsLink.setUrl(BusinessControlFactory.getInstance()
+					.getAuthenticatedURLFromBusinessPathString(businessPath));
+		}
 		row.setDetailsLink(detailsLink);
 	}
 

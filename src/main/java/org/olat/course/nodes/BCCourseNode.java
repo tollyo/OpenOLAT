@@ -51,6 +51,7 @@ import org.olat.core.util.vfs.NamedContainerImpl;
 import org.olat.core.util.vfs.VFSContainer;
 import org.olat.core.util.vfs.VFSItem;
 import org.olat.core.util.vfs.VFSManager;
+import org.olat.core.util.vfs.filters.VFSRevisionsAndThumbnailsFilter;
 import org.olat.core.util.vfs.filters.VFSSystemItemFilter;
 import org.olat.course.CourseModule;
 import org.olat.course.ICourse;
@@ -202,7 +203,7 @@ public class BCCourseNode extends AbstractAccessableCourseNode {
 		File fNodeExportDir = new File(exportDirectory, getIdent());
 		fNodeExportDir.mkdirs();
 		File outputFile = new File(fNodeExportDir, "oonode.zip");
-		ZipUtil.zip(nodeContainer, outputFile);
+		ZipUtil.zip(nodeContainer, outputFile, new VFSRevisionsAndThumbnailsFilter(), true);
 	}
 
 	@Override
@@ -215,7 +216,7 @@ public class BCCourseNode extends AbstractAccessableCourseNode {
 					.olatRootContainer(getFoldernodePathRelToFolderBase(course.getCourseEnvironment(), this), null);
 			ZipUtil.unzipNonStrict(fFolderNodeZip, nodeContainer, owner, false);
 		} else {
-			// the whole folder can be moved back to the root direcotry of foldernodes
+			// the whole folder can be moved back to the root directory of foldernodes
 			// of this course
 			File fFolderNodeDir = new File(FolderConfig.getCanonicalRoot() + getFoldernodePathRelToFolderBase(course.getCourseEnvironment(), this));
 			fFolderNodeDir.mkdirs();

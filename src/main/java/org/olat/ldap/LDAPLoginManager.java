@@ -27,6 +27,7 @@ import java.util.Map;
 import javax.naming.directory.Attributes;
 import javax.naming.ldap.LdapContext;
 
+import org.olat.basesecurity.Authentication;
 import org.olat.basesecurity.IdentityRef;
 import org.olat.core.id.Identity;
 import org.olat.core.id.OLATResourceable;
@@ -42,7 +43,7 @@ public interface LDAPLoginManager {
 	
 	public Identity authenticate(String username, String pwd, LDAPError ldapError);
 
-	public boolean changePassword(Identity identity, String pwd, LDAPError errors);
+	public boolean changePassword(Authentication auth, String pwd, LDAPError errors);
 	
 
 	public Identity createAndPersistUser(String uid);
@@ -51,7 +52,7 @@ public interface LDAPLoginManager {
 	
 	public Map<String,String> prepareUserPropertyForSync(Attributes attributes, Identity identity);
 	
-	public List<Identity> getIdentitysDeletedInLdap(LdapContext ctx);
+	public List<Identity> getIdentitiesDeletedInLdap(LdapContext ctx);
 	
 	public Identity findIdentityByLdapAuthentication(Attributes attrs, LDAPError errors);
 	
@@ -68,8 +69,6 @@ public interface LDAPLoginManager {
 	public boolean acquireSyncLock();
 	
 	public void freeSyncLock();
-	
-	public void doSyncSingleUser(Identity ident);
 	
 	/**
 	 * A filter is build from the login attribute value and the resulting

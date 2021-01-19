@@ -20,6 +20,8 @@
 package org.olat.repository.ui.author;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.olat.basesecurity.GroupRoles;
 import org.olat.core.gui.UserRequest;
@@ -43,8 +45,11 @@ import org.olat.core.util.mail.MailHelper;
 import org.olat.core.util.mail.MailPackage;
 import org.olat.core.util.mail.MailTemplate;
 import org.olat.core.util.mail.MailerResult;
+import org.olat.course.member.wizard.ImportMemberByUsernamesController;
 import org.olat.course.member.wizard.ImportMember_1a_LoginListStep;
 import org.olat.course.member.wizard.ImportMember_1b_ChooseMemberStep;
+import org.olat.course.member.wizard.MembersByNameContext;
+import org.olat.course.member.wizard.MembersContext;
 import org.olat.group.BusinessGroupService;
 import org.olat.group.model.BusinessGroupMembershipChange;
 import org.olat.group.ui.main.AbstractMemberListController;
@@ -71,7 +76,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 public class RepositoryMembersController extends AbstractMemberListController {
 	
 	private final SearchMembersParams params;
-	private FormLink importMemberLink, addMemberLink;
+	private FormLink addMemberLink;
+	private FormLink importMemberLink; 
 	private StepsMainRunController importMembersWizard;
 	
 	@Autowired
@@ -144,7 +150,8 @@ public class RepositoryMembersController extends AbstractMemberListController {
 	private void doChooseMembers(UserRequest ureq) {
 		removeAsListenerAndDispose(importMembersWizard);
 
-		Step start = new ImportMember_1b_ChooseMemberStep(ureq, repoEntry, null, null, false);
+		MembersContext membersContext = MembersContext.valueOf(repoEntry, false);
+		Step start = new ImportMember_1b_ChooseMemberStep(ureq, membersContext);
 		StepRunnerCallback finish = (uureq, wControl, runContext) -> {
 			addMembers(uureq, runContext);
 			return StepsMainRunController.DONE_MODIFIED;
@@ -159,11 +166,15 @@ public class RepositoryMembersController extends AbstractMemberListController {
 	private void doImportMembers(UserRequest ureq) {
 		removeAsListenerAndDispose(importMembersWizard);
 
-		Step start = new ImportMember_1a_LoginListStep(ureq, repoEntry, null, null, false);
+		MembersContext membersContext = MembersContext.valueOf(repoEntry, false);
+		Step start = new ImportMember_1a_LoginListStep(ureq, membersContext);
 		StepRunnerCallback finish = (uureq, wControl, runContext) -> {
 			addMembers(uureq, runContext);
-			if(runContext.containsKey("notFounds")) {
-				showWarning("user.notfound", runContext.get("notFounds").toString());
+			MembersByNameContext membersByNameContext = (MembersByNameContext)runContext.get(ImportMemberByUsernamesController.RUN_CONTEXT_KEY);
+			if(!membersByNameContext.getNotFoundNames().isEmpty()) {
+				String notFoundNames = membersByNameContext.getNotFoundNames().stream()
+						.collect(Collectors.joining(", "));
+				showWarning("user.notfound", notFoundNames);
 			}
 			return StepsMainRunController.DONE_MODIFIED;
 		};
@@ -177,26 +188,26 @@ public class RepositoryMembersController extends AbstractMemberListController {
 	protected void addMembers(UserRequest ureq, StepsRunContext runContext) {
 		Roles roles = ureq.getUserSession().getRoles();
 		
-		@SuppressWarnings("unchecked")
-		List<Identity> members = (List<Identity>)runContext.get("members");
+		Set<Identity> members = ((MembersByNameContext)runContext.get(ImportMemberByUsernamesController.RUN_CONTEXT_KEY)).getIdentities();
 		MailTemplate template = (MailTemplate)runContext.get("mailTemplate");
 		MemberPermissionChangeEvent changes = (MemberPermissionChangeEvent)runContext.get("permissions");
 		
 		//commit changes to the repository entry
 		MailerResult result = new MailerResult();
 		MailPackage reMailing = new MailPackage(template, result, getWindowControl().getBusinessControl().getAsString(), template != null);
-		List<RepositoryEntryPermissionChangeEvent> repoChanges = changes.generateRepositoryChanges(members);
+		List<RepositoryEntryPermissionChangeEvent> repoChanges = changes.getRepoChanges();
 		repositoryManager.updateRepositoryEntryMemberships(getIdentity(), roles, repoEntry, repoChanges, reMailing);
 
 		//commit all changes to the group memberships
-		List<BusinessGroupMembershipChange> allModifications = changes.generateBusinessGroupMembershipChange(members);
+		List<BusinessGroupMembershipChange> allModifications = changes.getGroupChanges();
 		MailPackage bgMailing = new MailPackage(template, result, getWindowControl().getBusinessControl().getAsString(), template != null);
 		businessGroupService.updateMemberships(getIdentity(), allModifications, bgMailing);
 		boolean detailedErrorOutput = roles.isAdministrator() || roles.isSystemAdmin();
 		MailHelper.printErrorsAndWarnings(result, getWindowControl(), detailedErrorOutput, getLocale());
 		
 		//commit all changes to the curriculum memberships
+		MailPackage curMailing = new MailPackage(template, result, getWindowControl().getBusinessControl().getAsString(), template != null);
 		List<CurriculumElementMembershipChange> curriculumChanges = changes.generateCurriculumElementMembershipChange(members);
-		curriculumService.updateCurriculumElementMemberships(getIdentity(), roles, curriculumChanges);
+		curriculumService.updateCurriculumElementMemberships(getIdentity(), roles, curriculumChanges, curMailing);
 	}
 }

@@ -41,6 +41,7 @@ import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.Event;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.util.Formatter;
+import org.olat.core.util.StringHelper;
 import org.olat.core.util.WebappHelper;
 import org.olat.core.util.vfs.LocalFileImpl;
 import org.olat.core.util.vfs.Quota;
@@ -48,6 +49,7 @@ import org.olat.core.util.vfs.VFSLeaf;
 import org.olat.modules.webFeed.Feed;
 import org.olat.modules.webFeed.manager.FeedManager;
 import org.olat.modules.webFeed.manager.ValidatedURL;
+import org.olat.repository.RepositoryEntry;
 
 /**
  * This controller is responsible for editing feed information. <br />
@@ -64,27 +66,32 @@ import org.olat.modules.webFeed.manager.ValidatedURL;
 class FeedFormController extends FormBasicController {
 	private Feed feed;
 	private Quota feedQuota;
+	private final boolean canChangeUrl;
 	
-	private TextElement title;
+	private TextElement titleEl;
 	private FileElement file;
-	private RichTextElement description;
+	private RichTextElement descriptionEl;
 	private FormLink cancelButton;
 	private FormLink deleteImage;
-	private boolean imageDeleted = false;
-
 	/**
 	 * if form edits an external feed:
 	 */
 	private TextElement feedUrl;
 	
+	private RepositoryEntry entry;
+	private boolean imageDeleted = false;
+	
 	/**
 	 * @param ureq
 	 * @param control
 	 */
-	public FeedFormController(UserRequest ureq, WindowControl wControl, Feed feed, FeedUIFactory uiFactory) {
+	public FeedFormController(UserRequest ureq, WindowControl wControl,
+			Feed feed, FeedUIFactory uiFactory, RepositoryEntry entry, boolean canChangeUrl) {
 		super(ureq, wControl);
 		this.feed = feed;
-		this.feedQuota = FeedManager.getInstance().getQuota(feed);
+		this.entry = entry;
+		this.canChangeUrl = canChangeUrl;
+		feedQuota = FeedManager.getInstance().getQuota(feed);
 		setTranslator(uiFactory.getTranslator());
 		initForm(ureq);
 	}
@@ -94,13 +101,17 @@ class FeedFormController extends FormBasicController {
 	protected void doDispose() {
 		// nothing to dispose
 	}
+	
+	public boolean canChangeUrl() {
+		return canChangeUrl && feedUrl != null;
+	}
 
 	@Override
 	protected void formOK(UserRequest ureq) {
-		feed.setTitle(title.getValue());
-		feed.setDescription(description.getValue());
+		feed.setTitle(titleEl.getValue());
+		feed.setDescription(descriptionEl.getValue());
 		
-		if(feed.isExternal()) {
+		if(canChangeUrl && feed.isExternal() && feedUrl != null) {
 			feed.setExternalFeedUrl(feedUrl.isEmpty() ? null : feedUrl.getValue());
 		}
 		
@@ -148,13 +159,22 @@ class FeedFormController extends FormBasicController {
 
 	@Override
 	protected boolean validateFormLogic(UserRequest ureq) {
-		String descriptionText = description.getValue();
-		boolean allOk = true;
-		if(descriptionText.length() <= 4000) {
-			description.clearError();
-		} else {
-			description.setErrorKey("input.toolong", new String[]{"4000"});
-			allOk = false;
+		boolean allOk = super.validateFormLogic(ureq);
+		
+		titleEl.clearError();
+		if(!StringHelper.containsNonWhitespace(titleEl.getValue())) {
+			titleEl.setErrorKey("form.legende.mandatory", null);
+			allOk &= false;
+		} else if(titleEl.getValue() != null && titleEl.getValue().length() >= 100) {
+			titleEl.setErrorKey("input.toolong", new String[]{"100"} );
+			allOk &= false;
+		}
+		
+		descriptionEl.clearError();
+		String descriptionText = descriptionEl.getValue();
+		if(descriptionText != null && descriptionText.length() > 4000) {
+			descriptionEl.setErrorKey("input.toolong", new String[]{"4000"});
+			allOk &= false;
 		}
 		
 		if (file.isUploadSuccess()) {
@@ -166,8 +186,9 @@ class FeedFormController extends FormBasicController {
 				getWindowControl().setError(translate("ULLimitExceeded", new String[] { Formatter.roundToString(uploadLimitKB.floatValue() / 1024f, 1), supportAddr }));				
 			}
 		}
-
-		return allOk && validateExternalFeedUrl() && super.validateFormLogic(ureq);
+		
+		allOk &= validateExternalFeedUrl();
+		return allOk;
 	}
 	
 	/**
@@ -177,7 +198,7 @@ class FeedFormController extends FormBasicController {
 	 */
 	private boolean validateExternalFeedUrl(){
 		//if not external, there is no text-element, do not check, just return true
-		if(!feed.isExternal()) return true;
+		if(!feed.isExternal() || !canChangeUrl) return true;
 		
 		boolean validUrl = false;
 		if(feedUrl.isEmpty()) {
@@ -214,16 +235,23 @@ class FeedFormController extends FormBasicController {
 	@Override
 	protected void initForm(FormItemContainer formLayout, Controller listener, UserRequest ureq) {
 		// title might be longer from external source
-		String saveTitle = PersistenceHelper.truncateStringDbSave(feed.getTitle(), 256, true);
-		title = uifactory.addTextElement("title", "feed.title.label", 256, saveTitle, formLayout);
-		title.setElementCssClass("o_sel_feed_title");
-		title.setMandatory(true);
-		title.setNotEmptyCheck("feed.form.field.is_mandatory");
+		String title = PersistenceHelper.truncateStringDbSave(feed.getTitle(), 256, true);
+		if(!StringHelper.containsNonWhitespace(title) && entry != null) {
+			title = entry.getDisplayname();
+		}
+		titleEl = uifactory.addTextElement("title", "feed.title.label", 256, title, formLayout);
+		titleEl.setElementCssClass("o_sel_feed_title");
+		titleEl.setMandatory(true);
+		titleEl.setNotEmptyCheck("feed.form.field.is_mandatory");
+		
+		String description = feed.getDescription();
+		if(!StringHelper.containsNonWhitespace(title) && entry != null) {
+			description = entry.getDescription();
+		}
 
-		description = uifactory.addRichTextElementForStringDataMinimalistic("description", "feed.form.description", feed
-				.getDescription(), 5, -1, formLayout, getWindowControl());
-		description.setMaxLength(4000);
-		RichTextConfiguration richTextConfig = description.getEditorConfiguration();
+		descriptionEl = uifactory.addRichTextElementForStringDataMinimalistic("description", "feed.form.description", description, 8, -1, formLayout, getWindowControl());
+		descriptionEl.setMaxLength(4000);
+		RichTextConfiguration richTextConfig = descriptionEl.getEditorConfiguration();
 		// set upload dir to the media dir
 		richTextConfig.setFileBrowserUploadRelPath("media");
 
@@ -231,7 +259,7 @@ class FeedFormController extends FormBasicController {
 		deleteImage= uifactory.addFormLink("feed.image.delete", formLayout, Link.BUTTON);
 		deleteImage.setVisible(false);
 
-		file = uifactory.addFileElement(getWindowControl(), "feed.file.label", formLayout);
+		file = uifactory.addFileElement(getWindowControl(), getIdentity(), "feed.file.label", formLayout);
 		file.setExampleKey("feed.form.file.type.explain.images", null);
 		file.addActionListener(FormEvent.ONCHANGE);
 		file.setPreview(ureq.getUserSession(), true);
@@ -256,7 +284,7 @@ class FeedFormController extends FormBasicController {
 		file.setMaxUploadSizeKB(maxFileSizeKB, "ULLimitExceeded", new String[]{ Integer.toString(maxFileSizeKB / 1024), supportAddr });
 
 		// if external feed, display feed-url text-element:
-		if(feed.isExternal()){
+		if(canChangeUrl && feed.isExternal()){
 			feedUrl = uifactory.addTextElement("feedUrl", "feed.form.feedurl", 5000, feed.getExternalFeedUrl(), flc);
 			feedUrl.setElementCssClass("o_sel_feed_url");
 			feedUrl.setDisplaySize(70);

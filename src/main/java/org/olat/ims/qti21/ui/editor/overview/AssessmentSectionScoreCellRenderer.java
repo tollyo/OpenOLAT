@@ -26,7 +26,6 @@ import org.olat.core.gui.render.Renderer;
 import org.olat.core.gui.render.StringOutput;
 import org.olat.core.gui.render.URLBuilder;
 import org.olat.core.gui.translator.Translator;
-import org.olat.modules.assessment.ui.ScoreCellRenderer;
 
 import uk.ac.ed.ph.jqtiplus.node.test.AssessmentSection;
 import uk.ac.ed.ph.jqtiplus.node.test.TestPart;
@@ -39,11 +38,11 @@ import uk.ac.ed.ph.jqtiplus.node.test.TestPart;
  */
 public class AssessmentSectionScoreCellRenderer implements FlexiCellRenderer {
 	
-	private final ScoreCellRenderer scoreRenderer;
+	private final MaxScoreCellRenderer scoreRenderer;
 	private final StaticFlexiCellRenderer actionRenderer;
 	
-	public AssessmentSectionScoreCellRenderer(String action) {
-		scoreRenderer = new ScoreCellRenderer();
+	public AssessmentSectionScoreCellRenderer(String action, Translator translator) {
+		scoreRenderer = new MaxScoreCellRenderer(translator);
 		actionRenderer = new StaticFlexiCellRenderer(action, scoreRenderer);
 	}
 

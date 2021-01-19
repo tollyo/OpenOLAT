@@ -83,6 +83,21 @@ public class EMailIdentity implements Identity {
 	public Integer getStatus() {
 		return null;
 	}
+	
+	@Override
+	public Date getInactivationDate() {
+		return null;
+	}
+	
+	@Override
+	public Date getReactivationDate() {
+		return null;
+	}
+	
+	@Override
+	public Date getExpirationDate() {
+		return null;
+	}
 
 	private class EMailUser implements User, ModifiedInfo {
 
@@ -116,6 +131,11 @@ public class EMailIdentity implements Identity {
 			return data.get(UserConstants.LASTNAME);
 		}
 		
+		@Override
+		public String getNickName() {
+			return data.get(UserConstants.NICKNAME);
+		}
+
 		@Override
 		public String getEmail() {
 			return data.get(UserConstants.EMAIL);

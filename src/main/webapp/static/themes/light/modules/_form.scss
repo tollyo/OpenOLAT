@@ -57,9 +57,18 @@
 	.o_date.form-inline  {
 		.form-group {
 			margin-left: 0;
+			display: inline-block;
+			vertical-align: middle;
+		}
+		.form-control {
+			display: inline-block;
 		}
 		.form-group.o_second_date, .o_date_ms.form-group, .form-group.o_date_separator {
 			margin-left: 25px;
+		}
+		
+		.form-group.o_date_ms.o_time_only {
+			margin-left: 0;
 		}
 	}
 	
@@ -87,40 +96,15 @@
 		padding-right: 0;
 	}
 	
-	/* file chooser */
-	.o_filepreview {
-		img {
-			@extend .img-thumbnail;
-		}
-		margin-bottom: floor($line-height-computed / 2);
-	}
-	.o_fileinput {
-		cursor: pointer;
-		position: relative;
-		/* the fake chooser is what the user sees. this is on layer 1, only for display */
-		.o_fakechooser {
-			position: relative;
-			z-index: 1; 		
-		}
-		/* real file chooser is transparent but on layer 2, click events trigger realchooser, not fakechooser */
-		.o_realchooser { 
-			position: absolute; 
-			top: 0; right: 0;
-			z-index: 2; 
-			@include opacity(0); /* this is the magic: visually don't show the input element, but nevertheless catch click events */
-		}
-		.o_realchooser.o_chooser_with_delete {
-			right: 38px;
-		}
-	}
-	/* hide error icon for file element - clash with file element controls */
-	.o_fileElement.has-error .o_icon_error.form-control-feedback {
-		display: none;
+	.form-control.textarea.o_fixed_font_with {
+		resize: vertical;
+		font-family: $font-family-monospace;
 	}
 	
-	.form-control.textarea.o_fixed_font_with {
-		resize: vertical !important;
-		font-family: $font-family-monospace;
+	.form-control.textarea.o_original_line_breaks {
+		white-space: pre;
+		word-wrap: normal;
+		overflow-x: auto;
 	}
 	
 	.form-control.textarea_disabled.o_fixed_font_with {
@@ -138,7 +122,148 @@
 		white-space: pre-wrap;
 		background: $input-bg-disabled;
 	}
+	
+	/*
+	currently not working in Safari and Firefox, therefore deactivated
+	.form-control.textarea.o_striped_background {
+		background-image: linear-gradient(#F1F1F1 50%, #F9F9F9 50%);
+ 		background-size: 100% #{2*$line-height-base}em;
+		background-attachment: local;
+	}*/
+	
+	.o_textarea_line_numbers_container {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: nowrap;
+	}
+	
+	.o_textarea_line_numbers_input, .o_textarea_line_numbers_wrapper, .o_textarea_line_numbers_row {
+		box-sizing: border-box;
+		vertical-align: middle;
+	}
+	
+	.o_textarea_line_numbers_input {
+		display: inline-block;
+		padding: 0 0.3em;
+		width: 100%;
+		height: 100%;
+		overflow-x: scroll;
+		resize: none !important;
+	}
+	
+	.o_textarea_line_numbers_wrapper {
+		padding: 1px 0.3em 0 0;
+		height: 100%;
+		overflow: hidden;
+	}	
+	
+	.o_textarea_line_numbers_row {
+		width: 100%;
+		display: flex;		
+		align-items: center;
+	}
+	
+	.o_textarea_line_numbers_row span {
+		font-family: $font-family-monospace;
+		text-align: right;
+		margin-left: auto;
+	}
+	
+	.o_textarea_line_numbers_row i {
+		text-align: left;
+		margin-right: 0.2em;
+	}
 }
+
+/* file chooser */
+.o_filepreview {
+	img {
+		@extend .img-thumbnail;
+	}
+	margin-bottom: $padding-base-vertical;
+}
+/* uploaded file with delete button */
+.o_filemeta {
+  	padding-top: ($padding-base-vertical + 1);
+  	padding-bottom: ($padding-base-vertical + 1);
+}
+.o_filesize {
+	margin-left: 0.5em;
+}
+.o_filedelete {
+	margin-left: 2em;
+}
+.o_fileinput {
+	position: relative;
+	/* the fake chooser is what the user sees. this is on layer 1, only for display */
+	.o_fakechooser {
+		position: relative;
+		z-index: 1; 		
+	}
+	/* real file chooser is transparent but on layer 2, click events trigger realchooser, not fakechooser */
+	.o_realchooser { 
+		cursor: pointer;
+		position: absolute; 
+		height: 100%;
+		width: 100%;
+		top: 0; right: 0;
+		z-index: 2; 
+		@include opacity(0); /* this is the magic: visually don't show the input element, but nevertheless catch click events */
+
+	}
+	/* the fake drag&drop area */	
+	&.o_area {
+		padding: 5px 20px ;
+		border-style: dashed;
+		
+		
+		.o_dnd {
+			text-align: center;
+		}
+		.o_dnd_icon {
+			font-size: 1.5em;
+			color: $o-panel-placeholder-color;
+		}
+		.o_dnd_info {
+			color: $o-panel-placeholder-color;
+			font-size: 0.9em;
+		}
+		.o_dnd_select {
+			margin: 0.5em;
+		}			
+		&.o_dnd_over {
+			border-color: $o-panel-placeholder-border-active-color;
+			background: $o-panel-placeholder-bg-active;
+			.o_dnd_icon {
+				color: $o-panel-placeholder-border-active-color;
+			}
+		}	
+		/* button hover not triggered because realchooser catches the hover event, manually apply btn hover style */
+		.o_realchooser {			
+			&:hover,
+			&:focus {
+				&+.o_dnd .btn {
+					color: $btn-default-color;
+				    background-color: darken($btn-default-bg, 10%);
+			        border-color: darken($btn-default-border, 12%);
+				}
+			}
+		}
+		
+		&.o_preview {
+			background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' version='1.1' height='100%' width='90px'><text transform='translate(20, 80) rotate(-45)' fill='rgb(230,230,230)' font-size='22'>Preview</text></svg>");
+		}
+	}
+	&.panel-placeholder:hover {
+		border-color: darken($o-panel-placeholder-border-color, 10%);
+	}
+}
+/* hide error icon for file element - clash with file element controls */
+.o_fileElement.has-error .o_icon_error.form-control-feedback {
+	display: none;
+}
+
+
 
 .o_form_inline_mandatory_compact {
 	i {
@@ -244,4 +369,14 @@
 			text-shadow: -1px 0 2px rgba(0,0,0,.25);
 		}	
 	}
+}
+
+/* STATIC TEXTELEMENT */
+.o_static_textelement_bold {
+	font-weight: bold;
+}
+
+/* input indentation */
+.o_checkbox_indented {
+	padding-left: 3em !important;
 }

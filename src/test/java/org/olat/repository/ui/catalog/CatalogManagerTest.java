@@ -26,7 +26,6 @@ import java.util.Random;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.olat.basesecurity.BaseSecurity;
 import org.olat.basesecurity.OrganisationService;
 import org.olat.basesecurity.manager.SecurityGroupDAO;
 import org.olat.core.commons.persistence.DB;
@@ -67,8 +66,6 @@ public class CatalogManagerTest extends OlatTestCase {
 	private RepositoryService repositoryService;
 	@Autowired
 	private OrganisationService organisationService;
-	@Autowired
-	private BaseSecurity securityManager;
 	@Autowired
 	private SecurityGroupDAO securityGroupDao;
 	
@@ -277,8 +274,7 @@ public class CatalogManagerTest extends OlatTestCase {
 		catalogManager.saveCatalogEntry(child1);
 		child2.setParent(rootEntry);
 		catalogManager.saveCatalogEntry(child2);
-		dbInstance.commit();
-
+	
 		List<CatalogEntry> children = rootEntry.getChildren();
 		children.add(child1);
 		children.add(child2);
@@ -489,7 +485,7 @@ public class CatalogManagerTest extends OlatTestCase {
 		catalogEntry1 = saveEntry(catalogEntry1, parentEntry1);
 		
 		Identity id1 = JunitTestHelper.createAndPersistIdentityAsUser("13catalog-test-identity");
-		Identity admin = securityManager.findIdentityByName("administrator");
+		Identity admin = JunitTestHelper.findIdentityByLogin("administrator");
 		
 		securityGroupDao.addIdentityToSecurityGroup(admin, catalogEntry1.getOwnerGroup());
 		dbInstance.commit();
@@ -518,7 +514,7 @@ public class CatalogManagerTest extends OlatTestCase {
 		catalogEntry2 = saveEntry(catalogEntry2, parentEntry2);	
 		
 		Identity id1 = JunitTestHelper.createAndPersistIdentityAsUser("14catalog-test-identity");
-		Identity admin = securityManager.findIdentityByName("administrator");
+		Identity admin = JunitTestHelper.findIdentityByLogin("administrator");
 		
 		securityGroupDao.addIdentityToSecurityGroup(admin, catalogEntry1.getOwnerGroup());
 		securityGroupDao.addIdentityToSecurityGroup(admin, catalogEntry2.getOwnerGroup());
@@ -609,6 +605,8 @@ public class CatalogManagerTest extends OlatTestCase {
 		assertThat(catalogManager.moveCatalogEntry(parentEntryAA, parentEntryBA));
 		assertThat(catalogEntryB1.getPosition()).isEqualTo(1);
 		assertThat(parentEntryAA.getPosition()).isEqualTo(0);
+		
+		
 	}
 	
 	@Test

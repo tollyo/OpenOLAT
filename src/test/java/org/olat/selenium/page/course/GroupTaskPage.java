@@ -20,6 +20,7 @@
 package org.olat.selenium.page.course;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.Assert;
@@ -130,6 +131,8 @@ public class GroupTaskPage {
 		By inputBy = By.cssSelector(".o_fileinput input[type='file']");
 		OOGraphene.uploadFile(inputBy, file, browser);
 		OOGraphene.waitBusy(browser);
+		By uploadedBy = By.cssSelector(".o_sel_course_gta_upload_form .o_sel_file_uploaded");
+		OOGraphene.waitElement(uploadedBy, browser);
 		
 		By saveButtonBy = By.cssSelector(".o_sel_course_gta_upload_form button.btn-primary");
 		browser.findElement(saveButtonBy).click();
@@ -139,6 +142,8 @@ public class GroupTaskPage {
 	}
 	
 	public GroupTaskPage submitText(String filename, String text) {
+		String startWindow = browser.getWindowHandle();
+		
 		By createButtonBy = By.cssSelector("#o_step_submit_content .o_sel_course_gta_create_doc");
 		OOGraphene.clickAndWait(createButtonBy, browser);
 		OOGraphene.waitModalDialog(browser);
@@ -149,12 +154,19 @@ public class GroupTaskPage {
 		browser.findElement(saveBy).click();
 		OOGraphene.waitBusy(browser);
 		
+		List<String> allHandles = new ArrayList<>(browser.getWindowHandles());
+		allHandles.remove(startWindow);
+		String editorHandle = allHandles.get(0);
+		
+		browser.switchTo().window(editorHandle);
 		OOGraphene.tinymceExec(text, browser);
 
 		By saveAndCloseDirtyBy = By.cssSelector(".o_htmleditor #o_button_saveclose a.btn.o_button_dirty");
 		OOGraphene.waitElement(saveAndCloseDirtyBy, browser);
 		browser.findElement(saveAndCloseDirtyBy).click();
-		OOGraphene.waitBusy(browser);
+		
+		browser.switchTo().window(startWindow);
+		
 		OOGraphene.waitElement(By.className("o_process"), browser);
 		return this;
 	}

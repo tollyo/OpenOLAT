@@ -367,7 +367,7 @@ public class AssignmentDAO {
 		  .append(" where (assignment.assignee.key is null or assignment.assignee.key=:assigneeKey)")
 		  .append(" and exists (select pageMember from bgroupmember as pageMember")
 		  .append("     inner join pageMember.identity as ident on (ident.key=:assigneeKey and pageMember.role='").append(PortfolioRoles.owner.name()).append("')")
-		  .append("  	where pageMember.group.key=page.baseGroup.key or pageMember.group.key=binder.baseGroup.key")
+		  .append("     where pageMember.group.key=page.baseGroup.key or pageMember.group.key=binder.baseGroup.key")
 		  .append(" )");
 
 		return dbInstance.getCurrentEntityManager()
@@ -402,7 +402,7 @@ public class AssignmentDAO {
 			.setFirstResult(0)
 			.setMaxResults(1)
 			.getResultList();
-		return counts != null && !counts.isEmpty() && counts.get(0) != null && counts.get(0).intValue() >= 0;
+		return counts != null && !counts.isEmpty() && counts.get(0) != null && counts.get(0).longValue() >= 0;
 	}
 	
 	public boolean isFormEntryInUse(RepositoryEntryRef formEntry) {
@@ -416,7 +416,7 @@ public class AssignmentDAO {
 			.setFirstResult(0)
 			.setMaxResults(1)
 			.getResultList();
-		return counts != null && !counts.isEmpty() && counts.get(0) != null && counts.get(0).intValue() >= 0;
+		return counts != null && !counts.isEmpty() && counts.get(0) != null && counts.get(0).longValue() >= 0;
 	}
 	
 	public int deleteAssignmentReference(Assignment assignment) {

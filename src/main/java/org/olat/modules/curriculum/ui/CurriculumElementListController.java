@@ -384,10 +384,12 @@ public class CurriculumElementListController extends FormBasicController impleme
 
 		if(startLink != null) {
 			startLink.setUserObject(row);
-			row.setStartLink(startLink);
+			String businessPath = "[RepositoryEntry:" + row.getRepositoryEntryKey() + "]";
+			String startUrl = BusinessControlFactory.getInstance().getAuthenticatedURLFromBusinessPathString(businessPath);
+			startLink.setUrl(startUrl);
+			row.setStartLink(startLink, startUrl);
 		}
 
-		
 		if (!row.isAllUsers() && !row.isGuests()) {
 			// members only always show lock icon
 			types.add(new PriceMethod("", "o_ac_membersonly_icon", translate("cif.access.membersonly.short")));
@@ -406,7 +408,15 @@ public class CurriculumElementListController extends FormBasicController impleme
 		FormLink detailsLink = uifactory.addFormLink("details_" + (++counter), "details", "details", null, null, Link.LINK);
 		detailsLink.setCustomEnabledLinkCSS("o_details");
 		detailsLink.setUserObject(row);
-		row.setDetailsLink(detailsLink);
+		Long repoEntryKey = row.getRepositoryEntryKey();
+		String detailsUrl = null;
+		if(repoEntryKey != null) {
+			String businessPath = "[RepositoryEntry:" + repoEntryKey + "][Infos:0]";
+			detailsUrl = BusinessControlFactory.getInstance()
+					.getAuthenticatedURLFromBusinessPathString(businessPath);
+			detailsLink.setUrl(detailsUrl);
+		}
+		row.setDetailsLink(detailsLink, detailsUrl);
 	}
 	
 	private void forgeMarkLink(CurriculumElementWithViewsRow row) {
@@ -426,6 +436,12 @@ public class CurriculumElementListController extends FormBasicController impleme
 		FormLink selectLink = uifactory.addFormLink("select_" + (++counter), "select", displayName, null, null, Link.NONTRANSLATED);
 		if(row.isClosed()) {
 			selectLink.setIconLeftCSS("o_icon o_CourseModule_icon_closed");
+		}
+		Long repoEntryKey = row.getRepositoryEntryKey();
+		if(repoEntryKey != null) {
+			String businessPath = "[RepositoryEntry:" + repoEntryKey + "]";
+			selectLink.setUrl(BusinessControlFactory.getInstance()
+					.getAuthenticatedURLFromBusinessPathString(businessPath));
 		}
 		selectLink.setUserObject(row);
 		row.setSelectLink(selectLink);

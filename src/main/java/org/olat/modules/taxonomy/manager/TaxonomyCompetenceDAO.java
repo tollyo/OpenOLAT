@@ -278,7 +278,7 @@ public class TaxonomyCompetenceDAO {
 		}
 		
 		List<Long> keys = query.getResultList();
-		return keys != null && keys.size() > 0 && keys.get(0) != null && keys.get(0).intValue() > 0;
+		return keys != null && keys.size() > 0 && keys.get(0) != null && keys.get(0).longValue() > 0;
 	}
 	
 	public int replace(TaxonomyLevel source, TaxonomyLevel target) {
@@ -316,7 +316,9 @@ public class TaxonomyCompetenceDAO {
 	public void deleteCompetence(TaxonomyCompetence competence) {
 		TaxonomyCompetence reloadedCompetence = dbInstance.getCurrentEntityManager()
 			.getReference(TaxonomyCompetenceImpl.class, competence.getKey());
-		dbInstance.getCurrentEntityManager().remove(reloadedCompetence);
+		if(reloadedCompetence != null) {// onnly if not already deleted
+			dbInstance.getCurrentEntityManager().remove(reloadedCompetence);
+		}
 	}
 
 	private List<String> getTypesAsList(TaxonomyCompetenceTypes... competenceTypes) {

@@ -19,13 +19,17 @@
  */
 package org.olat.basesecurity.manager;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import javax.persistence.EntityManager;
+import javax.persistence.TypedQuery;
 
 import org.olat.basesecurity.Grant;
 import org.olat.basesecurity.Group;
@@ -37,6 +41,7 @@ import org.olat.basesecurity.model.GroupImpl;
 import org.olat.basesecurity.model.GroupMembershipImpl;
 import org.olat.core.commons.persistence.DB;
 import org.olat.core.id.Identity;
+import org.olat.core.util.StringHelper;
 import org.olat.resource.OLATResource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -208,7 +213,7 @@ public class GroupDAO {
 			.setParameter("identityKey", identity.getKey())
 			.setParameter("role", role)
 			.getSingleResult();
-		return count == null ? false : count.intValue() > 0;
+		return count != null && count.longValue() > 0;
 	}
 	
 	public List<Identity> getMembers(Group group, String role) {
@@ -219,11 +224,48 @@ public class GroupDAO {
 			.getResultList();
 	}
 	
-	public List<GroupMembership> getMemberships(Group group) {
+	public List<Identity> getMembers(Collection<Group> group, String role) {
+		List<Long> groupKeys = group.stream().map(Group::getKey).collect(Collectors.toList());
 		return dbInstance.getCurrentEntityManager()
-			.createNamedQuery("membershipsByGroup", GroupMembership.class)
-			.setParameter("groupKey", group.getKey())
+			.createNamedQuery("membersByGroupsAndRole", Identity.class)
+			.setParameter("groupKeys", groupKeys)
+			.setParameter("role", role)
 			.getResultList();
+	}
+	
+	/**
+	 * 
+	 * @param group A group
+	 * @param inheritances Inheritances or nothing
+	 * @return A list of memberships with the identity and user fetched
+	 */
+	public List<GroupMembership> getMemberships(Group group, GroupMembershipInheritance... inheritances) {
+		List<String> inheritanceList = new ArrayList<>();
+		if(inheritances != null && inheritances.length > 0 && inheritances[0] != null) {
+			for(GroupMembershipInheritance inheritance:inheritances) {
+				if(inheritance != null) {
+					inheritanceList.add(inheritance.name());
+				}
+			}
+		}
+	
+		StringBuilder sb = new StringBuilder(512);
+		sb.append("select membership from bgroupmember as membership ")
+		  .append(" inner join fetch membership.identity as ident")
+		  .append(" inner join fetch ident.user as identUser")
+		  .append(" where membership.group.key=:groupKey");
+		if(!inheritanceList.isEmpty()) {
+			sb.append(" and membership.inheritanceModeString in (:inheritanceList)");
+		}
+
+		TypedQuery<GroupMembership> query = dbInstance.getCurrentEntityManager()
+			.createQuery(sb.toString(), GroupMembership.class)
+			.setParameter("groupKey", group.getKey());
+		if(!inheritanceList.isEmpty()) {
+			query.setParameter("inheritanceList", inheritanceList);
+		}
+		
+		return query.getResultList();
 	}
 	
 	public List<GroupMembership> getMemberships(Group group, String role) {
@@ -243,36 +285,59 @@ public class GroupDAO {
 	}
 	
 	public GroupMembership getMembership(Group group, IdentityRef identity, String role) {
+		StringBuilder sb = new StringBuilder();
+		sb.append("select membership from bgroupmember as membership")
+		  .append(" where membership.group.key=:groupKey and membership.role=:role and membership.identity.key=:identityKey");
 		List<GroupMembership> memberships = dbInstance.getCurrentEntityManager()
-			.createNamedQuery("membershipByGroupIdentityAndRole", GroupMembership.class)
+			.createQuery(sb.toString(), GroupMembership.class)
 			.setParameter("groupKey", group.getKey())
 			.setParameter("identityKey", identity.getKey())
 			.setParameter("role", role)
+			.setFirstResult(0)
+			.setMaxResults(1)
 			.getResultList();
 		return memberships == null || memberships.isEmpty() ? null : memberships.get(0);
 	}
 	
-	public boolean hasGrant(IdentityRef identity, String permission, OLATResource resource) {
+	public boolean hasGrant(IdentityRef identity, String permission, OLATResource resource, String currentRole) {
 		StringBuilder sb = new StringBuilder();
 		sb.append("select count(grant) from bgrant as grant")
 		  .append(" inner join grant.group as baseGroup")
 		  .append(" inner join baseGroup.members as membership")
 		  .append(" where membership.identity.key=:identityKey and grant.resource.key=:resourceKey")
 		  .append("   and grant.permission=:permission and membership.role=grant.role");
-		Number count = dbInstance.getCurrentEntityManager()
+		if (StringHelper.containsNonWhitespace(currentRole)) {
+			sb.append("   and membership.role=:currentRole");
+		}
+		TypedQuery<Number> query = dbInstance.getCurrentEntityManager()
 				.createQuery(sb.toString(), Number.class)
 				.setParameter("identityKey", identity.getKey())
 				.setParameter("resourceKey", resource.getKey())
-				.setParameter("permission", permission)
-				.getSingleResult();
+				.setParameter("permission", permission);
+		if (StringHelper.containsNonWhitespace(currentRole)) {
+			query.setParameter("currentRole", currentRole);
+		}
+
+		Number count = query.getSingleResult();
 		return count == null ? false: count.intValue() > 0;
 	}
 	
-	public List<String> getPermissions(IdentityRef identity, OLATResource resource) {
+	public List<String> getPermissions(IdentityRef identity, OLATResource resource, String currentRole) {
+		StringBuilder sb = new StringBuilder();
+		sb.append("select grant.permission");
+		sb.append("  from bgrant as grant");
+		sb.append(" inner join grant.group as baseGroup");
+		sb.append(" inner join baseGroup.members as membership");
+		sb.append(" where membership.identity.key=:identityKey");
+		sb.append("   and grant.resource.key=:resourceKey");
+		sb.append("   and membership.role=grant.role");
+		sb.append("   and membership.role=:currentRole");
+		
 		return dbInstance.getCurrentEntityManager()
-				.createNamedQuery("grantedPermissionByIdentityAndResource", String.class)
+				.createQuery(sb.toString(), String.class)
 				.setParameter("identityKey", identity.getKey())
 				.setParameter("resourceKey", resource.getKey())
+				.setParameter("currentRole", currentRole)
 				.getResultList();
 	}
 	

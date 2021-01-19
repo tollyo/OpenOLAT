@@ -20,12 +20,14 @@
 package org.olat.group.ui.main;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
 import org.olat.core.id.Identity;
 import org.olat.group.BusinessGroupShort;
 import org.olat.group.model.BusinessGroupMembershipChange;
+import org.olat.modules.curriculum.CurriculumElement;
 import org.olat.modules.curriculum.model.CurriculumElementMembershipChange;
 import org.olat.repository.model.RepositoryEntryPermissionChangeEvent;
 
@@ -36,6 +38,7 @@ import org.olat.repository.model.RepositoryEntryPermissionChangeEvent;
 public class MemberPermissionChangeEvent extends RepositoryEntryPermissionChangeEvent {
 	private static final long serialVersionUID = 8499004967313689825L;
 
+	private List<RepositoryEntryPermissionChangeEvent> repositoryChanges;
 	private List<BusinessGroupMembershipChange> groupChanges;
 	private List<CurriculumElementMembershipChange> curriculumChanges;
 	
@@ -54,6 +57,14 @@ public class MemberPermissionChangeEvent extends RepositoryEntryPermissionChange
 			}
 		}
 		return groups;
+	}
+	
+	public List<RepositoryEntryPermissionChangeEvent> getRepoChanges() {
+		return repositoryChanges;
+	}
+	
+	public void setRepoChanges(List<RepositoryEntryPermissionChangeEvent> repoPermissionChanges) {
+		repositoryChanges = repoPermissionChanges;
 	}
 	
 	public List<BusinessGroupMembershipChange> getGroupChanges() {
@@ -77,22 +88,37 @@ public class MemberPermissionChangeEvent extends RepositoryEntryPermissionChange
 	public int size() {
 		return (groupChanges == null ? 0 : groupChanges.size())
 				+ (curriculumChanges == null ? 0 : curriculumChanges.size())
+				+ (repositoryChanges == null ? 0 : repositoryChanges.size())
 				+ super.size();
 	}
 	
-	public List<RepositoryEntryPermissionChangeEvent> generateRepositoryChanges(List<Identity> members) {
+	public List<RepositoryEntryPermissionChangeEvent> generateRepositoryChanges(Collection<Identity> members) {
 		if(members == null || members.isEmpty()) {
 			return Collections.emptyList();
 		}
 		
-		List<RepositoryEntryPermissionChangeEvent> repoChanges = new ArrayList<>();
-		for(Identity member:members) {
-			repoChanges.add(new RepositoryEntryPermissionChangeEvent(member, this));
+		List<RepositoryEntryPermissionChangeEvent> repoChanges = getRepoChanges();
+		if (repoChanges == null || repoChanges.isEmpty()) {
+			// Fallback solution
+			List<RepositoryEntryPermissionChangeEvent> changes = new ArrayList<>();
+			for (Identity member : members) {
+				changes.add(new RepositoryEntryPermissionChangeEvent(member, this));
+			}
+			
+			return changes;
 		}
-		return repoChanges;
+		
+		List<RepositoryEntryPermissionChangeEvent> allModifications = new ArrayList<>();
+		for (RepositoryEntryPermissionChangeEvent repoChange : repoChanges) {
+			for(Identity member:members) {
+				allModifications.add(new RepositoryEntryPermissionChangeEvent(member, repoChange));
+			}
+		}
+		
+		return allModifications;
 	}
 	
-	public List<BusinessGroupMembershipChange> generateBusinessGroupMembershipChange(List<Identity> members) {
+	public List<BusinessGroupMembershipChange> generateBusinessGroupMembershipChange(Collection<Identity> members) {
 		if(members == null || members.isEmpty()) {
 			return Collections.emptyList();
 		}
@@ -110,7 +136,7 @@ public class MemberPermissionChangeEvent extends RepositoryEntryPermissionChange
 		return allModifications;
 	}
 	
-	public List<CurriculumElementMembershipChange> generateCurriculumElementMembershipChange(List<Identity> members) {
+	public List<CurriculumElementMembershipChange> generateCurriculumElementMembershipChange(Collection<Identity> members) {
 		if(members == null || members.isEmpty()) {
 			return Collections.emptyList();
 		}
@@ -127,4 +153,26 @@ public class MemberPermissionChangeEvent extends RepositoryEntryPermissionChange
 		}
 		return allModifications;
 	}
+	
+	/**
+	 * @return The first curriculum element with the shortest path.
+	 */
+	public CurriculumElement getRootCurriculumElement() {
+		if(curriculumChanges == null || curriculumChanges.isEmpty()) return null;
+
+		int numOfSegments = -1;
+		CurriculumElement root = null; 
+		
+		for(CurriculumElementMembershipChange change:curriculumChanges) {
+			int segments = change.numOfSegments();
+			if(root == null || segments < numOfSegments) {
+				root = change.getElement();
+				numOfSegments = segments;
+			}
+		}
+		
+		return root;
+	}
+	
+
 }

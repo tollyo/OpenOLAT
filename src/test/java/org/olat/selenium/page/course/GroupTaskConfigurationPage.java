@@ -79,6 +79,10 @@ public class GroupTaskConfigurationPage {
 		return enableStep("sample", enable);
 	}
 	
+	public GroupTaskConfigurationPage enableGrading(boolean enable) {
+		return enableStep("grading", enable);
+	}
+	
 	private GroupTaskConfigurationPage enableStep(String name, boolean enable) {
 		By checkboxStepBy = By.xpath("//fieldset[contains(@class,'o_sel_course_gta_steps')]//label/input[@name='" + name + "']");
 		WebElement checkboxEl = browser.findElement(checkboxStepBy);
@@ -166,6 +170,8 @@ public class GroupTaskConfigurationPage {
 		By inputBy = By.cssSelector(".o_fileinput input[type='file']");
 		OOGraphene.uploadFile(inputBy, file, browser);
 		OOGraphene.waitBusy(browser);
+		By uploadedBy = By.cssSelector(".o_sel_course_gta_upload_task_form .o_sel_file_uploaded");
+		OOGraphene.waitElement(uploadedBy, browser);
 		
 		//save
 		By saveBy = By.cssSelector(".o_sel_course_gta_upload_task_form button.btn-primary");
@@ -203,6 +209,8 @@ public class GroupTaskConfigurationPage {
 		By inputBy = By.cssSelector(".o_fileinput input[type='file']");
 		OOGraphene.uploadFile(inputBy, file, browser);
 		OOGraphene.waitBusy(browser);
+		By uploadedBy = By.cssSelector(".o_sel_course_gta_upload_solution_form .o_sel_file_uploaded");
+		OOGraphene.waitElement(uploadedBy, browser);
 		
 		//save
 		By saveBy = By.cssSelector(".o_sel_course_gta_upload_solution_form button.btn-primary");

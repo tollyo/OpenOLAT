@@ -41,7 +41,7 @@ public class ContentEditorComponentRenderer extends AbstractContentEditorCompone
 		
 		ContentEditorComponent cmp = (ContentEditorComponent)source;
 
-		Renderer fr = Renderer.getInstance(cmp, translator, ubu, new RenderResult(), renderer.getGlobalSettings());
+		Renderer fr = Renderer.getInstance(cmp, translator, ubu, new RenderResult(), renderer.getGlobalSettings(), renderer.getCsrfToken());
 		sb.append("<div id='o_c").append(cmp.getDispatchID()).append("' class='o_page_content_editor o_page_drop' data-oo-content-editor-url='")
 		  .append(fr.getUrlBuilder().getJavascriptURI()).append("'>");
 		for(Component subCmp:cmp.getComponents()) {
@@ -56,7 +56,8 @@ public class ContentEditorComponentRenderer extends AbstractContentEditorCompone
 		sb.append("<script>\n")
 		  .append("jQuery(function() {\n")
 		  .append(" jQuery('#o_c").append(cmp.getDispatchID()).append("').ceditor({\n")
-		  .append("  componentUrl: '").append(renderer.getUrlBuilder().getJavascriptURI()).append("'\n")
+		  .append("  componentUrl: '").append(renderer.getUrlBuilder().getJavascriptURI()).append("',\n")
+		  .append("  csrfToken: '").append(renderer.getCsrfToken()).append("'\n")
 		  .append(" });\n")
 		  .append("});\n")
 		  .append("</script>");

@@ -27,6 +27,7 @@ package org.olat.course.assessment.ui.tool;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 import javax.servlet.http.HttpServletRequest;
@@ -74,10 +75,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * Initial Date:  Jun 24, 2004
- * 
- * <ul>
- * 	
- * </ul>
  *
  * @author gnaegi
  */
@@ -88,12 +85,15 @@ public class AssessmentForm extends FormBasicController {
 	private TextElement score;
 	private IntegerElement attempts;
 	private StaticTextElement cutVal;
-	private SingleSelection passed, userVisibility;
-	private TextElement userComment, coachComment;
+	private SingleSelection passed;
+	private SingleSelection userVisibility;
+	private TextElement userComment;
+	private TextElement coachComment;
 	private FormLayoutContainer docsLayoutCont;
 	private FileElement uploadDocsEl;
 	private FormSubmit submitButton;
-	private FormLink saveAndDoneLink, reopenLink;
+	private FormLink reopenLink;
+	private FormLink saveAndDoneLink;
 	private List<DocumentWrapper> assessmentDocuments;
 	
 	private DialogBoxController confirmDeleteDocCtrl;
@@ -276,7 +276,7 @@ public class AssessmentForm extends FormBasicController {
 
 	@Override
 	protected boolean validateFormLogic(UserRequest ureq) {
-		boolean allOk = true;
+		boolean allOk = super.validateFormLogic(ureq);
 		
 		if (hasScore && score.isEnabled()) {
 			Float fscore = null;
@@ -315,7 +315,7 @@ public class AssessmentForm extends FormBasicController {
 			attempts.clearError();
 			allOk &= attempts.validateIntValue();
 		}
-		return allOk & super.validateFormLogic(ureq);
+		return allOk;
 	}
 	
 	private Float parseFloat(TextElement textEl) throws NumberFormatException {
@@ -335,7 +335,8 @@ public class AssessmentForm extends FormBasicController {
 		ScoreEvaluation scoreEval = assessedUserCourseEnv.getScoreAccounting().evalCourseNode(courseNode);
 		if (scoreEval != null) {
 			ScoreEvaluation reopenedEval = new ScoreEvaluation(scoreEval.getScore(), scoreEval.getPassed(),
-					AssessmentEntryStatus.inReview, scoreEval.getUserVisible(), scoreEval.getCurrentRunCompletion(),
+					AssessmentEntryStatus.inReview, scoreEval.getUserVisible(),
+					scoreEval.getCurrentRunStartDate(), scoreEval.getCurrentRunCompletion(),
 					scoreEval.getCurrentRunStatus(), scoreEval.getAssessmentID());
 			courseAssessmentService.updateScoreEvaluation(courseNode, reopenedEval, assessedUserCourseEnv,
 					getIdentity(), false, Role.coach);
@@ -361,7 +362,10 @@ public class AssessmentForm extends FormBasicController {
 		Boolean updatedPassed = null;
 
 		if (isHasAttempts() && isAttemptsDirty()) {
-			courseAssessmentService.updateAttempts(courseNode, new Integer(getAttempts()),
+			int updatedAttempts = getAttempts();
+			Date lastAttempt = assessedUserCourseEnv.getScoreAccounting().evalCourseNode(courseNode).getLastAttempt();
+			lastAttempt = updatedAttempts > 0? lastAttempt: null;
+			courseAssessmentService.updateAttempts(courseNode, Integer.valueOf(updatedAttempts), lastAttempt,
 					assessedUserCourseEnv, getIdentity(), Role.coach);
 		}
 
@@ -389,9 +393,9 @@ public class AssessmentForm extends FormBasicController {
 		// Update score,passed properties in db
 		ScoreEvaluation scoreEval;
 		if(setAsDone) {
-			scoreEval = new ScoreEvaluation(updatedScore, updatedPassed, AssessmentEntryStatus.done, visibility, null, null, null);
+			scoreEval = new ScoreEvaluation(updatedScore, updatedPassed, AssessmentEntryStatus.done, visibility, null, null, null, null);
 		} else {
-			scoreEval = new ScoreEvaluation(updatedScore, updatedPassed, null, visibility, null, null, null);
+			scoreEval = new ScoreEvaluation(updatedScore, updatedPassed, null, visibility, null, null, null, null);
 		}
 		courseAssessmentService.updateScoreEvaluation(courseNode, scoreEval, assessedUserCourseEnv,
 				getIdentity(), false, Role.coach);
@@ -439,6 +443,12 @@ public class AssessmentForm extends FormBasicController {
 		if(hasComment) {
 			userCommentValue = courseAssessmentService.getUserComment(courseNode, assessedUserCourseEnv);
 			userComment.setValue(userCommentValue);
+		}
+		
+		if(scoreEval.getUserVisible() == null || scoreEval.getUserVisible().booleanValue()) {
+			userVisibility.select(userVisibilityKeys[0], true);
+		} else {
+			userVisibility.select(userVisibilityKeys[1], true);
 		}
 		
 		reloadAssessmentDocs();
@@ -591,7 +601,7 @@ public class AssessmentForm extends FormBasicController {
 			docsLayoutCont.contextPut("mapperUri", mapperUri);
 			formLayout.add(docsLayoutCont);
 
-			uploadDocsEl = uifactory.addFileElement(getWindowControl(), "form.upload", null, formLayout);
+			uploadDocsEl = uifactory.addFileElement(getWindowControl(), getIdentity(), "form.upload", null, formLayout);
 			uploadDocsEl.addActionListener(FormEvent.ONCHANGE);
 		}
 		
@@ -601,6 +611,7 @@ public class AssessmentForm extends FormBasicController {
 		
 		String[] userVisibilityValues = new String[]{ translate("user.visibility.visible"), translate("user.visibility.hidden") };
 		userVisibility = uifactory.addRadiosHorizontal("user.visibility", "user.visibility", formLayout, userVisibilityKeys, userVisibilityValues);
+		userVisibility.setElementCssClass("o_sel_assessment_form_visibility");
 		if(scoreEval.getUserVisible() == null || scoreEval.getUserVisible().booleanValue()) {
 			userVisibility.select(userVisibilityKeys[0], true);
 		} else {

@@ -456,9 +456,9 @@ public class VelocityRenderDecorator implements Closeable {
 	 */
 	public StringOutput contextHelpWithWrapper(String page) {
 		StringOutput sb = new StringOutput(192);
-		if (getHelpModule().isHelpEnabled()) {
+		if (getHelpModule().isManualEnabled()) {
 			Locale locale = renderer.getTranslator().getLocale();
-			String url = getHelpModule().getHelpProvider().getURL(locale, page);
+			String url = getHelpModule().getManualProvider().getURL(locale, page);
 			if(url != null) {
 				String title = StringHelper.escapeHtml(renderer.getTranslator().translate("help.button"));
 				sb.append("<span class=\"o_chelp_wrapper\">")
@@ -481,7 +481,7 @@ public class VelocityRenderDecorator implements Closeable {
 		StringOutput sb = new StringOutput(100);
 		if (getHelpModule().isHelpEnabled()) {
 			Locale locale = renderer.getTranslator().getLocale();
-			String url = getHelpModule().getHelpProvider().getURL(locale, page);
+			String url = getHelpModule().getManualProvider().getURL(locale, page);
 			sb.append("contextHelpWindow('").append(url).append("')");
 		}
 		return sb;
@@ -498,7 +498,7 @@ public class VelocityRenderDecorator implements Closeable {
 	public StringOutput contextHelpLink(String page) {
 		StringOutput sb = new StringOutput(100);
 		if (getHelpModule().isHelpEnabled()) {
-			String url = getHelpModule().getHelpProvider().getURL(renderer.getTranslator().getLocale(), page);
+			String url = getHelpModule().getManualProvider().getURL(renderer.getTranslator().getLocale(), page);
 			sb.append(url);
 		}
 		return sb;
@@ -645,6 +645,10 @@ public class VelocityRenderDecorator implements Closeable {
 	public String encodeUrl(String url) {
 		return renderer.getUrlBuilder().encodeUrl(url);
 	}
+	
+	public String encodeUrlPathSegment(String path) {
+		return StringHelper.encodeUrlPathSegment(path);
+	}
 
 
 	/**escapes " entities in \"
@@ -652,6 +656,7 @@ public class VelocityRenderDecorator implements Closeable {
 	 * @deprecated please use escapeHtml.
 	 * @return the escaped string
 	 */
+	@Deprecated
 	public String escapeDoubleQuotes(String in) {
 	    return Formatter.escapeDoubleQuotes(in).toString();
 	}
@@ -743,25 +748,26 @@ public class VelocityRenderDecorator implements Closeable {
 	 * @return
 	 */
 	public StringOutput renderForce(String componentName) {
-		Component source = renderer.findComponent(componentName);
-		StringOutput sb;
+		final Component source = renderer.findComponent(componentName);
+		final StringOutput sb;
 		if (source == null) {
 			sb = new StringOutput(1);
 		} else if (target == null) {
 			sb = new StringOutput(10000);
 			renderer.render(source, sb, null);
 		} else {
+			sb = new StringOutput(1);
 			renderer.render(source, target, null);
 		}
-		return new StringOutput(1);
+		return sb;
 	}
 	
 	private StringOutput doRender(String componentName, String[] args) {
-		Component source = renderer.findComponent(componentName);
-		StringOutput sb;
+		final Component source = renderer.findComponent(componentName);
+		final StringOutput sb;
 		if (source == null) {
 			sb = new StringOutput(128);
-			sb.append(">>>>>>>>>>>>>>>>>>>>>>>>>> component " + componentName + " could not be found to be rendered!");
+			sb.append(">>>>>>>>>>>>>>>>>>>>>>>>>> component ").append(componentName).append(" could not be found to be rendered!");
 		} else if (target == null) {
 			sb = new StringOutput(10000);
 			renderer.render(source, sb, args);

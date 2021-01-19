@@ -46,6 +46,7 @@ import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.control.generic.closablewrapper.CloseableModalController;
 import org.olat.core.id.Identity;
 import org.olat.core.id.Roles;
+import org.olat.core.util.StringHelper;
 import org.olat.modules.lecture.LectureBlockAppealStatus;
 import org.olat.modules.lecture.LectureBlockRollCall;
 import org.olat.modules.lecture.LectureBlockRollCallSearchParameters;
@@ -56,6 +57,7 @@ import org.olat.modules.lecture.ui.AppealListRepositoryDataModel.AppealCols;
 import org.olat.modules.lecture.ui.component.LectureBlockAppealStatusCellRenderer;
 import org.olat.modules.lecture.ui.component.LectureBlockRollCallStatusCellRenderer;
 import org.olat.modules.lecture.ui.component.LecturesCompulsoryRenderer;
+import org.olat.modules.lecture.ui.filter.AppealRollCallRowFilter;
 import org.olat.repository.RepositoryEntry;
 import org.olat.user.UserManager;
 import org.olat.user.propertyhandlers.UserPropertyHandler;
@@ -85,7 +87,6 @@ public class AppealListRepositoryController extends FormBasicController {
 	private final RepositoryEntry entry;
 	private final Identity profiledIdentity;
 	private final LecturesSecurityCallback secCallback;
-	private final boolean isAdministrativeUser;
 	private List<UserPropertyHandler> userPropertyHandlers;
 	private LectureBlockRollCallSearchParameters searchParams = new LectureBlockRollCallSearchParameters();
 	
@@ -123,7 +124,7 @@ public class AppealListRepositoryController extends FormBasicController {
 		setTranslator(userManager.getPropertyHandlerTranslator(getTranslator()));
 		
 		Roles roles = ureq.getUserSession().getRoles();
-		isAdministrativeUser = securityModule.isUserAllowedAdminProps(roles);
+		boolean isAdministrativeUser = securityModule.isUserAllowedAdminProps(roles);
 		userPropertyHandlers = userManager.getUserPropertyHandlersFor(USER_PROPS_ID, isAdministrativeUser);
 
 		authorizedAbsenceEnabled = lectureModule.isAuthorizedAbsenceEnabled();
@@ -137,10 +138,6 @@ public class AppealListRepositoryController extends FormBasicController {
 		
 		FlexiTableColumnModel columnsModel = FlexiTableDataModelFactory.createFlexiTableColumnModel();
 		if(secCallback.viewAs() != LectureRoles.participant) {
-			if(isAdministrativeUser) {
-				columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(AppealCols.username));
-			}
-			
 			int colPos = USER_PROPS_OFFSET;
 			for (UserPropertyHandler userPropertyHandler : userPropertyHandlers) {
 				if (userPropertyHandler == null) continue;
@@ -191,7 +188,7 @@ public class AppealListRepositoryController extends FormBasicController {
 		tableEl.setFilters("filer", filters, true);
 		tableEl.setExportEnabled(true);
 		tableEl.setEmtpyTableMessageKey("empty.appeals.list");
-		tableEl.setAndLoadPersistedPreferences(ureq, "appeal-roll-call");
+		tableEl.setAndLoadPersistedPreferences(ureq, "appeal-roll-call-v2");
 
 		if(secCallback.canApproveAppeal()) {
 			tableEl.setMultiSelect(true);
@@ -227,6 +224,14 @@ public class AppealListRepositoryController extends FormBasicController {
 		for(LectureBlockRollCallAndCoach rollCallWithCoach:rollCallsWithCoach) {
 			rows.add(new AppealRollCallRow(rollCallWithCoach, userPropertyHandlers, getLocale()));
 		}
+		
+		if(StringHelper.containsNonWhitespace(searchParams.getSearchString())) {
+			final AppealRollCallRowFilter filter = new AppealRollCallRowFilter(searchParams.getSearchString());
+			rows = rows.stream()
+					.filter(filter)
+					.collect(Collectors.toList());
+		}
+		
 		tableModel.setObjects(rows);
 		tableEl.reset(reset, reset, true);
 		if(batchUpdateButton != null) {

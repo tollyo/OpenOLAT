@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import org.olat.core.id.Identity;
 import org.olat.user.UserPropertiesRow;
 import org.olat.user.propertyhandlers.UserPropertyHandler;
 
@@ -34,20 +35,24 @@ import org.olat.user.propertyhandlers.UserPropertyHandler;
  *  
  * @author srosse, stephane.rosse@frentix.com, http://www.frentix.com
  */
-public class StudentStatEntry extends UserPropertiesRow {
+public class StudentStatEntry extends UserPropertiesRow implements CompletionStats {
 	
 	private int countRepo = 0;
 	private int countPassed = 0;
 	private int countFailed = 0;
 	private int countNotAttempted = 0;
 	private int initialLaunch = 0;
-	private Double AverageCompletion;
+	private Double averageCompletion;
 	
 	private Set<String> repoIds = new HashSet<>();
 	private Set<String> launchIds = new HashSet<>();
 	
-	public StudentStatEntry(Long identityKey, String identityName, List<UserPropertyHandler> userPropertyHandlers, String[] userProperties, Locale locale) {
-		super(identityKey, identityName, userPropertyHandlers, userProperties, locale);
+	public StudentStatEntry(Long identityKey, List<UserPropertyHandler> userPropertyHandlers, String[] userProperties, Locale locale) {
+		super(identityKey, userPropertyHandlers, userProperties, locale);
+	}
+
+	public StudentStatEntry(Identity identity, List<UserPropertyHandler> userPropertyHandlers, Locale locale) {
+		super(identity, userPropertyHandlers, locale);
 	}
 	
 	public int getCountRepo() {
@@ -106,11 +111,13 @@ public class StudentStatEntry extends UserPropertiesRow {
 		this.initialLaunch = initialLaunch;
 	}
 
+	@Override
 	public Double getAverageCompletion() {
-		return AverageCompletion;
+		return averageCompletion;
 	}
 
+	@Override
 	public void setAverageCompletion(Double averageCompletion) {
-		this.AverageCompletion = averageCompletion;
+		this.averageCompletion = averageCompletion;
 	}
 }

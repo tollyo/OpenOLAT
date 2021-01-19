@@ -33,6 +33,8 @@ public interface EditorConfig {
 	
 	String getMode();
 	
-	public User getUser();
+	User getUser();
+	
+	Embedded getEmbedded();
 
 }

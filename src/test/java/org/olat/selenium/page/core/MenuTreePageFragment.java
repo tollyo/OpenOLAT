@@ -51,13 +51,12 @@ public class MenuTreePageFragment {
 	 * @return The menu page fragment
 	 */
 	public MenuTreePageFragment selectRoot() {
-		WebElement tree = browser.findElement(treeBy);
-		List<WebElement> rootLinks = tree.findElements(By.cssSelector("span.o_tree_link>a"));
-		Assert.assertNotNull(rootLinks);
-		Assert.assertFalse(rootLinks.isEmpty());
-		
-		rootLinks.get(0).click();
+		By rootNodeBy = By.xpath("//div[contains(@class,'o_tree')]//span[contains(@class,'o_tree_link')][contains(@class,'o_tree_l0')]/a");
+		OOGraphene.waitElement(rootNodeBy, browser);
+		browser.findElement(rootNodeBy).click();
 		OOGraphene.waitBusy(browser);
+		By rootNodeActiveBy = By.xpath("//div[contains(@class,'o_tree')]//span[contains(@class,'o_tree_link')][contains(@class,'o_tree_l0')][contains(@class,'active')]/a");
+		OOGraphene.waitElement(rootNodeActiveBy, browser);
 		return this;
 	}
 	

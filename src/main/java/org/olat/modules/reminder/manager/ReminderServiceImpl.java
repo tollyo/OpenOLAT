@@ -31,12 +31,9 @@ import java.util.Locale;
 import java.util.UUID;
 
 import org.apache.logging.log4j.Logger;
-import org.apache.velocity.VelocityContext;
 import org.olat.core.gui.translator.Translator;
 import org.olat.core.helpers.Settings;
 import org.olat.core.id.Identity;
-import org.olat.core.id.User;
-import org.olat.core.id.UserConstants;
 import org.olat.core.logging.Tracing;
 import org.olat.core.util.Formatter;
 import org.olat.core.util.StringHelper;
@@ -47,7 +44,6 @@ import org.olat.core.util.mail.MailBundle;
 import org.olat.core.util.mail.MailContext;
 import org.olat.core.util.mail.MailContextImpl;
 import org.olat.core.util.mail.MailManager;
-import org.olat.core.util.mail.MailTemplate;
 import org.olat.core.util.mail.MailerResult;
 import org.olat.modules.reminder.Reminder;
 import org.olat.modules.reminder.ReminderRule;
@@ -63,7 +59,6 @@ import org.olat.modules.reminder.rule.DateRuleSPI;
 import org.olat.modules.reminder.ui.ReminderAdminController;
 import org.olat.repository.RepositoryEntry;
 import org.olat.repository.RepositoryEntryRef;
-import org.olat.user.UserManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -78,13 +73,10 @@ public class ReminderServiceImpl implements ReminderService {
 	
 	private static final Logger log = Tracing.createLoggerFor(ReminderServiceImpl.class);
 	
-	
 	@Autowired
 	private ReminderDAO reminderDao;
 	@Autowired
 	private MailManager mailManager;
-	@Autowired
-	private UserManager userManager;
 	@Autowired
 	private ReminderRuleEngine ruleEngine;
 	
@@ -244,7 +236,7 @@ public class ReminderServiceImpl implements ReminderService {
 		String url = Settings.getServerContextPathURI() + "/url/RepositoryEntry/" + entry.getKey();
 
 		MailerResult overviewResult = new MailerResult();
-		ReminderTemplate template = new ReminderTemplate(subject, body, url, entry, locale);
+		CourseReminderTemplate template = new CourseReminderTemplate(subject, body, url, entry, locale);
 
 		for(Identity identityToRemind:identitiesToRemind) {
 			String status;
@@ -266,40 +258,5 @@ public class ReminderServiceImpl implements ReminderService {
 		}
 		
 		return overviewResult;
-	}
-	
-	private class ReminderTemplate extends MailTemplate {
-		
-		private final String url;
-		private final RepositoryEntry entry;
-		private final Locale locale;
-		
-		public ReminderTemplate(String subjectTemplate, String bodyTemplate, String url, RepositoryEntry entry, Locale locale) {
-			super(subjectTemplate, bodyTemplate, null);
-			this.url = url;
-			this.entry = entry;
-			this.locale = locale;
-		}
-
-		@Override
-		public void putVariablesInMailContext(VelocityContext vContext, Identity recipient) {
-			User user = recipient.getUser();
-			vContext.put("firstname", user.getProperty(UserConstants.FIRSTNAME, null));
-			vContext.put(UserConstants.FIRSTNAME, user.getProperty(UserConstants.FIRSTNAME, null));
-			vContext.put("lastname", user.getProperty(UserConstants.LASTNAME, null));
-			vContext.put(UserConstants.LASTNAME, user.getProperty(UserConstants.LASTNAME, null));
-			String fullName = userManager.getUserDisplayName(recipient);
-			vContext.put("fullname", fullName);
-			vContext.put("fullName", fullName); 
-			vContext.put("mail", userManager.getUserDisplayEmail(user, locale));
-			vContext.put("email", userManager.getUserDisplayEmail(user, locale));
-			vContext.put("username", recipient.getName());
-			// Put variables from greater context
-			if(entry != null) {
-				vContext.put("courseurl", url);
-				vContext.put("coursename", entry.getDisplayname());
-				vContext.put("coursedescription", entry.getDescription());
-			}
-		}
 	}
 }

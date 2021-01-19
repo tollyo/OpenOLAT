@@ -21,7 +21,9 @@ package org.olat.modules.grading.manager;
 
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import javax.persistence.TemporalType;
@@ -228,14 +230,17 @@ public class GradingAssignmentDAO {
 		
 		applyGradingAssignmentSearchParameters(query, searchParams);
 		List<Object[]> rawObjects = query.getResultList();
-		List<GradingAssignmentWithInfos> infos = new ArrayList<>(rawObjects.size());
+		
+		Map<Long,GradingAssignmentWithInfos> infosMap = new HashMap<>();
 		for(Object[] rawObject:rawObjects) {
-			GradingAssignment assignment = (GradingAssignment)rawObject[0];
-			GradingTimeRecord record = (GradingTimeRecord)rawObject[1];
-			RepositoryEntry reference = referenceEntry == null ? assignment.getReferenceEntry() : referenceEntry;
-			infos.add(new GradingAssignmentWithInfos(assignment, record, reference));
+			final GradingAssignment assignment = (GradingAssignment)rawObject[0];
+			final GradingTimeRecord record = (GradingTimeRecord)rawObject[1];
+			final RepositoryEntry reference = referenceEntry == null ? assignment.getReferenceEntry() : referenceEntry;
+			infosMap
+				.computeIfAbsent(assignment.getKey(), key -> new GradingAssignmentWithInfos(assignment, reference))
+				.addTimeRecord(record);
 		}
-		return infos;
+		return new ArrayList<>(infosMap.values());
 	}
 	
 	private void applyGradingAssignmentSearchParameters(QueryBuilder sb, GradingAssignmentSearchParameters searchParams) {
@@ -257,6 +262,14 @@ public class GradingAssignmentDAO {
 		}
 		if(searchParams.getPassed() != null) {
 			sb.and().append("assessmentEntry.passed=:passed");
+		}
+		
+		if(searchParams.getClosedFromDate() != null && searchParams.getClosedToDate() != null) {
+			sb.and().append("assignment.closingDate>=:closedFromDate and assignment.closingDate<=:closedToDate");
+		} else if(searchParams.getClosedFromDate() != null) {
+			sb.and().append("assignment.closingDate>=:closedFromDate");
+		} else if(searchParams.getClosedToDate() != null) {
+			sb.and().append("assignment.closingDate<=:closedToDate");
 		}
 
 		applyAssignmentSearchParameters(sb, searchParams.getGradingFromDate(), searchParams.getGradingToDate());
@@ -302,6 +315,13 @@ public class GradingAssignmentDAO {
 				}
 			}
 			sb.append(")");
+			
+			if(!searchParams.getAssignmentStatus().contains(SearchStatus.closed)) {
+				sb.and().append(" not(assignment.status ").in(GradingAssignmentStatus.done).append(")");
+			}
+		} else {
+			sb.and().append("assignment.status ").in(GradingAssignmentStatus.unassigned, GradingAssignmentStatus.assigned,
+					GradingAssignmentStatus.inProcess, GradingAssignmentStatus.done);
 		}
 	}
 	
@@ -337,6 +357,12 @@ public class GradingAssignmentDAO {
 		}
 		if(searchParams.getGradingToDate() != null) {
 			query.setParameter("gradingToDate", searchParams.getGradingToDate(), TemporalType.TIMESTAMP);
+		}
+		if(searchParams.getClosedFromDate() != null) {
+			query.setParameter("closedFromDate", searchParams.getClosedFromDate(), TemporalType.TIMESTAMP);
+		}
+		if(searchParams.getClosedToDate() != null) {
+			query.setParameter("closedToDate", searchParams.getClosedToDate(), TemporalType.TIMESTAMP);
 		}
 		if(searchParams.getScoreFrom() != null) {
 			query.setParameter("scoreFrom", searchParams.getScoreFrom());

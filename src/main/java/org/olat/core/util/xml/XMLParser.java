@@ -66,7 +66,7 @@ public class XMLParser {
 	public Document parse(InputStream in, boolean validateXML) {
 		Document document;
 		try {
-			SAXReader reader = new SAXReader();
+			SAXReader reader = SAXReader.createDefault();
 			reader.setEntityResolver(er);
 			reader.setValidation(validateXML);
 			document = reader.read(in, "");
@@ -75,20 +75,6 @@ public class XMLParser {
 			throw new OLATRuntimeException(XMLParser.class, "Exception reading XML", e);
 		}
 		return document;
-	}
-
-	/**
-	 * @return entity resolver instance
-	 */
-	public EntityResolver getEntityResolver() {
-		return er;
-	}
-
-	/**
-	 * @param resolver
-	 */
-	public void setEntityResolver(EntityResolver resolver) {
-		er = resolver;
 	}
 
 }

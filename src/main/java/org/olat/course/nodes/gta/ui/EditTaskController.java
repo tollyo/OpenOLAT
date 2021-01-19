@@ -99,7 +99,7 @@ public class EditTaskController extends FormBasicController {
 		String description = task.getDescription() == null ? "" : task.getDescription();
 		descriptionEl = uifactory.addTextAreaElement("descr", "task.description", 2048, 10, -1, true, false, description, formLayout);
 
-		fileEl = uifactory.addFileElement(getWindowControl(), "file", "task.file", formLayout);
+		fileEl = uifactory.addFileElement(getWindowControl(), getIdentity(), "file", "task.file", formLayout);
 		fileEl.setMandatory(true);
 		fileEl.addActionListener(FormEvent.ONCHANGE);
 		if(StringHelper.containsNonWhitespace(task.getFilename())) {
@@ -179,7 +179,7 @@ public class EditTaskController extends FormBasicController {
 				if(usage == 1) {
 					File currentFile = new File(taskContainer, task.getFilename());
 					if(currentFile.exists()) {
-						currentFile.delete();
+						FileUtils.deleteFile(currentFile);
 					}
 				}
 			}

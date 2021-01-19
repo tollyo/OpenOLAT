@@ -19,7 +19,9 @@
  */
 package org.olat.user.ui.role;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -31,12 +33,15 @@ import org.olat.basesecurity.RelationRight;
 import org.olat.basesecurity.RelationRole;
 import org.olat.basesecurity.RelationRoleManagedFlag;
 import org.olat.basesecurity.RelationRoleToRight;
+import org.olat.basesecurity.RightProvider;
 import org.olat.core.gui.UserRequest;
+import org.olat.core.gui.components.form.flexible.FormItem;
 import org.olat.core.gui.components.form.flexible.FormItemContainer;
 import org.olat.core.gui.components.form.flexible.elements.MultipleSelectionElement;
 import org.olat.core.gui.components.form.flexible.elements.SingleSelection;
 import org.olat.core.gui.components.form.flexible.elements.TextElement;
 import org.olat.core.gui.components.form.flexible.impl.FormBasicController;
+import org.olat.core.gui.components.form.flexible.impl.FormEvent;
 import org.olat.core.gui.components.form.flexible.impl.FormLayoutContainer;
 import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.Event;
@@ -61,13 +66,15 @@ public class EditRelationRoleController extends FormBasicController {
 		"", "supervisor", "legalRepresentative", "tutor", "parent",
 		"teacher", "expert", "legalGardian", "employer", "sportsClub"
 	};
-	
+
 	private TextElement roleEl;
 	private SingleSelection predefinedLabelEl;
 	private MultipleSelectionElement rightsEl;
 	
 	private RelationRole relationRole;
-	private List<RelationRight> rights;
+	String[] rightKeys;
+	String[] rightValues;
+	List<RightProvider> rightProviders;
 
 	@Autowired
 	private I18nModule i18nModule;
@@ -75,15 +82,17 @@ public class EditRelationRoleController extends FormBasicController {
 	private I18nManager i18nManager;
 	@Autowired
 	private IdentityRelationshipService identityRelationsService;
+	@Autowired
+	private List<RightProvider> relationRights;
 
-	public EditRelationRoleController(UserRequest ureq, WindowControl wControl) {
-		this(ureq, wControl,null);
-	}
-	
 	public EditRelationRoleController(UserRequest ureq, WindowControl wControl, RelationRole relationRole) {
 		super(ureq, wControl, Util.createPackageTranslator(UserModule.class, ureq.getLocale()));
-		rights = identityRelationsService.getAvailableRights();
 		this.relationRole = relationRole;
+		this.rightKeys = new String[relationRights.size()];
+		this.rightValues = new String[relationRights.size()];
+		this.rightProviders = new ArrayList<>(relationRights.size());
+		this.relationRights.sort(Comparator.comparing(RightProvider::getUserRelationsPosition));
+
 		initForm(ureq);
 	}
 
@@ -104,19 +113,26 @@ public class EditRelationRoleController extends FormBasicController {
 					predefinedLabelKeys, predefinedLabelValues);
 			predefinedLabelEl.select(predefinedLabelKeys[0], true);
 		}
-		
-		String[] rightKeys = new String[rights.size()];
-		String[] rightValues = new String[rights.size()];
-		for(int i=rights.size(); i-->0; ) {
-			rightKeys[i] = rights.get(i).getRight();
-			rightValues[i] = RelationRolesAndRightsUIFactory.getTranslatedRight(rights.get(i), getLocale());
+
+		String[] cssClasses = new String[rightKeys.length];
+		for(int i=0; i < relationRights.size(); i++) {
+			StringBuilder valueBuilder = new StringBuilder();
+			if (relationRights.get(i).getParent() != null) {
+				cssClasses[i] = "o_checkbox_indented";
+			}
+			valueBuilder.append(relationRights.get(i).getTranslatedName(getLocale()));
+			rightKeys[i] = relationRights.get(i).getRight();
+			rightValues[i] = valueBuilder.toString();
+			rightProviders.add(i, relationRights.get(i));
 		}
-		rightsEl = uifactory.addCheckboxesVertical("role.rights", formLayout, rightKeys, rightValues, 2);
+		rightsEl = uifactory.addCheckboxesVertical("role.rights", "role.rights", formLayout, rightKeys, rightValues, cssClasses, null,1);
 		rightsEl.setEnabled(!RelationRoleManagedFlag.isManaged(relationRole, RelationRoleManagedFlag.rights));
+		rightsEl.addActionListener(FormEvent.ONCLICK);
+
 		if(relationRole != null) {
 			Set<RelationRoleToRight> roleToRights = relationRole.getRights();
 			for(RelationRoleToRight roleToRight:roleToRights) {
-				String right = roleToRight.getRight().getRight();
+				String right = roleToRight.getRelationRight().getRight();
 				for(String rightKey:rightKeys) {
 					if(rightKey.equals(right)) {
 						rightsEl.select(rightKey, true);
@@ -124,6 +140,8 @@ public class EditRelationRoleController extends FormBasicController {
 				}
 			}	
 		}
+
+		checkDependentRights();
 		
 		FormLayoutContainer buttonsCont = FormLayoutContainer.createButtonLayout("buttons", getTranslator());
 		formLayout.add(buttonsCont);
@@ -134,6 +152,14 @@ public class EditRelationRoleController extends FormBasicController {
 	@Override
 	protected void doDispose() {
 		//
+	}
+
+	@Override
+	protected void formInnerEvent(UserRequest ureq, FormItem source, FormEvent event) {
+		if (source == rightsEl) {
+			checkDependentRights();
+		}
+		super.formInnerEvent(ureq, source, event);
 	}
 
 	@Override
@@ -152,7 +178,7 @@ public class EditRelationRoleController extends FormBasicController {
 	@Override
 	protected void formOK(UserRequest ureq) {
 		Collection<String> selectedRightKeys = rightsEl.getSelectedKeys();
-		List<RelationRight> selectedRights = rights.stream()
+		List<RelationRight> selectedRights = identityRelationsService.getAvailableRights().stream()
 				.filter(r -> selectedRightKeys.contains(r.getRight())).collect(Collectors.toList());
 		if(relationRole == null) {
 			relationRole = identityRelationsService.createRole(roleEl.getValue(), selectedRights);
@@ -198,5 +224,21 @@ public class EditRelationRoleController extends FormBasicController {
 	@Override
 	protected void formCancelled(UserRequest ureq) {
 		fireEvent(ureq, Event.CANCELLED_EVENT);
+	}
+
+	private void checkDependentRights() {
+		for(int i=0; i < relationRights.size(); i++) {
+			RightProvider rightProvider = rightProviders.get(i);
+
+			if (rightProvider.getParent() != null) {
+				int parentIndex = rightProviders.indexOf(rightProvider.getParent());
+				if (rightsEl.isSelected(parentIndex)) {
+					rightsEl.setEnabled(rightKeys[i], true);
+				} else {
+					rightsEl.setEnabled(rightKeys[i], false);
+					rightsEl.select(rightKeys[i], false);
+				}
+			}
+		}
 	}
 }

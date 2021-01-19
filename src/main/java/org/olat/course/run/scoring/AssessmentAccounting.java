@@ -150,8 +150,9 @@ public class AssessmentAccounting implements ScoreAccounting {
 	private AccountingResult updateEntryRecursiv(CourseNode courseNode, Blocker blocker) {
 		log.debug("Evaluate course node: type '{}', ident: '{}'", courseNode.getType(), courseNode.getIdent());
 		
-		AssessmentEvaluation currentEvaluation = courseNodeToEval.get(courseNode);
+		AssessmentEvaluation currentEvaluation = evalCourseNode(courseNode);
 		AccountingResult result = new AccountingResult(currentEvaluation);
+		blocker.nextCourseNode();
 		
 		AccountingEvaluators evaluators = courseAssessmentService.getEvaluators(courseNode, courseConfig);
 		
@@ -172,12 +173,6 @@ public class AssessmentAccounting implements ScoreAccounting {
 			Integer duration = durationEvaluator.getDuration(courseNode);
 			result.setDuration(duration);
 		}
-		
-		PassedEvaluator passedEvaluator = evaluators.getPassedEvaluator();
-		Boolean passed = passedEvaluator.getPassed(result, courseNode,
-				userCourseEnvironment.getCourseEnvironment().getCourseGroupManager().getCourseEntry(),
-				userCourseEnvironment.getConditionInterpreter());
-		result.setPassed(passed);
 		
 		StatusEvaluator statusEvaluator = evaluators.getStatusEvaluator();
 		AssessmentEntryStatus status = statusEvaluator.getStatus(result, blocker);
@@ -215,6 +210,12 @@ public class AssessmentAccounting implements ScoreAccounting {
 		obligation = obligationEvaluator.getObligation(result, children);
 		result.setObligation(obligation);
 		
+		PassedEvaluator passedEvaluator = evaluators.getPassedEvaluator();
+		Boolean passed = passedEvaluator.getPassed(result, courseNode,
+				userCourseEnvironment.getCourseEnvironment().getCourseGroupManager().getCourseEntry(),
+				userCourseEnvironment.getConditionInterpreter());
+		result.setPassed(passed);
+		
 		FullyAssessedEvaluator fullyAssessedEvaluator = evaluators.getFullyAssessedEvaluator();
 		Boolean fullyAssessed = fullyAssessedEvaluator.getFullyAssessed(result, children, blocker);
 		result.setFullyAssessed(fullyAssessed);
@@ -228,7 +229,7 @@ public class AssessmentAccounting implements ScoreAccounting {
 		
 		if (courseNode.getParent() == null) {
 			RootPassedEvaluator rootPassedEvaluator = evaluators.getRootPassedEvaluator();
-			Boolean rootPassed = rootPassedEvaluator.getPassed(currentEvaluation, courseNode, this,
+			Boolean rootPassed = rootPassedEvaluator.getPassed(result, courseNode, this,
 					userCourseEnvironment.getCourseEnvironment().getCourseGroupManager().getCourseEntry());
 			result.setPassed(rootPassed);
 		}

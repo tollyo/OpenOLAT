@@ -42,7 +42,7 @@ import org.openqa.selenium.WebElement;
 public class LoginPage {
 	
 	private static final String footerUserDivXPath = "//div[@id='o_footer_user']/span[@id='o_username']";
-	private static final String acknowledgeCheckboxXPath = "//input[@name='acknowledge_checkbox']";
+	private static final String acknowledgeCheckboxXPath = "//div[contains(@class,'modal-dialog')]//fieldset[contains(@class,'o_disclaimer')]//input[@name='acknowledge_checkbox']";
 	
 	public static final By loginFormBy = By.cssSelector("div.o_login_form");
 	private static final By authOrDisclaimerXPath = By.xpath(footerUserDivXPath + "|" + acknowledgeCheckboxXPath);
@@ -78,11 +78,7 @@ public class LoginPage {
 	}
 	
 	public void assertLoggedIn(UserVO user) {
-		WebElement username = browser.findElement(usernameFooterBy);
-		Assert.assertNotNull(username);
-		Assert.assertTrue(username.isDisplayed());
-		String name = username.getText();
-		Assert.assertTrue(name.contains(user.getLastName()));
+		assertLoggedInByLastName(user.getLastName());
 	}
 	
 	public void assertLoggedInByLastName(String lastName) {
@@ -168,12 +164,23 @@ public class LoginPage {
 		List<WebElement> disclaimer = browser.findElements(disclaimerXPath);
 		if(disclaimer.size() > 0) {
 			//click the disclaimer
-			disclaimer.get(0).click();
+			OOGraphene.waitModalDialog(browser);
+			browser.findElement(disclaimerXPath).click();
 			browser.findElement(disclaimerButtonXPath).click();
+			try {
+				OOGraphene.waitElementDisappears(disclaimerXPath, 10, browser);
+			} catch (Exception e) {
+				OOGraphene.takeScreenshot("Login disclaimer", browser);
+				throw e;
+			}
 		}
 		
 		//wait until the content appears
-		OOGraphene.waitElement(landingPointBy, 30, browser);
+		try {
+			OOGraphene.waitElement(landingPointBy, 30, browser);
+		} catch(Exception e) {
+			OOGraphene.takeScreenshot("Login", browser);
+		}
 		return this;
 	}
 	
@@ -220,9 +227,9 @@ public class LoginPage {
 	public LoginPage resume() {
 		List<WebElement> resumes = browser.findElements(resumeButton);
 		if(resumes.size() > 0 && resumes.get(0).isDisplayed()) {
-			WebElement resume = resumes.get(0);
-			resume.click();
+			resumes.get(0).click();
 			OOGraphene.waitBusy(browser);
+			OOGraphene.waitModalDialogDisappears(browser);
 		}
 		return this;
 	}

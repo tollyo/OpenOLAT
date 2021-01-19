@@ -19,11 +19,15 @@
  */
 package org.olat.selenium.page.qti;
 
+import java.util.Calendar;
+import java.util.Date;
+
 import org.olat.ims.qti21.QTI21AssessmentResultsOptions;
 import org.olat.selenium.page.graphene.OOGraphene;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
+import org.openqa.selenium.support.ui.Select;
 
 /**
  * 
@@ -45,9 +49,10 @@ public class QTI21ConfigurationCEPage {
 	}
 	
 	public QTI21ConfigurationCEPage showScoreOnHomepage(boolean showResults) {
-		By scoreBy = By.cssSelector(".o_sel_results_on_homepage input[type='checkbox']");
+		By scoreBy = By.cssSelector(".o_sel_results_on_homepage select#o_fioqti_showresult_SELBOX");
 		WebElement scoreEl = browser.findElement(scoreBy);
-		OOGraphene.check(scoreEl, showResults);
+		String val = showResults ? "false" : "no";
+		new Select(scoreEl).selectByValue(val);
 		OOGraphene.waitBusy(browser);
 		return this;
 	}
@@ -81,6 +86,67 @@ public class QTI21ConfigurationCEPage {
 			By levelBy = By.cssSelector("div.o_sel_qti_show_results_options input[type='checkbox'][value='correctSolutions']");
 			OOGraphene.check(browser.findElement(levelBy), Boolean.TRUE);
 		}
+		return this;
+	}
+	
+	/**
+	 * Set the correction mode.
+	 * 
+	 * @param mode The mode defined by IQEditController.CORRECTION_AUTO,
+	 * 		IQEditController.CORRECTION_MANUAL or IQEditController.CORRECTION_GRADING
+	 * @return Itself
+	 */
+	public QTI21ConfigurationCEPage setCorrectionMode(String mode) {
+		By correctionBy = By.xpath("//fieldset[contains(@class,'o_qti_21_correction')]//div[@id='o_cocorrection_mode']//input[@value='" + mode + "'][@name='correction.mode'][@type='radio']");
+		OOGraphene.waitElement(correctionBy, browser);
+		browser.findElement(correctionBy).click();
+		return this;
+	}
+	
+	public QTI21ConfigurationCEPage setTime(Date start, Date end) {
+		By enableDateTest = By.cssSelector(".o_qti_21_datetest input[type='checkbox']");
+		browser.findElement(enableDateTest).click();
+		OOGraphene.waitBusy(browser);
+		
+		// confirm
+		By confirmBy = By.xpath("//div[contains(@class,'modal-dialog')]//a[contains(@onclick,'link_0')]");
+		OOGraphene.waitElement(confirmBy, browser);
+		browser.findElement(confirmBy).click();
+		OOGraphene.waitBusy(browser);
+		
+		// set dates
+		Calendar cal = Calendar.getInstance();
+		cal.setTime(start);
+		setTime("o_qti_21_datetest_start", cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE));
+		cal.setTime(end);
+		setTime("o_qti_21_datetest_end", cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE));
+		return this;
+	}
+	
+	private QTI21ConfigurationCEPage setTime(String fieldClass, int hour, int minutes) {
+		try {
+			By untilAltBy = By.cssSelector("div." + fieldClass + " div.o_date_picker span.input-group-addon i");
+			OOGraphene.waitElement(untilAltBy, browser);
+			browser.findElement(untilAltBy).click();
+			
+			By todayBy = By.xpath("//div[@id='ui-datepicker-div']//td[contains(@class,'ui-datepicker-today')]/a");
+			OOGraphene.waitElement(todayBy, browser);
+			
+			browser.findElement(todayBy).click();
+			OOGraphene.waitElementDisappears(todayBy, 5, browser);
+		} catch (Exception e) {
+			OOGraphene.takeScreenshot("Datetest", browser);
+			throw e;
+		}
+		
+		By hourBy = By.xpath("//div[contains(@class,'" + fieldClass + "')]//div[contains(@class,'o_first_ms')]/input[contains(@id,'o_dch_o_')]");
+		WebElement hourEl = browser.findElement(hourBy);
+		hourEl.clear();
+		hourEl.sendKeys(Integer.toString(hour));
+		By minuteBy = By.xpath("//div[contains(@class,'" + fieldClass + "')]//div[contains(@class,'o_first_ms')]/input[contains(@id,'o_dcm_o_')]");
+		WebElement minuteEl = browser.findElement(minuteBy);
+		minuteEl.clear();
+		minuteEl.sendKeys(Integer.toString(minutes));
 		return this;
 	}
 	

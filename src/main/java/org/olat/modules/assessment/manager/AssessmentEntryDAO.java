@@ -24,6 +24,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 
+import javax.persistence.FlushModeType;
 import javax.persistence.TypedQuery;
 
 import org.olat.basesecurity.Group;
@@ -34,6 +35,7 @@ import org.olat.core.commons.persistence.QueryBuilder;
 import org.olat.core.id.Identity;
 import org.olat.modules.assessment.AssessmentEntry;
 import org.olat.modules.assessment.AssessmentEntryCompletion;
+import org.olat.modules.assessment.AssessmentEntryScoring;
 import org.olat.modules.assessment.Overridable;
 import org.olat.modules.assessment.model.AssessmentEntryImpl;
 import org.olat.modules.assessment.model.AssessmentEntryStatus;
@@ -179,6 +181,7 @@ public class AssessmentEntryDAO {
 	public AssessmentEntry resetAssessmentEntry(AssessmentEntry nodeAssessment) {
 		nodeAssessment.setScore(null);
 		nodeAssessment.setAttempts(0);
+		nodeAssessment.setLastAttempt(null);
 		nodeAssessment.setCompletion(null);
 		nodeAssessment.setAssessmentStatus(AssessmentEntryStatus.notStarted);
 		if (nodeAssessment instanceof AssessmentEntryImpl) {
@@ -229,6 +232,64 @@ public class AssessmentEntryDAO {
 			impl.setObligationModDate(obligation.getModDate());
 		}
 		return dbInstance.getCurrentEntityManager().merge(nodeAssessment);
+	}
+	
+	public void resetAllRootPassed(RepositoryEntry entry) {
+		if (entry == null) return;
+		
+		StringBuilder sb = new StringBuilder();
+		sb.append("update assessmententry data");
+		sb.append("   set data.passedOriginal = :passedOriginal");
+		sb.append("     , data.lastModified = :lastModified");
+		sb.append(" where data.entryRoot = true");
+		sb.append("   and data.passedModificationDate is not null");
+		sb.append("   and data.repositoryEntry.key = :repositoryEntryKey");
+		
+		dbInstance.getCurrentEntityManager()
+				.createQuery(sb.toString())
+				.setParameter("passedOriginal", null)
+				.setParameter("lastModified", new Date())
+				.setParameter("repositoryEntryKey", entry.getKey())
+				.executeUpdate();
+		
+		sb = new StringBuilder();
+		sb.append("update assessmententry data");
+		sb.append("   set data.passed = :passed");
+		sb.append("     , data.lastModified = :lastModified");
+		sb.append(" where data.entryRoot = true");
+		sb.append("   and data.passedModificationDate is null");
+		sb.append("   and data.repositoryEntry.key = :repositoryEntryKey");
+		
+		dbInstance.getCurrentEntityManager()
+				.createQuery(sb.toString())
+				.setParameter("passed", null)
+				.setParameter("lastModified", new Date())
+				.setParameter("repositoryEntryKey", entry.getKey())
+				.executeUpdate();
+	}
+	
+	public void resetAllOverridenRootPassed(RepositoryEntry entry) {
+		if (entry == null) return;
+		
+		StringBuilder sb = new StringBuilder();
+		sb.append("update assessmententry data");
+		sb.append("   set data.passed = data.passedOriginal");
+		sb.append("     , data.passedOriginal = :passedOriginal");
+		sb.append("     , data.passedModificationDate = :passedModificationDate");
+		sb.append("     , data.passedModificationIdentity = :passedModificationIdentity");
+		sb.append("     , data.lastModified = :lastModified");
+		sb.append(" where data.entryRoot = true");
+		sb.append("   and data.passedModificationDate is not null");
+		sb.append("   and data.repositoryEntry.key = :repositoryEntryKey");
+		
+		dbInstance.getCurrentEntityManager()
+				.createQuery(sb.toString())
+				.setParameter("passedOriginal", null)
+				.setParameter("passedModificationDate", null)
+				.setParameter("passedModificationIdentity", null)
+				.setParameter("lastModified", new Date())
+				.setParameter("repositoryEntryKey", entry.getKey())
+				.executeUpdate();
 	}
 	
 	/**
@@ -349,20 +410,29 @@ public class AssessmentEntryDAO {
 				.getResultList();
 	}
 
-	public List<AssessmentEntry> loadRootAssessmentEntriesByAssessedIdentity(Identity assessedIdentity, Collection<Long> entryKeys) {
+	public List<AssessmentEntryScoring> loadRootAssessmentEntriesByAssessedIdentity(Identity assessedIdentity, Collection<Long> entryKeys) {
 		if (assessedIdentity == null || entryKeys == null || entryKeys.isEmpty()) return Collections.emptyList();
 		
 		QueryBuilder sb = new QueryBuilder();
-		sb.append("select ae");
+		sb.append("select new org.olat.modules.assessment.model.AssessmentEntryScoringImpl(");
+		sb.append("       ae.key");
+		sb.append("     , ae.repositoryEntry.key");
+		sb.append("     , ae.completion");
+		sb.append("     , ae.score");
+		sb.append("     , ae.passed");
+		sb.append("     , ae.passedOriginal");
+		sb.append("     , ae.passedModificationDate");
+		sb.append("     )");
 		sb.append("  from assessmententry ae");
 		sb.and().append(" ae.entryRoot = true");
 		sb.and().append(" ae.identity.key = :identityKey");
 		sb.and().append(" ae.repositoryEntry.key in (:entryKeys)");
 		
 		return dbInstance.getCurrentEntityManager()
-				.createQuery(sb.toString(), AssessmentEntry.class)
+				.createQuery(sb.toString(), AssessmentEntryScoring.class)
 				.setParameter("identityKey", assessedIdentity.getKey())
 				.setParameter("entryKeys", entryKeys)
+				.setFlushMode(FlushModeType.COMMIT)
 				.getResultList();
 	}
 

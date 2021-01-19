@@ -32,7 +32,12 @@ public interface RuleSPI {
 	
 	public String getLabelI18nKey();
 	
-	public String getCategory();
+	/**
+	 * @param entry SPIs may be enabled depending on course configurations.
+	 */
+	public default boolean isEnabled(RepositoryEntry entry) {
+		return true;
+	}
 	
 	public ReminderRule clone(ReminderRule rule, CourseEnvironmentMapper envMapper);
 	

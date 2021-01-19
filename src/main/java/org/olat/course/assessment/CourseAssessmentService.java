@@ -40,6 +40,7 @@ import org.olat.course.run.scoring.ScoreEvaluation;
 import org.olat.course.run.userview.UserCourseEnvironment;
 import org.olat.group.BusinessGroup;
 import org.olat.modules.assessment.AssessmentEntry;
+import org.olat.modules.assessment.Overridable;
 import org.olat.modules.assessment.Role;
 import org.olat.modules.assessment.model.AssessmentEntryStatus;
 import org.olat.modules.assessment.model.AssessmentRunStatus;
@@ -123,13 +124,13 @@ public interface CourseAssessmentService {
 	public Double getCurrentRunCompletion(CourseNode courseNode, UserCourseEnvironment userCourseEnvironment);
 
 	public void updateCurrentCompletion(CourseNode courseNode, UserCourseEnvironment userCourseEnvironment,
-			Double currentCompletion, AssessmentRunStatus status, Role by);
+			Date start, Double currentCompletion, AssessmentRunStatus status, Role by);
 	
 	public void updateCompletion(CourseNode courseNode, UserCourseEnvironment userCourseEnvironment,
 			Double completion, AssessmentEntryStatus status, Role by);
 	
 	public void updateFullyAssessed(CourseNode courseNode, UserCourseEnvironment userCourseEnvironment,
-			Boolean fullyAssessed, AssessmentEntryStatus status, Role by);
+			Boolean fullyAssessed, AssessmentEntryStatus status);
 	
 	/**
 	 * @param courseNode
@@ -152,12 +153,13 @@ public interface CourseAssessmentService {
 	 * 
 	 * @param courseNode
 	 * @param userAttempts
+	 * @param lastAttempt 
 	 * @param userCourseEnvironment
 	 * @param coachingIdentity
 	 * @param doneBy
 	 */
 	public void updateAttempts(CourseNode courseNode, Integer userAttempts,
-			UserCourseEnvironment userCourseEnvironment, Identity coachingIdentity, Role doneBy);
+			Date lastAttempt, UserCourseEnvironment userCourseEnvironment, Identity coachingIdentity, Role doneBy);
 	
 	/**
 	 * @param courseNode
@@ -257,6 +259,13 @@ public interface CourseAssessmentService {
 	 */
 	public void saveScoreEvaluation(CourseNode courseNode, Identity identity, ScoreEvaluation scoreEvaluation,
 			UserCourseEnvironment userCourseEnvironment, boolean incrementUserAttempts, Role by);
+	
+	public Overridable<Boolean> getRootPassed(UserCourseEnvironment userCourseEnvironment);
+
+	public Overridable<Boolean> overrideRootPassed(Identity coach, UserCourseEnvironment userCourseEnvironment,
+			Boolean passed);
+
+	public Overridable<Boolean> resetRootPassed(Identity coach, UserCourseEnvironment userCourseEnvironment);
 	
 	/**
 	 * Returns a controller to edit the node specific details. Check

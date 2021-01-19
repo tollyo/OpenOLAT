@@ -26,7 +26,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 
-import org.olat.admin.user.delete.service.UserDeletionManager;
+import org.apache.logging.log4j.Logger;
 import org.olat.basesecurity.AuthHelper;
 import org.olat.basesecurity.Authentication;
 import org.olat.basesecurity.BaseSecurity;
@@ -41,12 +41,12 @@ import org.olat.core.gui.media.MediaResource;
 import org.olat.core.gui.media.RedirectMediaResource;
 import org.olat.core.gui.translator.Translator;
 import org.olat.core.id.Identity;
-import org.apache.logging.log4j.Logger;
 import org.olat.core.logging.Tracing;
 import org.olat.core.logging.activity.ThreadLocalUserActivityLoggerInstaller;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.Util;
 import org.olat.core.util.WebappHelper;
+import org.olat.login.LoginModule;
 import org.olat.login.oauth.model.OAuthRegistration;
 import org.olat.login.oauth.model.OAuthUser;
 import org.olat.login.oauth.spi.OpenIDVerifier;
@@ -75,13 +75,10 @@ public class OAuthDispatcher implements Dispatcher {
 	
 	private static final Logger log = Tracing.createLoggerFor(OAuthDispatcher.class);
 
-	
 	@Autowired
 	private UserManager userManager;
 	@Autowired
 	private BaseSecurity securityManager;
-	@Autowired
-	private UserDeletionManager userDeletionManager;
 
 	@Override
 	public void execute(HttpServletRequest request, HttpServletResponse response)
@@ -94,7 +91,7 @@ public class OAuthDispatcher implements Dispatcher {
 			ureq = new UserRequestImpl(uriPrefix, request, response);
 		} catch(NumberFormatException nfe) {
 			if(log.isDebugEnabled()){
-				log.debug("Bad Request "+request.getPathInfo());
+				log.debug("Bad Request {}", request.getPathInfo());
 			}
 			DispatcherModule.sendBadRequest(request.getPathInfo(), response);
 			return;
@@ -156,7 +153,7 @@ public class OAuthDispatcher implements Dispatcher {
 			OAuthUser infos = provider.getUser(service, accessToken);
 			if(infos == null || !StringHelper.containsNonWhitespace(infos.getId())) {
 				error(ureq, translate(ureq, "error.no.id"));
-				log.error("OAuth Login failed, no infos extracted from access token: " + accessToken);
+				log.error("OAuth Login failed, no infos extracted from access token: {}", accessToken);
 				return;
 			}
 
@@ -178,7 +175,7 @@ public class OAuthDispatcher implements Dispatcher {
 					register(request, response, registration);
 				} else {
 					error(ureq, translate(ureq, "error.account.creation"));
-					log.error("OAuth Login ok but the user has not an account on OpenOLAT: " + infos);
+					log.error("OAuth Login ok but the user has not an account on OpenOLAT: {}", infos);
 				}
 			} else {
 				if(ureq.getUserSession() != null) {
@@ -191,13 +188,16 @@ public class OAuthDispatcher implements Dispatcher {
 				if (loginStatus != AuthHelper.LOGIN_OK) {
 					if (loginStatus == AuthHelper.LOGIN_NOTAVAILABLE) {
 						DispatcherModule.redirectToServiceNotAvailable(response);
+					} else if (loginStatus == AuthHelper.LOGIN_INACTIVE) {
+						error(ureq, translate(ureq, "login.error.inactive", WebappHelper.getMailConfig("mailSupport")));
+						log.error("OAuth Login ok but the user is inactive: {}", identity);
 					} else {
 						// error, redirect to login screen
 						DispatcherModule.redirectToDefaultDispatcher(response); 
 					}
 				} else {
 					//update last login date and register active user
-					userDeletionManager.setIdentityAsActiv(identity);
+					securityManager.setIdentityLastLogin(identity);
 					MediaResource mr = ureq.getDispatchResult().getResultingMediaResource();
 					if (mr instanceof RedirectMediaResource) {
 						RedirectMediaResource rmr = (RedirectMediaResource)mr;
@@ -229,13 +229,19 @@ public class OAuthDispatcher implements Dispatcher {
 				if(StringHelper.containsNonWhitespace(email)) {
 					Identity identity = userManager.findUniqueIdentityByEmail(email);
 					if(identity == null) {
-						identity = securityManager.findIdentityByName(id);
+						identity = securityManager.findIdentityByLogin(id);
+					}
+					if(identity == null) {
+						identity = securityManager.findIdentityByNameCaseInsensitive(id);
+					}
+					if(identity == null) {
+						identity = securityManager.findIdentityByNickName(id);
 					}
 					if(identity != null) {
 						securityManager.createAndPersistAuthentication(identity, registration.getAuthProvider(), id, null, null);
 						registration.setIdentity(identity);
 					} else {
-						log.error("OAuth Login failed, user with user name " + email + " not found.");
+						log.error("OAuth Login failed, user with user name {} not found. OAuth user: {}", email, infos);
 					}
 				}
 			} else {
@@ -245,8 +251,15 @@ public class OAuthDispatcher implements Dispatcher {
 	}
 	
 	private String translate(UserRequest ureq, String i18nKey) {
-		Translator trans = Util.createPackageTranslator(OAuthAuthenticationController.class, ureq.getLocale());
+		Translator trans = Util.createPackageTranslator(OAuthAuthenticationController.class, ureq.getLocale(),
+				Util.createPackageTranslator(LoginModule.class, ureq.getLocale()));
 		return trans.translate(i18nKey);
+	}
+	
+	private String translate(UserRequest ureq, String i18nKey, String arg) {
+		Translator trans = Util.createPackageTranslator(OAuthAuthenticationController.class, ureq.getLocale(),
+				Util.createPackageTranslator(LoginModule.class, ureq.getLocale()));
+		return trans.translate(i18nKey, new String[] { arg });
 	}
 	
 	private String translateOauthError(UserRequest ureq, String error) {
@@ -282,7 +295,7 @@ public class OAuthDispatcher implements Dispatcher {
 			request.getSession().setAttribute(OAuthConstants.OAUTH_USER_ATTR, user);
 			response.sendRedirect(WebappHelper.getServletContextPath() + DispatcherModule.getPathDefault() + OAuthConstants.OAUTH_DISCLAIMER_PATH + "/");
 		} catch (IOException e) {
-			log.error("Redirect failed: url=" + WebappHelper.getServletContextPath() + DispatcherModule.getPathDefault(),e);
+			log.error("Redirect failed: url={}{}", WebappHelper.getServletContextPath(), DispatcherModule.getPathDefault(),e);
 		}
 	}
 	
@@ -291,7 +304,7 @@ public class OAuthDispatcher implements Dispatcher {
 			request.getSession().setAttribute("oauthRegistration", registration);
 			response.sendRedirect(WebappHelper.getServletContextPath() + DispatcherModule.getPathDefault() + OAuthConstants.OAUTH_REGISTER_PATH + "/");
 		} catch (IOException e) {
-			log.error("Redirect failed: url=" + WebappHelper.getServletContextPath() + DispatcherModule.getPathDefault(),e);
+			log.error("Redirect failed: url={}{}", WebappHelper.getServletContextPath(), DispatcherModule.getPathDefault(),e);
 		}
 	}
 }

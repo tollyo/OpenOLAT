@@ -55,6 +55,8 @@ public interface VFSMetadata extends VFSMetadataRef, ModifiedInfo, CreateInfo {
 	
 	public Date getFileLastModified();
 	
+	public Identity getFileLastModifiedBy();
+	
 	public long getFileSize();
 	
 	public boolean isDirectory();
@@ -176,6 +178,6 @@ public interface VFSMetadata extends VFSMetadataRef, ModifiedInfo, CreateInfo {
 	
 	public String getMigrated();
 	
-	public void copyValues(VFSMetadata metadata);
+	public void copyValues(VFSMetadata metadata, boolean override);
 
 }

@@ -31,8 +31,8 @@ import java.security.cert.X509Certificate;
 import java.util.Date;
 import java.util.Enumeration;
 
-import org.olat.core.configuration.AbstractSpringModule;
 import org.apache.logging.log4j.Logger;
+import org.olat.core.configuration.AbstractSpringModule;
 import org.olat.core.logging.Tracing;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.coordinate.CoordinatorManager;
@@ -85,6 +85,8 @@ public class LDAPLoginModule extends AbstractSpringModule {
 	private String systemPW;
 	@Value("${ldap.connectionTimeout}")
 	private Integer connectionTimeout;
+	@Value("${ldap.batch.size:50}")
+	private Integer batchSize;
 	/**
 	 * Create LDAP users on the fly when authenticated successfully
 	 */
@@ -159,9 +161,6 @@ public class LDAPLoginModule extends AbstractSpringModule {
 		super(coordinatorManager);
 	}
 
-	/**
-	 * @see org.olat.core.configuration.Initializable#init()
-	 */
 	@Override
 	public void init() {
 		// Check if LDAP is enabled
@@ -229,7 +228,7 @@ public class LDAPLoginModule extends AbstractSpringModule {
 		}
 		
 		// check SSL certifications, throws Startup Exception if certificate is not found
-		if(isSslEnabled()){
+		if(isSslEnabled()) {
 			if (!checkServerCertValidity(0)) {
 				log.error("LDAP enabled but no valid server certificate found. Please fix!");
 			} else if (!checkServerCertValidity(30)) {
@@ -269,13 +268,11 @@ public class LDAPLoginModule extends AbstractSpringModule {
 
 			// Schedule job now
 			scheduler.scheduleJob(jobDetail, trigger);
-			log.info("LDAP cron syncer is enabled with expression::" + ldapSyncCronSyncExpression);
+			log.info("LDAP cron syncer is enabled with expression::{}", ldapSyncCronSyncExpression);
 		} catch (Exception e) {
 			setLdapSyncCronSync(false);
-			log.error("LDAP configuration in attribute 'ldapSyncCronSyncExpression' is not valid ("
-				+ ldapSyncCronSyncExpression
-				+ "). See http://quartz.sourceforge.net/javadoc/org/quartz/CronTrigger.html to learn more about the cron syntax. Disabling LDAP cron syncing",
-				e);
+			log.error("LDAP configuration in attribute 'ldapSyncCronSyncExpression' is not valid ({}). See http://quartz.sourceforge.net/javadoc/org/quartz/CronTrigger.html to learn more about the cron syntax. Disabling LDAP cron syncing",
+				ldapSyncCronSyncExpression, e);
 		}
 	}
 
@@ -292,9 +289,9 @@ public class LDAPLoginModule extends AbstractSpringModule {
 	 */
 	private boolean checkServerCertValidity(int daysFromNow) {
 		KeyStore keyStore;
-		try {
+		try(FileInputStream in=new FileInputStream(getTrustStoreLocation())) {
 			keyStore = KeyStore.getInstance(getTrustStoreType());
-			keyStore.load(new FileInputStream(getTrustStoreLocation()), (getTrustStorePwd() != null) ? getTrustStorePwd().toCharArray() : null);
+			keyStore.load(in, (getTrustStorePwd() != null) ? getTrustStorePwd().toCharArray() : null);
 			Enumeration<String> aliases = keyStore.aliases();
 			while (aliases.hasMoreElements()) {
 				String alias = aliases.nextElement();
@@ -303,7 +300,7 @@ public class LDAPLoginModule extends AbstractSpringModule {
 					return isCertificateValid((X509Certificate)cert, daysFromNow);
 				}
 			}
-		}	catch (Exception e) {
+		} catch (Exception e) {
 			return false;
 		}
 		return false;
@@ -313,7 +310,7 @@ public class LDAPLoginModule extends AbstractSpringModule {
 		try {
 			x509Cert.checkValidity();
 			if (daysFromNow > 0) {
-				Date nowPlusDays = new Date(System.currentTimeMillis() + (new Long(daysFromNow).longValue() * 24l * 60l * 60l * 1000l));
+				Date nowPlusDays = new Date(System.currentTimeMillis() + (daysFromNow * 24l * 60l * 60l * 1000l));
 				x509Cert.checkValidity(nowPlusDays);
 			}
 		} catch (Exception e) {
@@ -332,7 +329,7 @@ public class LDAPLoginModule extends AbstractSpringModule {
 		if (StringHelper.containsNonWhitespace(param)) {
 			return true;
 		} else {
-			log.error("Missing configuration '" + param + "'. Add this configuration to olatextconfig.xml first. Disabling LDAP");
+			log.error("Missing configuration '{}'. Add this configuration to olatextconfig.xml first. Disabling LDAP", param);
 			setEnableLDAPLogins(false);
 			return false;
 		}
@@ -396,9 +393,14 @@ public class LDAPLoginModule extends AbstractSpringModule {
 		ldapUrl = ldapUrlConfig.trim();
 	}
 	
+	public Integer getBatchSize() {
+		return batchSize;
+	}
 
-	
-	
+	public void setBatchSize(Integer batchSize) {
+		this.batchSize = batchSize;
+	}
+
 	public Integer getLdapConnectionTimeout() {
 		return connectionTimeout;
 	}

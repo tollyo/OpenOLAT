@@ -25,6 +25,10 @@
 
 package org.olat.gui.control;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import org.olat.admin.help.ui.HelpAdminController;
 import org.olat.admin.user.tools.UserTool;
 import org.olat.basesecurity.AuthHelper;
 import org.olat.core.CoreSpringFactory;
@@ -46,6 +50,8 @@ import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.control.controller.BasicController;
 import org.olat.core.gui.control.creator.ControllerCreator;
 import org.olat.core.gui.control.generic.popup.PopupBrowserWindow;
+import org.olat.core.util.Util;
+import org.olat.gui.control.OlatTopNavController.Tool;
 import org.olat.search.SearchModule;
 import org.olat.search.SearchUserToolExtension;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -67,6 +73,9 @@ public class OlatGuestTopNavController extends BasicController implements Lockab
 	
 	public OlatGuestTopNavController(UserRequest ureq, WindowControl wControl) {
 		super(ureq, wControl);
+		
+		setTranslator(Util.createPackageTranslator(HelpAdminController.class, getLocale(), getTranslator()));
+		
 		VelocityContainer vc = createVelocityContainer("guesttopnav");
 		vc.setDomReplacementWrapperRequired(false); // we provide our own DOM replacement ID
 		
@@ -88,9 +97,18 @@ public class OlatGuestTopNavController extends BasicController implements Lockab
 		// the help link
 		HelpModule helpModule = CoreSpringFactory.getImpl(HelpModule.class);
 		if (helpModule.isHelpEnabled()) {
-			HelpLinkSPI provider = helpModule.getHelpProvider();
-			UserTool tool = provider.getHelpUserTool(getWindowControl());
-			tool.getMenuComponent(ureq, vc);
+			List<Tool> helpPluginLinksName = new ArrayList<>();
+			for (HelpLinkSPI helpLinkSPI : helpModule.getDMZHelpPlugins()) {
+				UserTool helpTool = helpLinkSPI.getHelpUserTool(getWindowControl());
+				if (helpTool != null) {
+					Component cmp = helpTool.getMenuComponent(ureq, vc);
+					String CssId = "o_navbar_help_" + helpLinkSPI.getPluginName();
+					String cssClass = "";
+					helpPluginLinksName.add(new Tool(CssId, cssClass, cmp.getComponentName()));
+				}
+			}
+			
+			vc.contextPut("helpPlugins", helpPluginLinksName);
 		}
 		
 		loginLink = LinkFactory.createLink("topnav.login", vc, this);
@@ -126,6 +144,7 @@ public class OlatGuestTopNavController extends BasicController implements Lockab
 		}
 	}
 
+	@Override
 	protected void doDispose() {
 		// controllers disposed by BasicController:
 	}

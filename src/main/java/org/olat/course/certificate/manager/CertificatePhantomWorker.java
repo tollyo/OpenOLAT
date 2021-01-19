@@ -27,7 +27,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.io.Writer;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Date;
@@ -43,6 +43,7 @@ import org.olat.core.id.Identity;
 import org.olat.core.id.User;
 import org.olat.core.id.UserConstants;
 import org.olat.core.logging.Tracing;
+import org.olat.core.util.FileUtils;
 import org.olat.core.util.Formatter;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.i18n.I18nManager;
@@ -63,7 +64,9 @@ public class CertificatePhantomWorker {
 			.createLoggerFor(CertificatePDFFormWorker.class);
 	
 	private final Float score;
+	private final Float maxScore;
 	private final Boolean passed;
+	private final Double completion;
 	private final Identity identity;
 	private final RepositoryEntry entry;
 	private final String certificateURL;
@@ -79,17 +82,19 @@ public class CertificatePhantomWorker {
 	private final UserManager userManager;
 	private final CertificatesManagerImpl certificatesManager;
 
-	public CertificatePhantomWorker(Identity identity, RepositoryEntry entry, Float score, Boolean passed,
-			Date dateCertification, Date dateFirstCertification, Date nextRecertificationDate, String custom1,
+	public CertificatePhantomWorker(Identity identity, RepositoryEntry entry, Float score, Float maxScore, Boolean passed,
+			Double completion, Date dateCertification, Date dateFirstCertification, Date nextRecertificationDate, String custom1,
 			String custom2, String custom3, String certificateURL, Locale locale, UserManager userManager,
 			CertificatesManagerImpl certificatesManager) {
 		this.entry = entry;
 		this.score = score;
+		this.maxScore = maxScore;
+		this.passed = passed;
+		this.completion = completion;
 		this.custom1 = custom1;
 		this.custom2 = custom2;
 		this.custom3 = custom3;
 		this.locale = locale;
-		this.passed = passed;
 		this.identity = identity;
 		this.dateCertification = dateCertification;
 		this.dateFirstCertification = dateFirstCertification;
@@ -125,7 +130,9 @@ public class CertificatePhantomWorker {
 		worker.start();
 
 		try {
-			doneSignal.await(30000, TimeUnit.MILLISECONDS);
+			if(!doneSignal.await(30000, TimeUnit.MILLISECONDS)) {
+				log.warn("Cannot output certificates in 30s: {}", certificateFile);
+			}
 		} catch (InterruptedException e) {
 			log.error("", e);
 		}
@@ -138,7 +145,7 @@ public class CertificatePhantomWorker {
 		VelocityContext context = getContext();
 		boolean result = false;
 		File htmlCertificate = new File(templateFile.getParent(), "c" + UUID.randomUUID() + ".html");
-		try(Reader in = Files.newBufferedReader(templateFile.toPath(), Charset.forName("UTF-8"));
+		try(Reader in = Files.newBufferedReader(templateFile.toPath(), StandardCharsets.UTF_8);
 			Writer output = new FileWriter(htmlCertificate)) {
 			result = certificatesManager.getVelocityEngine().evaluate(context, output, "mailTemplate", in);
 			output.flush();
@@ -269,9 +276,15 @@ public class CertificatePhantomWorker {
 	private void fillAssessmentInfos(VelocityContext context) {
 		String roundedScore = AssessmentHelper.getRoundedScore(score);
 		context.put("score", roundedScore);
+		
+		String roundedMaxScore = AssessmentHelper.getRoundedScore(maxScore);
+		context.put("maxScore", roundedMaxScore);
 
 		String status = (passed != null && passed.booleanValue()) ? "Passed" : "Failed";
 		context.put("status", status);
+		
+		String roundedCompletion = completion != null? Formatter.roundToString(completion * 100, 0): null;
+		context.put("progress", roundedCompletion);
 	}
 	
 	private void fillMetaInfos(VelocityContext context) {
@@ -291,12 +304,14 @@ public class CertificatePhantomWorker {
 		worker.start();
 
 		try {
-			doneSignal.await(10000, TimeUnit.MILLISECONDS);
+			if(!doneSignal.await(10000, TimeUnit.MILLISECONDS)) {
+				log.warn("Cannot check PhantomJS availability in 30s.");
+			}
 		} catch (InterruptedException e) {
 			log.error("", e);
 		}
 		
-		log.info("PhantomJS help is available if exit value = 0: " + worker.getExitValue());
+		log.info("PhantomJS help is available if exit value = 0: {}", worker.getExitValue());
 		return worker.getExitValue() == 0;
 	}
 	
@@ -357,7 +372,7 @@ public class CertificatePhantomWorker {
 				destroyProcess();
 			} finally {
 				if(htmlCertificateFile != null) {
-					htmlCertificateFile.delete();
+					FileUtils.deleteFile(htmlCertificateFile);
 				}
 			}
 		}
@@ -392,14 +407,14 @@ public class CertificatePhantomWorker {
 			}
 			
 			if(log.isDebugEnabled()) {
-				log.debug("Error: " + errors.toString());
-				log.debug("Output: " + output.toString());
+				log.debug("Error: {}", errors.toString());
+				log.debug("Output: {}", output.toString());
 			}
 
 			try {
 				exitValue = proc.waitFor();
 				if (exitValue != 0) {
-					log.warn("Problem with PhantomJS? " + exitValue);
+					log.warn("Problem with PhantomJS? {}", exitValue);
 				}
 			} catch (InterruptedException e) {
 				log.warn("Takes too long");

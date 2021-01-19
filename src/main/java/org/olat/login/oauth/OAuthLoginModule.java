@@ -28,6 +28,7 @@ import org.olat.core.helpers.Settings;
 import org.olat.core.util.coordinate.CoordinatorManager;
 import org.olat.login.oauth.spi.OpenIdConnectFullConfigurableProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -41,6 +42,13 @@ public class OAuthLoginModule extends AbstractSpringModule {
 	
 	private static final String OPEN_ID_IF_START_MARKER = "openIdConnectIF.";
 	private static final String OPEN_ID_IF_END_MARKER = ".Enabled";
+	
+	private static final String KEYCLOAK_ENABLED = "keycloakEnabled";
+	private static final String KEYCLOAK_ROOT_ENABLED = "keycloakRootEnabled";
+	private static final String KEYCLOAK_ENDPOINT = "keycloakEndpoint";
+	private static final String KEYCLOAK_REALM = "keycloakRealm";
+	private static final String KEYCLOAK_CLIENT_ID = "keycloakClientId";
+	private static final String KEYCLOAK_CLIENT_SECRET = "keycloakClientSecret";
 	
 	private boolean allowUserCreation;
 	
@@ -67,6 +75,12 @@ public class OAuthLoginModule extends AbstractSpringModule {
 	private String adfsApiSecret;
 	private String adfsOAuth2Endpoint;
 	
+	private boolean azureAdfsEnabled;
+	private boolean azureAdfsRootEnabled;
+	private String azureAdfsApiKey;
+	private String azureAdfsApiSecret;
+	private String azureAdfsTenant;
+	
 	private boolean tequilaEnabled;
 	private String tequilaApiKey;
 	private String tequilaApiSecret;
@@ -78,7 +92,19 @@ public class OAuthLoginModule extends AbstractSpringModule {
 	private String openIdConnectIFApiSecret;
 	private String openIdConnectIFIssuer;
 	private String openIdConnectIFAuthorizationEndPoint;
-
+	
+	@Value("${oauth.keycloak.enabled:false}")
+	private boolean keycloakEnabled;
+	@Value("${oauth.keycloak.root:false}")
+	private boolean keycloakRootEnabled;
+	@Value("${oauth.keycloak.client.id}")
+	private String keycloakClientId;
+	@Value("${oauth.keycloak.client.secret}")
+	private String keycloakClientSecret;
+	@Value("${oauth.keycloak.endpoint}")
+	private String keycloakEndpoint;
+	@Value("${oauth.keycloak.realm}")
+	private String keycloakRealm;
 	
 	@Autowired
 	private List<OAuthSPI> oauthSPIs;
@@ -138,12 +164,31 @@ public class OAuthLoginModule extends AbstractSpringModule {
 		adfsApiSecret = getStringPropertyValue("adfsApiSecret", false);
 		adfsOAuth2Endpoint = getStringPropertyValue("adfsOAuth2Endpoint", false);
 		
+		//Azure ADFS
+		String azureAdfsEnabledObj = getStringPropertyValue("azureAdfsEnabled", true);
+		azureAdfsEnabled = "true".equals(azureAdfsEnabledObj);
+		String azureAdfsRootEnabledObj = getStringPropertyValue("azureAdfsRootEnabled", true);
+		azureAdfsRootEnabled = "true".equals(azureAdfsRootEnabledObj);
+		azureAdfsApiKey = getStringPropertyValue("azureAdfsApiKey", false);
+		azureAdfsApiSecret = getStringPropertyValue("azureAdfsApiSecret", false);
+		azureAdfsTenant = getStringPropertyValue("azureAdfsTenant", false);
+		
 		//tequila
 		String tequilaEnabledObj = getStringPropertyValue("tequilaEnabled", true);
 		tequilaEnabled = "true".equals(tequilaEnabledObj);
 		tequilaApiKey = getStringPropertyValue("tequilaApiKey", false);
 		tequilaApiSecret = getStringPropertyValue("tequilaApiSecret", false);
 		tequilaOAuth2Endpoint = getStringPropertyValue("tequilaOAuth2Endpoint", false);
+		
+		// Keycloak
+		String keycloakEnabledObj = getStringPropertyValue(KEYCLOAK_ENABLED, keycloakEnabled);
+		keycloakEnabled = "true".equals(keycloakEnabledObj);
+		String keycloakRootEnabledObj = getStringPropertyValue(KEYCLOAK_ROOT_ENABLED, keycloakRootEnabled);
+		keycloakRootEnabled = "true".equals(keycloakRootEnabledObj);
+		keycloakEndpoint = getStringPropertyValue(KEYCLOAK_ENDPOINT, keycloakEndpoint);
+		keycloakRealm = getStringPropertyValue(KEYCLOAK_REALM, keycloakRealm);
+		keycloakClientId = getStringPropertyValue(KEYCLOAK_CLIENT_ID, keycloakClientId);
+		keycloakClientSecret = getStringPropertyValue(KEYCLOAK_CLIENT_SECRET, keycloakClientSecret);
 		
 		String openIdConnectIFEnabledObj = getStringPropertyValue("openIdConnectIFEnabled", true);
 		openIdConnectIFEnabled = "true".equals(openIdConnectIFEnabledObj);
@@ -436,6 +481,51 @@ public class OAuthLoginModule extends AbstractSpringModule {
 		this.adfsOAuth2Endpoint = adfsOAuth2Endpoint;
 		setStringProperty("adfsOAuth2Endpoint", adfsOAuth2Endpoint, true);
 	}
+	
+	public boolean isAzureAdfsEnabled() {
+		return azureAdfsEnabled;
+	}
+
+	public void setAzureAdfsEnabled(boolean azureAdfsEnabled) {
+		this.azureAdfsEnabled = azureAdfsEnabled;
+		setStringProperty("azureAdfsEnabled", azureAdfsEnabled ? "true" : "false", true);
+	}
+
+	public boolean isAzureAdfsRootEnabled() {
+		return azureAdfsRootEnabled;
+	}
+
+	public void setAzureAdfsRootEnabled(boolean azureAdfsRootEnabled) {
+		this.azureAdfsRootEnabled = azureAdfsRootEnabled;
+		setStringProperty("azureAdfsRootEnabled", azureAdfsRootEnabled ? "true" : "false", true);
+	}
+
+	public String getAzureAdfsApiKey() {
+		return azureAdfsApiKey;
+	}
+
+	public void setAzureAdfsApiKey(String azureAdfsApiKey) {
+		this.azureAdfsApiKey = azureAdfsApiKey;
+		setStringProperty("azureAdfsApiKey", azureAdfsApiKey, true);
+	}
+	
+	public String getAzureAdfsApiSecret() {
+		return azureAdfsApiSecret;
+	}
+
+	public void setAzureAdfsApiSecret(String azureAdfsApiSecret) {
+		this.azureAdfsApiSecret = azureAdfsApiSecret;
+		setStringProperty("azureAdfsApiSecret", azureAdfsApiSecret, true);
+	}
+
+	public String getAzureAdfsTenant() {
+		return azureAdfsTenant;
+	}
+
+	public void setAzureAdfsTenant(String azureAdfsTenant) {
+		this.azureAdfsTenant = azureAdfsTenant;
+		setStringProperty("azureAdfsTenant", azureAdfsTenant, true);
+	}
 
 	public boolean isTequilaEnabled() {
 		return tequilaEnabled;
@@ -471,6 +561,60 @@ public class OAuthLoginModule extends AbstractSpringModule {
 	public void setTequilaOAuth2Endpoint(String tequilaOAuth2Endpoint) {
 		this.tequilaOAuth2Endpoint = tequilaOAuth2Endpoint;
 		setStringProperty("tequilaOAuth2Endpoint", tequilaOAuth2Endpoint, true);
+	}
+	
+	public boolean isKeycloakEnabled() {
+		return keycloakEnabled;
+	}
+	
+	public void setKeycloakEnabled(boolean enabled) {
+		keycloakEnabled = enabled;
+		setStringProperty(KEYCLOAK_ENABLED, enabled ? "true" : "false", true);
+	}
+	
+	public boolean isKeycloakRootEnabled() {
+		return keycloakRootEnabled;
+	}
+	
+	public void setKeycloakRootEnabled(boolean enabled) {
+		keycloakRootEnabled = enabled;
+		setStringProperty(KEYCLOAK_ROOT_ENABLED, enabled ? "true" : "false", true);
+	}
+	
+	public String getKeycloakClientId() {
+		return keycloakClientId;
+	}
+	
+	public void setKeycloakClientId(String clientId) {
+		keycloakClientId = clientId;
+		setStringProperty(KEYCLOAK_CLIENT_ID, clientId, true);
+	}
+	
+	public String getKeycloakClientSecret() {
+		return keycloakClientSecret;
+	}
+	
+	public void setKeycloakClientSecret(String clientSecret) {
+		keycloakClientSecret = clientSecret;
+		setStringProperty(KEYCLOAK_CLIENT_SECRET, clientSecret, true);
+	}
+	
+	public String getKeycloakEndpoint() {
+		return keycloakEndpoint;
+	}
+	
+	public void setKeycloakEndpoint(String url) {
+		keycloakEndpoint = url;
+		setStringProperty(KEYCLOAK_ENDPOINT, url, true);
+	}
+	
+	public String getKeycloakRealm() {
+		return keycloakRealm;
+	}
+	
+	public void setKeycloakRealm(String realm) {
+		keycloakRealm = realm;
+		setStringProperty(KEYCLOAK_REALM, realm, true);
 	}
 
 	public boolean isOpenIdConnectIFEnabled() {

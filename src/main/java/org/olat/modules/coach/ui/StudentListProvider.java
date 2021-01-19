@@ -60,9 +60,8 @@ public class StudentListProvider implements ListProvider {
 			if(contains(searchValue, entry)) {
 				maxEntries--;
 				String key = entry.getIdentityKey().toString();
-				String displayKey = entry.getIdentityName();
 				String displayText = userManager.getUserDisplayName(entry.getIdentityKey());
-				receiver.addEntry(key, displayKey, displayText, CSSHelper.CSS_CLASS_USER);
+				receiver.addEntry(key, null, displayText, CSSHelper.CSS_CLASS_USER);
 			}
 		}					
 		
@@ -72,9 +71,6 @@ public class StudentListProvider implements ListProvider {
 	}
 	
 	public static boolean contains(String searchValue, StudentStatEntry entry) {
-		if(entry.getIdentityName().toLowerCase().contains(searchValue)) {
-			return true;
-		}
 		String[] userProperties = entry.getIdentityProps();
 		for(int i=userProperties.length; i-->0; ) {
 			String userProp = userProperties[i];

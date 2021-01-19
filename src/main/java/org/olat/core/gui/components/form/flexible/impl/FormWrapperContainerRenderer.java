@@ -87,8 +87,8 @@ class FormWrapperContainerRenderer implements ComponentRenderer {
 			sb.append("\" name=\"");
 			sb.append(formC.getFormName());
 			sb.append("\" action=\"");
-			ubu.buildURI(sb, new String[] { Form.FORMID }, new String[] { Form.FORMCMD }, iframePostEnabled ? AJAXFlags.MODE_TOBGIFRAME
-					: AJAXFlags.MODE_NORMAL);
+			ubu.buildURI(sb, new String[] { Form.FORMID }, new String[] { Form.FORMCMD },
+					null, iframePostEnabled ? AJAXFlags.MODE_TOBGIFRAME : AJAXFlags.MODE_NORMAL, false);
 			sb.append("\" ");
 			//check if ready to accept a new request
 			if(iframePostEnabled) {
@@ -96,6 +96,7 @@ class FormWrapperContainerRenderer implements ComponentRenderer {
 			} else {
 				sb.append(" onsubmit=\"if(o_info.linkbusy) return false; else o_beforeserver(); return true;\" ");
 			}
+			sb.append(" onkeydown=\"o_submitByEnter(event)\" ");
 			sb.append(">");
 			// hidden input field for dispatch uri
 			sb.append("<input type=\"hidden\" id=\"")
@@ -104,6 +105,11 @@ class FormWrapperContainerRenderer implements ComponentRenderer {
 			  .append("<input type=\"hidden\" id=\"")
 			  .append(formC.getEventFieldId())
 			  .append("\" name=\"dispatchevent\" value=\"").append(Form.FORM_UNDEFINED).append("\" />");
+			if(formC.isCsrfProtected()) {
+				sb.append("<input type=\"hidden\"")
+				  .append(" name=\"").append(Form.FORM_CSRF).append("\" value=\"").append(renderer.getCsrfToken()).append("\" />");
+			}
+
 			/*
 			 * FORM CONTAINER
 			 */

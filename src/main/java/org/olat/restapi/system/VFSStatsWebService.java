@@ -19,8 +19,6 @@
  */
 package org.olat.restapi.system;
 
-import java.util.List;
-
 import javax.ws.rs.GET;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
@@ -28,8 +26,16 @@ import javax.ws.rs.core.Response;
 
 import org.olat.core.CoreSpringFactory;
 import org.olat.core.commons.persistence.DB;
+import org.olat.core.commons.services.vfs.manager.VFSRevisionDAO;
 import org.olat.restapi.system.vo.VFSStatsVO;
 import org.springframework.beans.factory.annotation.Autowired;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 
 /**
  * 
@@ -42,27 +48,25 @@ public class VFSStatsWebService {
 	
 	@Autowired
 	private DB dbInstance;
+	@Autowired
+	private VFSRevisionDAO vfsRevisionDAO;
 	
 	public VFSStatsWebService() {
 		CoreSpringFactory.autowireObject(this);
 	}
 	
 	@GET
+	@Operation(summary = "Retrieve threads info", description = "Retrieve information about threads count and number of deamons")
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "The infos", content = {
+					@Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = VFSStatsVO.class))),
+					@Content(mediaType = "application/xml", array = @ArraySchema(schema = @Schema(implementation = VFSStatsVO.class))) }) })	
 	@Produces({MediaType.APPLICATION_XML, MediaType.APPLICATION_JSON})
 	public Response getRevisionSizeXML() {
-		StringBuilder sb = new StringBuilder(256);
-		sb.append("select SUM(size) from vfsrevision");
-		
-		List<Long> revisionsSize = dbInstance.getCurrentEntityManager()
-				.createQuery(sb.toString(), Long.class)
-				.getResultList();
-		
-		Long size = revisionsSize == null || revisionsSize.isEmpty() ? Long.valueOf(0) : revisionsSize.get(0);		
-		
+		long size = vfsRevisionDAO.calculateRevisionsSize();
 		dbInstance.commitAndCloseSession();
 		
 		VFSStatsVO vo = new VFSStatsVO(size);
-		
 		return Response.ok(vo).build();
 	}
 }

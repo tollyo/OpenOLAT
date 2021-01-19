@@ -20,6 +20,7 @@
 package org.olat.modules.webFeed.dispatching;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
 
 import javax.servlet.http.HttpServletRequest;
@@ -63,7 +64,6 @@ import org.olat.fileresource.types.BlogFileResource;
 import org.olat.fileresource.types.PodcastFileResource;
 import org.olat.modules.webFeed.Feed;
 import org.olat.modules.webFeed.manager.FeedManager;
-import org.olat.portfolio.manager.EPFrontendManager;
 import org.olat.repository.RepositoryEntry;
 import org.olat.repository.RepositoryEntrySecurity;
 import org.olat.repository.RepositoryManager;
@@ -167,7 +167,7 @@ public class FeedMediaDispatcher implements Dispatcher, GenericEventListener {
 						try {
 							validatedUriCache.remove(key);
 						} catch (Exception e) {
-							log.info("Cannot remove this key: " + key);
+							log.info("Cannot remove this key: {}", key);
 						}
 					}
 				}
@@ -186,6 +186,11 @@ public class FeedMediaDispatcher implements Dispatcher, GenericEventListener {
 			ureq = new UserRequestImpl(uriPrefix, request, response);
 		} catch(NumberFormatException nfe) {
 			//
+		}
+		
+		if(requestedPath == null || requestedPath.length() == 0) {
+			DispatcherModule.sendBadRequest(request.getRequestURI(), response);
+			return;
 		}
 
 		Path path = null;
@@ -407,6 +412,7 @@ public class FeedMediaDispatcher implements Dispatcher, GenericEventListener {
 				hasAccess = reSecurity.canLaunch();
 			} else {
 				IdentityEnvironment ienv = new IdentityEnvironment(identity, roles);
+				ienv.setAttributes(new HashMap<>());
 				UserCourseEnvironment userCourseEnv = new UserCourseEnvironmentImpl(ienv, course.getCourseEnvironment(), null, null, null, null,
 						reSecurity.isCourseCoach() || reSecurity.isGroupCoach(), reSecurity.isEntryAdmin(), reSecurity.isCourseParticipant() || reSecurity.isGroupParticipant(),
 						false);
@@ -418,6 +424,8 @@ public class FeedMediaDispatcher implements Dispatcher, GenericEventListener {
 						.getNodeById(pathNodeId);
 				if (treeNode != null && treeNode.isAccessible()) {
 					hasAccess = true;
+				} else {
+					log.info("Course element not found or access denied. Path::{}", path);
 				}
 			}
 		}
@@ -467,12 +475,6 @@ public class FeedMediaDispatcher implements Dispatcher, GenericEventListener {
 			if (entry != null){
 				if (reSecurity != null && reSecurity.canLaunch()) {
 					hasAccess = true;
-				}
-			} else {
-				// no repository entry -> could be a feed without a repository-entry (ePortfolio-Blog-feed)
-				EPFrontendManager ePFMgr = (EPFrontendManager) CoreSpringFactory.getBean("epFrontendManager");
-				if (ePFMgr.checkFeedAccess(feed, identity)){
-					return validAuthentication(identity, path.getToken());
 				}
 			}
 		}

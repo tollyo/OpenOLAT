@@ -39,6 +39,7 @@ import org.olat.ims.qti21.model.xml.interactions.FIBAssessmentItemBuilder;
 import org.olat.ims.qti21.model.xml.interactions.FIBAssessmentItemBuilder.EntryType;
 import org.olat.ims.qti21.model.xml.interactions.FIBAssessmentItemBuilder.TextEntry;
 import org.olat.ims.qti21.model.xml.interactions.KPrimAssessmentItemBuilder;
+import org.olat.ims.qti21.model.xml.interactions.LobAssessmentItemBuilder;
 import org.olat.ims.qti21.model.xml.interactions.MatchAssessmentItemBuilder;
 import org.olat.ims.qti21.model.xml.interactions.MultipleChoiceAssessmentItemBuilder;
 import org.olat.ims.qti21.model.xml.interactions.SimpleChoiceAssessmentItemBuilder;
@@ -96,6 +97,7 @@ public class CSVToAssessmentItemConverter {
 	public void parse(String input) {
 		List<String[]> lines = getLines(input);
 		for(String[] line:lines) {
+			currentLine++;
 			processLine(line);
 		}
 		buildCurrentItem();
@@ -650,7 +652,8 @@ public class CSVToAssessmentItemConverter {
 		if (itemBuilder instanceof SimpleChoiceAssessmentItemBuilder
 				|| itemBuilder instanceof FIBAssessmentItemBuilder
 				|| itemBuilder instanceof KPrimAssessmentItemBuilder
-				|| itemBuilder instanceof MatchAssessmentItemBuilder) {
+				|| itemBuilder instanceof MatchAssessmentItemBuilder
+				|| itemBuilder instanceof LobAssessmentItemBuilder) {
 			itemBuilder.setMinScore(0.0d);
 			itemBuilder.setMaxScore(points);
 		}
@@ -764,8 +767,8 @@ public class CSVToAssessmentItemConverter {
 			parseAlternatives(correctBlank, score, textEntry);
 			if(parts.length > 2) {
 				String sizes = parts[2];
-				String[] sizeArr = sizes.split(",");
-				if(sizeArr.length >= 2) {
+				String[] sizeArr = sizes.split("[,]");
+				if(sizeArr.length >= 1) {
 					int size = Integer.parseInt(sizeArr[0]);
 					textEntry.setExpectedLength(size);
 				}	

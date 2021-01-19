@@ -26,6 +26,7 @@
 package org.olat.repository.ui.catalog;
 
 import java.io.File;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -44,6 +45,7 @@ import org.olat.core.gui.components.form.flexible.impl.elements.FileElementEvent
 import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.Event;
 import org.olat.core.gui.control.WindowControl;
+import org.olat.core.gui.translator.TranslatorHelper;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.Util;
 import org.olat.core.util.WebappHelper;
@@ -54,6 +56,7 @@ import org.olat.core.util.vfs.VFSLeaf;
 import org.olat.repository.CatalogEntry;
 import org.olat.repository.CatalogEntry.Style;
 import org.olat.repository.RepositoryManager;
+import org.olat.repository.RepositoryModule;
 import org.olat.repository.manager.CatalogManager;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -72,7 +75,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 public class CatalogEntryEditController extends FormBasicController {
 	
 	private static final int picUploadlimitKB = 5024;
-	
 	private static final Set<String> mimeTypes = new HashSet<>();
 	static {
 		mimeTypes.add("image/gif");
@@ -84,6 +86,9 @@ public class CatalogEntryEditController extends FormBasicController {
 	private static final String[] styleKeys = new String[]{
 		Style.tiles.name(), Style.list.name(), Style.compact.name()
 	};
+	private static final String[] sortSelectKeys = new String[]{
+			"add.default", "add.alphabetically", "add.top", "add.bottom"
+	};
 
 	private TextElement nameEl;
 	private TextElement shortTitleEl;
@@ -91,11 +96,16 @@ public class CatalogEntryEditController extends FormBasicController {
 	private RichTextElement descriptionEl;
 	private FileElement fileUpload;
 
+	private SingleSelection nodesSortSelect;
+	private SingleSelection entriesSortSelect;
+
 	private CatalogEntry parentEntry;
 	private CatalogEntry catalogEntry;
 	
 	@Autowired
 	private CatalogManager catalogManager;
+	@Autowired
+	private RepositoryModule repositoryModule;
 	
 	public CatalogEntryEditController(UserRequest ureq, WindowControl wControl, CatalogEntry entry) {
 		this(ureq, wControl, entry, null);
@@ -113,13 +123,14 @@ public class CatalogEntryEditController extends FormBasicController {
 	protected void initForm(FormItemContainer formLayout, Controller listener, UserRequest ureq) {
 		setFormStyle("o_catalog");
 		String name = catalogEntry == null ? "" : catalogEntry.getName();
-		nameEl = uifactory.addTextElement("name", "entry.category", 255, name, formLayout);
+		nameEl = uifactory.addTextElement("name", "entry.category", 200, name, formLayout);
 		nameEl.setElementCssClass("o_sel_cat_name");
 		nameEl.setMandatory(true);
 		nameEl.setNotEmptyCheck("form.legende.mandatory");
 		
 		String shortTitle = catalogEntry == null ? "" : catalogEntry.getShortTitle() != null ? catalogEntry.getShortTitle() : "";
-		shortTitleEl = uifactory.addTextElement("shortTitle", "entry.shorttitle", 255, shortTitle, formLayout);
+		// max longer than actual max because html input maxsize does not normalize (ü count as 2 characters)
+		shortTitleEl = uifactory.addTextElement("shortTitle", "entry.shorttitle", 40, shortTitle, formLayout); 
 		shortTitleEl.setElementCssClass("o_sel_cat_short_title");
 		shortTitleEl.setMandatory(true);
 		shortTitleEl.setNotEmptyCheck("form.legende.mandatory");
@@ -141,9 +152,18 @@ public class CatalogEntryEditController extends FormBasicController {
 		if(!styleEl.isOneSelected()) {
 			styleEl.select(styleKeys[0], true);
 		}
-		
+
+		String[] translatedNodeKeys = TranslatorHelper.translateAll(getTranslator(), sortSelectKeys);
+		String[] translatedEntryKeys = TranslatorHelper.translateAll(getTranslator(), sortSelectKeys);
+
+		translatedNodeKeys[0] += " (" + translate(sortSelectKeys[repositoryModule.getCatalogAddCategoryPosition() + 1]) + ")";
+		translatedEntryKeys[0] += " (" + translate(sortSelectKeys[repositoryModule.getCatalogAddEntryPosition() + 1]) + ")";
+
+		nodesSortSelect = uifactory.addDropdownSingleselect("sort.nodes", formLayout, sortSelectKeys, translatedNodeKeys);
+		entriesSortSelect = uifactory.addDropdownSingleselect("sort.entries", formLayout, sortSelectKeys, translatedEntryKeys);
+
 		VFSLeaf img = catalogEntry == null || catalogEntry.getKey() == null ? null : catalogManager.getImage(catalogEntry);
-		fileUpload = uifactory.addFileElement(getWindowControl(), "entry.pic", "entry.pic", formLayout);
+		fileUpload = uifactory.addFileElement(getWindowControl(), getIdentity(), "entry.pic", "entry.pic", formLayout);
 		fileUpload.setMaxUploadSizeKB(picUploadlimitKB, null, null);
 		fileUpload.addActionListener(FormEvent.ONCHANGE);
 		fileUpload.setPreview(ureq.getUserSession(), true);
@@ -159,6 +179,13 @@ public class CatalogEntryEditController extends FormBasicController {
 		formLayout.add(buttonLayout);
 		uifactory.addFormSubmitButton("submit", buttonLayout);
 		uifactory.addFormCancelButton("cancel", buttonLayout, ureq, getWindowControl());
+
+		if (catalogEntry.getCategoryAddPosition() != null) {
+			nodesSortSelect.select(sortSelectKeys[catalogEntry.getCategoryAddPosition() + 1], true);
+		}
+		if (catalogEntry.getEntryAddPosition() != null) {
+			entriesSortSelect.select(sortSelectKeys[catalogEntry.getEntryAddPosition() + 1], true);
+		}
 	}
 	
 	public CatalogEntry getEditedCatalogEntry() {
@@ -179,7 +206,7 @@ public class CatalogEntryEditController extends FormBasicController {
 		boolean allOk = super.validateFormLogic(ureq);
 		
 		allOk &= validateTextInput(nameEl, 100);
-		allOk &= validateTextInput(shortTitleEl, 16);
+		allOk &= validateTextInput(shortTitleEl, 20);
 		
 		styleEl.clearError();
 		if(!styleEl.isOneSelected()) {
@@ -194,7 +221,7 @@ public class CatalogEntryEditController extends FormBasicController {
 		textElement.clearError();
 		if(StringHelper.containsNonWhitespace(nameEl.getValue())) {
 			if(textElement.getValue().length() > lenght) {
-				textElement.setErrorKey("input.toolong", new String[]{ String.valueOf(lenght) });
+				textElement.setErrorKey("input.toolong", new String[]{ String.valueOf(lenght)});
 				return false;
 			}
 		} else {
@@ -242,6 +269,17 @@ public class CatalogEntryEditController extends FormBasicController {
 		}
 		catalogEntry.setDescription(descriptionEl.getValue());
 		catalogEntry.setShortTitle(shortTitleEl.getValue());
+
+		if (!nodesSortSelect.getSelectedKey().equals(sortSelectKeys[0])) {
+			catalogEntry.setCategoryAddPosition(Arrays.asList(sortSelectKeys).indexOf(nodesSortSelect.getSelectedKey()) - 1);
+		} else {
+			catalogEntry.setCategoryAddPosition(null);
+		}
+		if (!entriesSortSelect.getSelectedKey().equals(sortSelectKeys[0])) {
+			catalogEntry.setEntryAddPosition(Arrays.asList(sortSelectKeys).indexOf(entriesSortSelect.getSelectedKey()) - 1);
+		} else {
+			catalogEntry.setEntryAddPosition(null);
+		}
 		
 		if(catalogEntry.getKey() == null) {
 			//a new one

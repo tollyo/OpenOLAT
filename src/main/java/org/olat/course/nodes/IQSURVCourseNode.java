@@ -68,6 +68,7 @@ import org.olat.course.statistic.StatisticResourceOption;
 import org.olat.course.statistic.StatisticResourceResult;
 import org.olat.course.statistic.StatisticType;
 import org.olat.fileresource.types.ImsQTI21Resource;
+import org.olat.ims.qti.QTIModule;
 import org.olat.ims.qti.QTIResultManager;
 import org.olat.ims.qti.export.QTIExportFormatter;
 import org.olat.ims.qti.export.QTIExportFormatterCSVType3;
@@ -82,7 +83,6 @@ import org.olat.ims.qti21.model.QTI21StatisticSearchParams;
 import org.olat.ims.qti21.ui.statistics.QTI21StatisticResourceResult;
 import org.olat.ims.qti21.ui.statistics.QTI21StatisticsSecurityCallback;
 import org.olat.modules.ModuleConfiguration;
-import org.olat.modules.assessment.Role;
 import org.olat.modules.iq.IQSecurityCallback;
 import org.olat.repository.RepositoryEntry;
 import org.olat.repository.RepositoryEntryImportExport;
@@ -144,18 +144,24 @@ public class IQSURVCourseNode extends AbstractAccessableCourseNode implements QT
 				Translator trans = Util.createPackageTranslator(IQEditController.class, ureq.getLocale());
 				controller = MessageUIFactory.createInfoMessage(ureq, wControl, "", trans.translate("error.onyx"));
 			} else {
-				Long resId = ores.getResourceableId();
-				SurveyFileResource fr = new SurveyFileResource();
-				fr.overrideResourceableId(resId);
-				if(!CoordinatorManager.getInstance().getCoordinator().getLocker().isLocked(fr, null)) {
-					AssessmentManager am = userCourseEnv.getCourseEnvironment().getAssessmentManager();
-					IQSecurityCallback sec = new CourseIQSecurityCallback(this, am, ureq.getIdentity());
-					controller = new IQRunController(userCourseEnv, getModuleConfiguration(), sec, ureq, wControl, this);
+				QTIModule qtiModule = CoreSpringFactory.getImpl(QTIModule.class);
+				if (qtiModule.isRunSurveyEnabled()) {
+					Long resId = ores.getResourceableId();
+					SurveyFileResource fr = new SurveyFileResource();
+					fr.overrideResourceableId(resId);
+					if(!CoordinatorManager.getInstance().getCoordinator().getLocker().isLocked(fr, null)) {
+						AssessmentManager am = userCourseEnv.getCourseEnvironment().getAssessmentManager();
+						IQSecurityCallback sec = new CourseIQSecurityCallback(this, am, ureq.getIdentity());
+						controller = new IQRunController(userCourseEnv, getModuleConfiguration(), sec, ureq, wControl, this);
+					} else {
+						Translator trans = Util.createPackageTranslator(IQSURVCourseNode.class, ureq.getLocale());
+						String title = trans.translate("editor.lock.title");
+						String message = trans.translate("editor.lock.message");
+						controller = MessageUIFactory.createInfoMessage(ureq, wControl, title, message);
+					}
 				} else {
-					Translator trans = Util.createPackageTranslator(IQSURVCourseNode.class, ureq.getLocale());
-					String title = trans.translate("editor.lock.title");
-					String message = trans.translate("editor.lock.message");
-					controller = MessageUIFactory.createInfoMessage(ureq, wControl, title, message);
+					Translator transe = Util.createPackageTranslator(IQEditController.class, ureq.getLocale());
+					controller = MessageUIFactory.createInfoMessage(ureq, wControl, "", transe.translate("error.qti12.survey"));
 				}
 			}
 		}
@@ -284,7 +290,11 @@ public class IQSURVCourseNode extends AbstractAccessableCourseNode implements QT
 			ZipOutputStream exportStream, String archivePath, String charset) {
 		QTIExportManager qem = QTIExportManager.getInstance();
 		String repositorySoftKey = (String) getModuleConfiguration().get(IQEditController.CONFIG_KEY_REPOSITORY_SOFTKEY);
-		RepositoryEntry re = RepositoryManager.getInstance().lookupRepositoryEntryBySoftkey(repositorySoftKey, true);
+		RepositoryEntry re = RepositoryManager.getInstance().lookupRepositoryEntryBySoftkey(repositorySoftKey, false);
+		if(re == null) {
+			log.error("Cannot archive course node. Missing repository entry with soft key: ", repositorySoftKey);
+			return false;
+		}
 
 		QTIExportFormatter qef = new QTIExportFormatterCSVType3(locale, null,"\t", "\"", "\r\n", false);
 		try {
@@ -344,31 +354,9 @@ public class IQSURVCourseNode extends AbstractAccessableCourseNode implements QT
 		}
 	}
 
-	public Integer getUserAttempts(CourseNode courseNode, UserCourseEnvironment userCourseEnvironment) {
-		AssessmentManager am = userCourseEnvironment.getCourseEnvironment().getAssessmentManager();
-		Identity mySelf = userCourseEnvironment.getIdentityEnvironment().getIdentity();
-		Integer userAttemptsValue = am.getNodeAttempts(this, mySelf);
-		return userAttemptsValue;
-
-	}
-
 	@Override
 	public boolean hasAttemptsConfigured() {
 		return true;
-	}
-
-	public void updateUserAttempts(CourseNode courseNode, Integer userAttempts, UserCourseEnvironment userCourseEnvironment, Identity coachingIdentity, Role by) {
-		if (userAttempts != null) {
-			AssessmentManager am = userCourseEnvironment.getCourseEnvironment().getAssessmentManager();
-			Identity mySelf = userCourseEnvironment.getIdentityEnvironment().getIdentity();
-			am.saveNodeAttempts(this, coachingIdentity, mySelf, userAttempts, by);
-		}
-	}
-
-	public void incrementUserAttempts(CourseNode courseNode, UserCourseEnvironment userCourseEnvironment, Role by) {
-		AssessmentManager am = userCourseEnvironment.getCourseEnvironment().getAssessmentManager();
-		Identity mySelf = userCourseEnvironment.getIdentityEnvironment().getIdentity();
-		am.incrementNodeAttempts(this, mySelf, userCourseEnvironment, by);
 	}
 
 }

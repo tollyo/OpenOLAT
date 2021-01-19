@@ -20,8 +20,13 @@
 package org.olat.core.commons.services.doceditor.onlyoffice;
 
 import java.security.Key;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.Logger;
+import org.olat.core.commons.services.doceditor.DocEditor.Mode;
 import org.olat.core.configuration.AbstractSpringModule;
 import org.olat.core.configuration.ConfigOnOff;
 import org.olat.core.logging.Tracing;
@@ -47,10 +52,15 @@ public class OnlyOfficeModule extends AbstractSpringModule implements ConfigOnOf
 	private static final String ONLYOFFICE_ENABLED = "onlyoffice.enabled";
 	private static final String ONLYOFFICE_BASE_URL = "onlyoffice.baseUrl";
 	private static final String ONLYOFFICE_JWT_SECRET = "onlyoffice.jwt.secret";
+	private static final String ONLYOFFICE_EDITOR_ENABLED = "onlyoffice.editor.enabled";
+	private static final String ONLYOFFICE_MOBILE_MODES = "onlyoffice.mobile.modes";
+	private static final String ONLYOFFICE_MOBILE_QUERY = "onlyoffice.mobile.query";
+	private static final String ONLYOFFICE_LICENSE_EDIT = "onlyoffice.license.edit";
 	private static final String ONLYOFFICE_DATA_TRANSER_CONFIRMATION_ENABLED = "onlyoffice.data.transfer.confirmation.enabled";
 	private static final String ONLYOFFICE_USAGE_AUTHORS = "onlyoffice.usage.authors";
 	private static final String ONLYOFFICE_USAGE_COACHES = "onlyoffice.usage.coaches";
 	private static final String ONLYOFFICE_USAGE_MANAGERS = "onlyoffice.usage.managers";
+	private static final String ONLYOFFICE_THUMBNAILS_ENABLED = "onlyoffice.thumbnails.enabled";
 	
 	@Value("${onlyoffice.enabled:false}")
 	private boolean enabled;
@@ -59,8 +69,20 @@ public class OnlyOfficeModule extends AbstractSpringModule implements ConfigOnOf
 	@Value("${onlyoffice.api.path}")
 	private String apiPath;
 	private String apiUrl;
+	@Value("${onlyoffice.conversion.path}")
+	private String conversionPath;
+	private String conversionUrl;
 	private String jwtSecret;
 	private Key jwtSignKey;
+	@Value("${onlyoffice.editor.enabled:false}")
+	private boolean editorEnabled;
+	@Value("${onlyoffice.mobile.modes}")
+	private String mobileModesConfig;
+	private Set<Mode> mobileModes;
+	@Value("${onlyoffice.mobile.query}")
+	private String mobileQuery;
+	@Value("${onlyoffice.license.edit}")
+	private Integer licenseEdit;
 	@Value("${onlyoffice.data.transfer.confirmation.enabled:false}")
 	private boolean dataTransferConfirmationEnabled;
 	@Value("${onlyoffice.usage.restricted.authors:false}")
@@ -69,6 +91,8 @@ public class OnlyOfficeModule extends AbstractSpringModule implements ConfigOnOf
 	private boolean usageRestrictedToCoaches;
 	@Value("${onlyoffice.usage.restricted.managers:false}")
 	private boolean usageRestrictedToManagers;
+	@Value("${onlyoffice.thumbnails.enabled:false}")
+	private boolean thumbnailsEnabled;
 	
 	@Autowired
 	private OnlyOfficeModule(CoordinatorManager coordinateManager) {
@@ -94,7 +118,7 @@ public class OnlyOfficeModule extends AbstractSpringModule implements ConfigOnOf
 		String baseUrlObj = getStringPropertyValue(ONLYOFFICE_BASE_URL, true);
 		if(StringHelper.containsNonWhitespace(baseUrlObj)) {
 			baseUrl = baseUrlObj;
-			resetApiUrl();
+			resetApiUrls();
 		}
 		
 		String jwtSecretObj = getStringPropertyValue(ONLYOFFICE_JWT_SECRET, true);
@@ -102,9 +126,22 @@ public class OnlyOfficeModule extends AbstractSpringModule implements ConfigOnOf
 			jwtSecret = jwtSecretObj;
 		}
 		
+		String editorEnabledObj = getStringPropertyValue(ONLYOFFICE_EDITOR_ENABLED, true);
+		if(StringHelper.containsNonWhitespace(editorEnabledObj)) {
+			editorEnabled = "true".equals(editorEnabledObj);
+		}
+		
+		mobileModesConfig = getStringPropertyValue(ONLYOFFICE_MOBILE_MODES, mobileModesConfig);
+		mobileQuery = getStringPropertyValue(ONLYOFFICE_MOBILE_QUERY, mobileQuery);
+		
 		String dataTransferConfirmationEnabledObj = getStringPropertyValue(ONLYOFFICE_DATA_TRANSER_CONFIRMATION_ENABLED, true);
 		if(StringHelper.containsNonWhitespace(dataTransferConfirmationEnabledObj)) {
 			dataTransferConfirmationEnabled = "true".equals(dataTransferConfirmationEnabledObj);
+		}
+		
+		String licenseEditObj = getStringPropertyValue(ONLYOFFICE_LICENSE_EDIT, true);
+		if(StringHelper.containsNonWhitespace(licenseEditObj)) {
+			licenseEdit = getIntOrNull(licenseEditObj);
 		}
 		
 		String usageRestrictedToAuthorsObj = getStringPropertyValue(ONLYOFFICE_USAGE_AUTHORS, true);
@@ -121,6 +158,20 @@ public class OnlyOfficeModule extends AbstractSpringModule implements ConfigOnOf
 		if(StringHelper.containsNonWhitespace(usageRestrictedToManagersObj)) {
 			usageRestrictedToManagers = "true".equals(usageRestrictedToManagersObj);
 		}
+		
+		String thumbnailsEnabledObj = getStringPropertyValue(ONLYOFFICE_THUMBNAILS_ENABLED, true);
+		if(StringHelper.containsNonWhitespace(thumbnailsEnabledObj)) {
+			thumbnailsEnabled = "true".equals(thumbnailsEnabledObj);
+		}
+	}
+	
+	private Integer getIntOrNull(String val) {
+		try {
+			return Integer.valueOf(val);
+		} catch (Exception e) {
+			//
+		}
+		return null;
 	}
 
 	@Override
@@ -140,15 +191,20 @@ public class OnlyOfficeModule extends AbstractSpringModule implements ConfigOnOf
 	public void setBaseUrl(String baseUrl) {
 		this.baseUrl = baseUrl;
 		setStringProperty(ONLYOFFICE_BASE_URL, baseUrl, true);
-		resetApiUrl();
+		resetApiUrls();
 	}
 	
 	public String getApiUrl() {
 		return apiUrl;
 	}
 	
-	private void resetApiUrl() {
+	public String getConversionUrl() {
+		return conversionUrl;
+	}
+	
+	private void resetApiUrls() {
 		this.apiUrl = baseUrl + apiPath;
+		this.conversionUrl = baseUrl + conversionPath;
 	}
 	
 	public String getJwtSecret() {
@@ -170,6 +226,49 @@ public class OnlyOfficeModule extends AbstractSpringModule implements ConfigOnOf
 			}
 		}
 		return jwtSignKey;
+	}
+	
+	public boolean isEditorEnabled() {
+		return editorEnabled;
+	}
+
+	public void setEditorEnabled(boolean editorEnabled) {
+		this.editorEnabled = enabled;
+		setStringProperty(ONLYOFFICE_EDITOR_ENABLED, Boolean.toString(editorEnabled), true);
+	}
+
+	public Set<Mode> getMobileModes() {
+		if (mobileModes == null) {
+			if (StringHelper.containsNonWhitespace(mobileModesConfig)) {
+				mobileModes = Arrays.stream(mobileModesConfig.split(",")).map(Mode::valueOf).collect(Collectors.toSet());
+			}
+			mobileModes = Collections.emptySet();
+		}
+		return mobileModes;
+	}
+
+	public void setMobileModes(Set<Mode> mobileModes) {
+		this.mobileModes = mobileModes;
+		this.mobileModesConfig = mobileModes.stream().map(Mode::name).collect(Collectors.joining(","));
+		setStringProperty(ONLYOFFICE_MOBILE_MODES, mobileModesConfig, true);
+	}
+
+	public String getMobileQuery() {
+		return mobileQuery;
+	}
+
+	public void setMobileQuery(String mobileQuery) {
+		this.mobileQuery = mobileQuery;
+		setStringProperty(ONLYOFFICE_MOBILE_QUERY, mobileQuery, true);
+	}
+
+	public Integer getLicenseEdit() {
+		return licenseEdit;
+	}
+
+	public void setLicenseEdit(Integer licenseEdit) {
+		this.licenseEdit = licenseEdit;
+		setStringProperty(ONLYOFFICE_LICENSE_EDIT, licenseEdit == null? null: licenseEdit.toString(), true);
 	}
 
 	public boolean isDataTransferConfirmationEnabled() {
@@ -210,6 +309,15 @@ public class OnlyOfficeModule extends AbstractSpringModule implements ConfigOnOf
 	public void setUsageRestrictedToManagers(boolean usageRestrictedToManagers) {
 		this.usageRestrictedToManagers = usageRestrictedToManagers;
 		setStringProperty(ONLYOFFICE_USAGE_MANAGERS, Boolean.toString(usageRestrictedToManagers), true);
+	}
+	
+	public boolean isThumbnailsEnabled() {
+		return thumbnailsEnabled;
+	}
+
+	public void setThumbnailsEnabled(boolean thumbnailsEnabled) {
+		this.thumbnailsEnabled = thumbnailsEnabled;
+		setStringProperty(ONLYOFFICE_THUMBNAILS_ENABLED, Boolean.toString(thumbnailsEnabled), true);
 	}
 
 }

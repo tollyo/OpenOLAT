@@ -20,8 +20,11 @@
 package org.olat.ims.qti21.ui.assessment;
 
 import java.io.File;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -30,8 +33,10 @@ import java.util.Map;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.form.flexible.FormItem;
 import org.olat.core.gui.components.form.flexible.FormItemContainer;
+import org.olat.core.gui.components.form.flexible.elements.FileElement;
 import org.olat.core.gui.components.form.flexible.elements.FormLink;
 import org.olat.core.gui.components.form.flexible.elements.MultipleSelectionElement;
+import org.olat.core.gui.components.form.flexible.elements.RichTextElement;
 import org.olat.core.gui.components.form.flexible.elements.StaticTextElement;
 import org.olat.core.gui.components.form.flexible.elements.TextElement;
 import org.olat.core.gui.components.form.flexible.impl.Form;
@@ -41,15 +46,21 @@ import org.olat.core.gui.components.form.flexible.impl.FormJSHelper;
 import org.olat.core.gui.components.form.flexible.impl.FormLayoutContainer;
 import org.olat.core.gui.components.form.flexible.impl.elements.FormCancel;
 import org.olat.core.gui.components.form.flexible.impl.elements.FormSubmit;
+import org.olat.core.gui.components.form.flexible.impl.elements.richText.TextMode;
 import org.olat.core.gui.components.link.Link;
 import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.Event;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.control.generic.closablewrapper.CloseableCalloutWindowController;
+import org.olat.core.gui.control.generic.modal.DialogBoxController;
+import org.olat.core.gui.control.generic.modal.DialogBoxUIFactory;
 import org.olat.core.gui.control.winmgr.JSCommand;
 import org.olat.core.util.CodeHelper;
+import org.olat.core.util.FileUtils;
+import org.olat.core.util.Formatter;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.Util;
+import org.olat.core.util.io.SystemFileFilter;
 import org.olat.course.assessment.AssessmentHelper;
 import org.olat.fileresource.FileResourceManager;
 import org.olat.fileresource.types.ImsQTI21Resource;
@@ -58,12 +69,12 @@ import org.olat.ims.qti21.AssessmentItemSession;
 import org.olat.ims.qti21.AssessmentTestSession;
 import org.olat.ims.qti21.QTI21Constants;
 import org.olat.ims.qti21.QTI21Service;
-import org.olat.ims.qti21.model.xml.AssessmentHtmlBuilder;
 import org.olat.ims.qti21.model.xml.QtiNodesExtractor;
 import org.olat.ims.qti21.ui.AssessmentTestDisplayController;
 import org.olat.ims.qti21.ui.assessment.model.AssessmentItemCorrection;
 import org.olat.ims.qti21.ui.assessment.model.SectionRubrics;
 import org.olat.ims.qti21.ui.components.FeedbackResultFormItem;
+import org.olat.ims.qti21.ui.components.FlowFormItem;
 import org.olat.ims.qti21.ui.components.InteractionResultFormItem;
 import org.olat.ims.qti21.ui.components.ItemBodyResultFormItem;
 import org.olat.repository.RepositoryEntry;
@@ -106,24 +117,28 @@ public class CorrectionIdentityInteractionsController extends FormBasicControlle
 	private static final String[] onKeys = new String[] { "on" };
 
 	private TextElement scoreEl;
-	private TextElement commentEl;
+	private RichTextElement commentEl;
 	private StaticTextElement statusEl;
 	private FormLink viewSolutionButton;
 	private FormLink overrideScoreButton;
 	private FormLink viewCorrectSolutionButton;
-	private ItemBodyResultFormItem answerItem;
+	private FileElement uploadDocsEl;
 	private ItemBodyResultFormItem solutionItem;
 	private FeedbackResultFormItem correctSolutionItem;
 	private MultipleSelectionElement toReviewEl;
 	private FormLayoutContainer overrideScoreCont;
-	
+	private FormLayoutContainer docsLayoutCont;
+	private FormLayoutContainer scoreCont;
+
+	private DialogBoxController confirmDeleteDocCtrl;
 	private OverrideScoreController overrideScoreCtrl;
 	private CloseableCalloutWindowController overrideScoreCalloutCtrl;
 	
 	private final String mapperUri;
 	private final URI assessmentObjectUri;
 	private final ResourceLocator inputResourceLocator;
-	
+
+	private final File assessmentTestFile;
 	private final AssessmentItem assessmentItem;
 	private final List<Interaction> interactions;
 	private final AssessmentItemCorrection correction;
@@ -134,7 +149,6 @@ public class CorrectionIdentityInteractionsController extends FormBasicControlle
 	private BigDecimal overrideAutoScore;
 	private boolean manualScore = false;
 	private final boolean readOnly;
-	private final AssessmentHtmlBuilder htmlBuilder;
 	
 	private int count = 0;
 	private final long id = CodeHelper.getRAMUniqueID();
@@ -155,11 +169,12 @@ public class CorrectionIdentityInteractionsController extends FormBasicControlle
 		this.mapperUri = mapperUri;
 		this.correction = correction;
 		this.resolvedAssessmentTest = resolvedAssessmentTest;
+		URI testUri = resolvedAssessmentTest.getTestLookup().getSystemId();
+		assessmentTestFile = new File(testUri);
 		resolvedAssessmentItem = resolvedAssessmentTest.getResolvedAssessmentItem(correction.getItemRef());
 		assessmentItem = resolvedAssessmentItem.getRootNodeLookup().extractIfSuccessful();
 		interactions = assessmentItem.getItemBody().findInteractions();
 		this.submissionDirectoryMaps = submissionDirectoryMaps;
-		htmlBuilder = new AssessmentHtmlBuilder();
 		
 		FileResourceManager frm = FileResourceManager.getInstance();
 		File fUnzippedDirRoot = frm.unzipFileResource(testEntry.getOlatResource());
@@ -169,6 +184,7 @@ public class CorrectionIdentityInteractionsController extends FormBasicControlle
 		assessmentObjectUri = qtiService.createAssessmentTestUri(fUnzippedDirRoot);
 		
 		initForm(ureq);
+		reloadAssessmentDocs();
 	}
 
 	@Override
@@ -179,7 +195,7 @@ public class CorrectionIdentityInteractionsController extends FormBasicControlle
 		AssessmentTestSession testSession = correction.getTestSession();
 		TestSessionState testSessionState = correction.getTestSessionState();
 		
-		answerItem = initFormInteraction(testPlanNodeKey, testSessionState, testSession, formLayout, true, false);	
+		ItemBodyResultFormItem answerItem = initFormInteraction(testPlanNodeKey, testSessionState, testSession, formLayout, true, false);	
 		formLayout.add("answer", answerItem);
 		
 		viewSolutionButton = uifactory.addFormLink("view.solution", formLayout);
@@ -223,7 +239,7 @@ public class CorrectionIdentityInteractionsController extends FormBasicControlle
 			coachComment = itemSession.getCoachComment();
 		}
 		
-		FormLayoutContainer scoreCont = FormLayoutContainer.createDefaultFormLayout("score.container", getTranslator());
+		scoreCont = FormLayoutContainer.createDefaultFormLayout("score.container", getTranslator());
 		formLayout.add("score.container", scoreCont);
 		
 		statusEl = uifactory.addStaticTextElement("status", "status", "", scoreCont);
@@ -257,11 +273,24 @@ public class CorrectionIdentityInteractionsController extends FormBasicControlle
 			overrideScoreButton.setDomReplacementWrapperRequired(false);
 			overrideScoreButton.setVisible(!readOnly);
 		}
-		commentEl = uifactory.addTextAreaElement("commentItem", "comment", 2500, 4, 60, false, false, coachComment, scoreCont);
+		commentEl = uifactory.addRichTextElementForStringData("commentItem", "comment", coachComment, 8, -1,
+				false, null, null, null, scoreCont, ureq.getUserSession(), getWindowControl());
+		commentEl.getEditorConfiguration().setSimplestTextModeAllowed(TextMode.multiLine);
+		commentEl.getEditorConfiguration().setPathInStatusBar(false);
 		commentEl.setHelpText(translate("comment.help"));
 		commentEl.setEnabled(!readOnly);
 		IdentityAssessmentItemWrapper wrapper = new IdentityAssessmentItemWrapper(fullname, assessmentItem, correction, responseItems,
 				scoreEl, commentEl, statusEl);
+		
+		String page = velocity_root + "/item_assessment_docs.html"; 
+		docsLayoutCont = FormLayoutContainer.createCustomFormLayout("assessment.item.docs", getTranslator(), page);
+		docsLayoutCont.setLabel("assessment.item.docs", null);
+		docsLayoutCont.contextPut("mapperUri", mapperUri);
+		scoreCont.add(docsLayoutCont);
+
+		uploadDocsEl = uifactory.addFileElement(getWindowControl(), getIdentity(), "assessment.item.docs.upload", "assessment.item.docs.upload", scoreCont);
+		uploadDocsEl.addActionListener(FormEvent.ONCHANGE);
+		uploadDocsEl.setVisible(!readOnly);
 		
 		toReviewEl = uifactory.addCheckboxesHorizontal("to.review", "to.review", scoreCont, onKeys, new String[] { "" });
 		toReviewEl.setEnabled(!readOnly);
@@ -294,12 +323,12 @@ public class CorrectionIdentityInteractionsController extends FormBasicControlle
 			layoutCont.contextPut("interactionWrapper", wrapper);
 			layoutCont.contextPut("autoSaved", Boolean.valueOf(isAutoSaved(testPlanNodeKey, testSessionState)));
 			
-			List<SectionRubrics> sectionRubrics = initSectionsRubrics();
+			List<SectionRubrics> sectionRubrics = initSectionsRubrics(layoutCont);
 			layoutCont.contextPut("sectionRubrics", sectionRubrics);
 		}
 	}
 	
-	private List<SectionRubrics> initSectionsRubrics() {
+	private List<SectionRubrics> initSectionsRubrics(FormItemContainer layoutCont) {
 		List<SectionRubrics> sectionParentLine = new ArrayList<>();
 		
 		try {
@@ -317,7 +346,7 @@ public class CorrectionIdentityInteractionsController extends FormBasicControlle
 						}
 						
 						if(writeRubrics) {
-							String rubrics = getSectionRubrics(section);
+							List<FlowFormItem> rubrics = getSectionRubrics(section, layoutCont);
 							String openLabel;
 							if(StringHelper.containsNonWhitespace(section.getTitle())) {
 								openLabel = translate("show.rubric.with.title", new String[]{ section.getTitle() });
@@ -340,15 +369,21 @@ public class CorrectionIdentityInteractionsController extends FormBasicControlle
 		return sectionParentLine;
 	}
 	
-	private String getSectionRubrics(AssessmentSection section) {
-		StringBuilder sb = new StringBuilder(1024);
+	private List<FlowFormItem> getSectionRubrics(AssessmentSection section, FormItemContainer layoutCont) {
+		List<FlowFormItem> rubricsEls = new ArrayList<>();
 		for(RubricBlock rubricBlock:section.getRubricBlocks()) {
-			String content = htmlBuilder.blocksString(rubricBlock.getBlocks());
-			if(StringHelper.containsNonWhitespace(content)) {
-				sb.append("<div class='rubric'>").append(content).append("</div>");
-			}
+
+			String rubricElId = "section_rubric_" + (count++);
+			FlowFormItem formItem = new FlowFormItem(rubricElId, assessmentTestFile);
+			formItem.setBlocks(rubricBlock.getBlocks());
+			formItem.setResourceLocator(inputResourceLocator);
+			formItem.setAssessmentObjectUri(assessmentObjectUri);
+			formItem.setMapperUri(mapperUri);
+
+			rubricsEls.add(formItem);
+			layoutCont.add(rubricElId, formItem);
 		}
-		return sb.toString();
+		return rubricsEls;
 	}
 	
 	private ItemBodyResultFormItem initFormInteraction(TestPlanNodeKey testPlanNodeKey,
@@ -504,6 +539,19 @@ public class CorrectionIdentityInteractionsController extends FormBasicControlle
 			doToggleSolution();
 		} else if(viewCorrectSolutionButton == source) {
 			doToggleCorrectSolution();
+		} else if(uploadDocsEl == source) {
+			if(uploadDocsEl.getUploadFile() != null && StringHelper.containsNonWhitespace(uploadDocsEl.getUploadFileName())) {
+				doUploadAssessmentDocument(uploadDocsEl.getUploadFile(), uploadDocsEl.getUploadFileName());
+				reloadAssessmentDocs();
+				uploadDocsEl.reset();
+			}
+		} else if(source instanceof FormLink) {
+			FormLink link = (FormLink)source;
+			Object uobject = link.getUserObject();
+			if(link.getCmd() != null && link.getCmd().startsWith("delete_doc_") && uobject instanceof DocumentWrapper) {
+				DocumentWrapper wrapper = (DocumentWrapper)uobject;
+				doConfirmDeleteAssessmentDocument(ureq, wrapper.getDocument());
+			}
 		}
 		super.formInnerEvent(ureq, source, event);
 	}
@@ -519,6 +567,12 @@ public class CorrectionIdentityInteractionsController extends FormBasicControlle
 		} else if(overrideScoreCalloutCtrl == source) {
 			overrideScoreCalloutCtrl.deactivate();
 			cleanUp();
+		} else if(source == confirmDeleteDocCtrl) {
+			if(DialogBoxUIFactory.isOkEvent(event) || DialogBoxUIFactory.isYesEvent(event)) {
+				File documentToDelete = (File)confirmDeleteDocCtrl.getUserObject();
+				doDeleteAssessmentDocument(documentToDelete);
+				reloadAssessmentDocs();
+			}
 		}
 		super.event(ureq, source, event);
 	}
@@ -589,6 +643,76 @@ public class CorrectionIdentityInteractionsController extends FormBasicControlle
 			return Double.parseDouble(scoreStr);
 		}
 		return Double.parseDouble(scoreStr);
+	}
+	
+	private void doUploadAssessmentDocument(File uploadedFile, String filename) {
+		File directory = qtiService.getAssessmentDocumentsDirectory(correction.getTestSession(), correction.getItemSession());
+		if(directory != null) {
+			if(!directory.exists()) {
+				directory.mkdirs();
+			}
+			
+			File targetFile = new File(directory, filename);
+			if(targetFile.exists()) {
+				String newName = FileUtils.rename(targetFile);
+				targetFile = new File(directory, newName);
+			}
+			try {
+				Files.copy(uploadedFile.toPath(), targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+			} catch (IOException e) {
+				logError("", e);
+			}
+		}
+	}
+	
+	private void reloadAssessmentDocs() {
+		if(docsLayoutCont == null) return;
+
+		List<DocumentWrapper> wrappers = new ArrayList<>();
+		File directory = qtiService.getAssessmentDocumentsDirectory(correction.getTestSession(), correction.getItemSession());
+		if(directory != null && directory.exists()) {
+			File[] documents = directory.listFiles(SystemFileFilter.FILES_ONLY);
+			if(documents != null) {
+				for (File document : documents) {
+					DocumentWrapper wrapper = new DocumentWrapper(document);
+					wrappers.add(wrapper);
+					
+					if(!readOnly) {
+						FormLink deleteButton = uifactory.addFormLink("delete_doc_" + (++count), "delete", null, docsLayoutCont, Link.BUTTON_XSMALL);
+						deleteButton.setEnabled(true);  
+						deleteButton.setVisible(true);
+						wrapper.setDeleteButton(deleteButton);
+					}
+				}
+			}
+		}
+		
+		docsLayoutCont.contextPut("documents", wrappers);
+		docsLayoutCont.contextPut("itemSessionKey", correction.getItemSession().getKey());
+		docsLayoutCont.contextPut("testSessionKey", correction.getTestSession().getKey());
+		docsLayoutCont.contextPut("documents", wrappers);
+		docsLayoutCont.setVisible(!wrappers.isEmpty());
+
+		if(uploadDocsEl != null && uploadDocsEl.isVisible()) {
+			if(wrappers.isEmpty()) {
+				uploadDocsEl.setLabel("assessment.item.docs.upload", null);
+				scoreCont.setDirty(true);
+			} else {
+				uploadDocsEl.setLabel(null, null);
+			}
+		}
+	}
+	
+	private void doConfirmDeleteAssessmentDocument(UserRequest ureq, File document) {
+		String title = translate("warning.assessment.docs.delete.title");
+		String text = translate("warning.assessment.docs.delete.text",
+				new String[] { StringHelper.escapeHtml(document.getName()) });
+		confirmDeleteDocCtrl = activateOkCancelDialog(ureq, title, text, confirmDeleteDocCtrl);
+		confirmDeleteDocCtrl.setUserObject(document);
+	}
+	
+	private void doDeleteAssessmentDocument(File document) {
+		FileUtils.deleteFile(document);
 	}
 	
 	private void doToggleSolution() {
@@ -690,6 +814,37 @@ public class CorrectionIdentityInteractionsController extends FormBasicControlle
 		@Override
 		protected void formCancelled(UserRequest ureq) {
 			fireEvent(ureq, Event.CANCELLED_EVENT);
+		}
+	}
+	
+	public static class DocumentWrapper {
+		
+		private final File document;
+		private FormLink deleteButton;
+		
+		public DocumentWrapper(File document) {
+			this.document = document;
+		}
+		
+		public String getFilename() {
+			return document.getName();
+		}
+		
+		public String getLabel() {
+			return document.getName() + " (" + Formatter.formatBytes(document.length()) + ")";
+		}
+		
+		public File getDocument() {
+			return document;
+		}
+
+		public FormLink getDeleteButton() {
+			return deleteButton;
+		}
+
+		public void setDeleteButton(FormLink deleteButton) {
+			this.deleteButton = deleteButton;
+			deleteButton.setUserObject(this);
 		}
 	}
 }

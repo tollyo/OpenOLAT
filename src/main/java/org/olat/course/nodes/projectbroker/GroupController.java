@@ -74,7 +74,6 @@ import org.olat.core.gui.control.generic.popup.PopupBrowserWindow;
 import org.olat.core.gui.control.generic.wizard.Step;
 import org.olat.core.gui.control.generic.wizard.StepRunnerCallback;
 import org.olat.core.gui.control.generic.wizard.StepsMainRunController;
-import org.olat.core.gui.control.generic.wizard.StepsRunContext;
 import org.olat.core.gui.translator.Translator;
 import org.olat.core.id.Identity;
 import org.olat.core.id.Roles;
@@ -89,6 +88,8 @@ import org.olat.core.util.mail.MailNotificationEditController;
 import org.olat.core.util.mail.MailTemplate;
 import org.olat.core.util.mail.MailerResult;
 import org.olat.core.util.session.UserSessionManager;
+import org.olat.course.member.wizard.ImportMemberByUsernamesController;
+import org.olat.course.member.wizard.MembersByNameContext;
 import org.olat.group.ui.main.OnlineIconRenderer;
 import org.olat.instantMessaging.InstantMessagingModule;
 import org.olat.instantMessaging.InstantMessagingService;
@@ -266,12 +267,8 @@ public class GroupController extends BasicController {
 		this.removeUserMailDefaultTempl = removeUserMailTempl;
 		this.showSenderInRemovMailFooter = showSenderInRemoveFooter;
 	}
-
-	/**
-	 * @see org.olat.core.gui.control.DefaultController#event(org.olat.core.gui.UserRequest,
-	 *      org.olat.core.gui.components.Component,
-	 *      org.olat.core.gui.control.Event)
-	 */
+	
+	@Override
 	public void event(UserRequest ureq, Component source, Event event) {
 		if (source == addUserButton) {
 			if (!mayModifyMembers) throw new AssertException("not allowed to add a member!");
@@ -282,10 +279,6 @@ public class GroupController extends BasicController {
 		}
 	}
 
-	/**
-	 * @see org.olat.core.gui.control.DefaultController#event(org.olat.core.gui.UserRequest,
-	 *      org.olat.core.gui.control.Controller, org.olat.core.gui.control.Event)
-	 */
 	@Override
 	public void event(UserRequest ureq, Controller sourceController, Event event) {
 		if (sourceController == tableCtr) {
@@ -480,23 +473,19 @@ public class GroupController extends BasicController {
 		cmc.activate();
 	}
 	
-	private void doImportUsers(UserRequest ureq) {
+	private void doImportUsers(final UserRequest ureq) {
 		removeAsListenerAndDispose(userToGroupWizard);
 
 		Step start = new UsersToGroupWizardStep00(ureq, addUserMailDefaultTempl, mandatoryEmail);
-		StepRunnerCallback finish = new StepRunnerCallback() {
-			@Override
-			public Step execute(UserRequest ureq, WindowControl wControl, StepsRunContext runContext) {
-				@SuppressWarnings("unchecked")
-				List<Identity> choosenIdentities = (List<Identity>)runContext.get("members");
-				MailTemplate customTemplate = (MailTemplate)runContext.get("mailTemplate");
-				if (choosenIdentities == null || choosenIdentities.size() == 0) {
-					showError("msg.selectionempty");
-				} else {
-					doAddIdentitiesToGroup(ureq, choosenIdentities, customTemplate);
-				}
-				return StepsMainRunController.DONE_MODIFIED;
+		StepRunnerCallback finish = (uureq, wControl, runContext) -> {
+			Set<Identity> choosenIdentities = ((MembersByNameContext)runContext.get(ImportMemberByUsernamesController.RUN_CONTEXT_KEY)).getIdentities();
+			MailTemplate customTemplate = (MailTemplate)runContext.get("mailTemplate");
+			if (choosenIdentities == null || choosenIdentities.isEmpty()) {
+				showError("msg.selectionempty");
+			} else {
+				doAddIdentitiesToGroup(uureq, new ArrayList<>(choosenIdentities), customTemplate);
 			}
+			return StepsMainRunController.DONE_MODIFIED;
 		};
 		
 		userToGroupWizard = new StepsMainRunController(ureq, getWindowControl(), start, finish, null,
@@ -619,12 +608,6 @@ public class GroupController extends BasicController {
 	 */
 	protected void initGroupTable(TableController tableCtr, UserRequest ureq, boolean enableTablePreferences, boolean enableUserSelection) {			
 		List<UserPropertyHandler> userPropertyHandlers = userManager.getUserPropertyHandlersFor(usageIdentifyer, isAdministrativeUser);
-		if (isAdministrativeUser) {
-			// first the login name, but only if administrative user
-			DefaultColumnDescriptor cd0 = new DefaultColumnDescriptor("table.user.login", 0, COMMAND_VCARD, ureq.getLocale());
-			cd0.setIsPopUpWindowAction(true, "height=700, width=900, location=no, menubar=no, resizable=yes, status=no, scrollbars=yes, toolbar=no");
-			tableCtr.addColumnDescriptor(cd0);
-		}
 		if(chatEnabled) {
 			tableCtr.addColumnDescriptor(new CustomRenderColumnDescriptor("table.header.online", 1, COMMAND_IM, getLocale(),
 					ColumnDescriptor.ALIGNMENT_LEFT, new OnlineIconRenderer()));
@@ -704,7 +687,7 @@ public class GroupController extends BasicController {
 		}
 		
 		List<UserPropertyHandler> userPropertyHandlers = userManager.getUserPropertyHandlersFor(usageIdentifyer, isAdministrativeUser);
-		identitiesTableModel = new IdentitiesOfGroupTableDataModel(views, getLocale(), userPropertyHandlers, isAdministrativeUser);
+		identitiesTableModel = new IdentitiesOfGroupTableDataModel(views, getLocale(), userPropertyHandlers);
 		tableCtr.setTableDataModel(identitiesTableModel);
 	}
 }

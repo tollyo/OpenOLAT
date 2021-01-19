@@ -28,6 +28,8 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.olat.basesecurity.GroupRoles;
 import org.olat.basesecurity.IdentityRef;
@@ -40,6 +42,7 @@ import org.olat.core.gui.components.form.flexible.impl.FormLayoutContainer;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.DefaultFlexiColumnModel;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiCellRenderer;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiTableColumnModel;
+import org.olat.core.gui.components.form.flexible.impl.elements.table.TimeFlexiCellRenderer;
 import org.olat.core.gui.components.link.Link;
 import org.olat.core.gui.components.stack.PopEvent;
 import org.olat.core.gui.components.stack.TooledStackedPanel;
@@ -49,6 +52,8 @@ import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.control.generic.closablewrapper.CloseableModalController;
 import org.olat.core.gui.media.MediaResource;
 import org.olat.core.id.Identity;
+import org.olat.course.CourseFactory;
+import org.olat.course.ICourse;
 import org.olat.course.archiver.ScoreAccountingHelper;
 import org.olat.course.assessment.AssessmentHelper;
 import org.olat.course.assessment.CourseAssessmentService;
@@ -90,6 +95,8 @@ import org.olat.modules.assessment.ui.AssessedIdentityElementRow;
 import org.olat.modules.assessment.ui.AssessmentToolContainer;
 import org.olat.modules.assessment.ui.AssessmentToolSecurityCallback;
 import org.olat.modules.assessment.ui.event.CompleteAssessmentTestSessionEvent;
+import org.olat.modules.dcompensation.DisadvantageCompensation;
+import org.olat.modules.dcompensation.DisadvantageCompensationService;
 import org.olat.modules.grading.GradingAssignment;
 import org.olat.modules.grading.GradingService;
 import org.olat.repository.RepositoryEntry;
@@ -118,6 +125,7 @@ public class IQIdentityListCourseNodeController extends IdentityListCourseNodeCo
 	private ConfirmExtraTimeController extraTimeCtrl;
 	private ValidationXmlSignatureController validationCtrl;
 	private CorrectionOverviewController correctionIdentitiesCtrl;
+	private ConfirmReopenAssessmentEntriesController reopenForCorrectionCtrl;
 	
 	private boolean modelDirty = false;
 
@@ -129,6 +137,8 @@ public class IQIdentityListCourseNodeController extends IdentityListCourseNodeCo
 	private BusinessGroupService groupService;
 	@Autowired
 	private CourseAssessmentService courseAssessmentService;
+	@Autowired
+	private DisadvantageCompensationService disadvantageCompensationService;
 	
 	public IQIdentityListCourseNodeController(UserRequest ureq, WindowControl wControl, TooledStackedPanel stackPanel,
 			RepositoryEntry courseEntry, BusinessGroup group, CourseNode courseNode, UserCourseEnvironment coachCourseEnv,
@@ -142,9 +152,14 @@ public class IQIdentityListCourseNodeController extends IdentityListCourseNodeCo
 	@Override
 	protected String getTableId() {
 		if(isTestQTI21()) {
-			return"qti21-assessment-tool-identity-list";
+			IQTESTCourseNode testCourseNode = (IQTESTCourseNode)courseNode;
+			RepositoryEntry qtiTestEntry = getReferencedRepositoryEntry();
+			if(testCourseNode != null && testCourseNode.hasQTI21TimeLimit(qtiTestEntry)) {
+				return"qti21-assessment-tool-identity-list-extra-v3";
+			}
+			return"qti21-assessment-tool-identity-list-v3";
 		}
-		return "qti-assessment-tool-identity-list";
+		return "qti-assessment-tool-identity-list-v3";
 	}
 
 	@Override
@@ -153,6 +168,8 @@ public class IQIdentityListCourseNodeController extends IdentityListCourseNodeCo
 		IQTESTCourseNode testCourseNode = (IQTESTCourseNode)courseNode;
 		AssessmentConfig assessmentConfig = courseAssessmentService.getAssessmentConfig(courseNode);
 		if(testCourseNode != null && Mode.setByNode.equals(assessmentConfig.getCompletionMode())) {
+			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(IdentityCourseElementCols.currentRunStart,
+					new TimeFlexiCellRenderer(getLocale(), true)));
 			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(IdentityCourseElementCols.currentCompletion));
 		}
 		
@@ -160,9 +177,15 @@ public class IQIdentityListCourseNodeController extends IdentityListCourseNodeCo
 		if(testCourseNode != null && testCourseNode.hasQTI21TimeLimit(qtiTestEntry)) {
 			int timeLimitInSeconds = testCourseNode.getQTI21TimeLimitMaxInSeconds(qtiTestEntry);
 			boolean suspendEnabled = isSuspendEnable();
-			FlexiCellRenderer renderer = new ExtraTimeCellRenderer(!suspendEnabled, timeLimitInSeconds, getLocale());
-			String header = suspendEnabled ? "table.header.extra.time" : "table.header.end.date";
-			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(header, IdentityCourseElementCols.details.ordinal(), renderer));
+			if(!suspendEnabled) {
+				Date endDate = testCourseNode.getModuleConfiguration().getDateValue(IQEditController.CONFIG_KEY_END_TEST_DATE);
+				FlexiCellRenderer renderer = new EndTimeCellRenderer(timeLimitInSeconds, endDate, getLocale());
+				columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel("table.header.end.date",
+						IdentityCourseElementCols.details.ordinal(), renderer));
+			}
+
+			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel("table.header.extra.time",
+					IdentityCourseElementCols.details.ordinal(), new ExtraTimeCellRenderer()));
 		}
 	}
 	
@@ -206,8 +229,9 @@ public class IQIdentityListCourseNodeController extends IdentityListCourseNodeCo
 					resetButton = uifactory.addFormLink("tool.delete.data", formLayout, Link.BUTTON); 
 					resetButton.setIconLeftCSS("o_icon o_icon_delete_item");
 				}
-				if(qtiService.needManualCorrection(testEntry)
-						|| IQEditController.CORRECTION_MANUAL.equals(courseNode.getModuleConfiguration().getStringValue(IQEditController.CONFIG_CORRECTION_MODE))) {
+				String correctionMode = courseNode.getModuleConfiguration().getStringValue(IQEditController.CONFIG_CORRECTION_MODE);
+				if(!IQEditController.CORRECTION_GRADING.equals(correctionMode) &&
+						(IQEditController.CORRECTION_MANUAL.equals(correctionMode) || qtiService.needManualCorrection(testEntry))) {
 					correctionButton = uifactory.addFormLink("correction.test.title", formLayout, Link.BUTTON);
 					correctionButton.setElementCssClass("o_sel_correction");
 					correctionButton.setIconLeftCSS("o_icon o_icon-fw o_icon_correction");
@@ -226,15 +250,15 @@ public class IQIdentityListCourseNodeController extends IdentityListCourseNodeCo
 	}
 	
 	private boolean isTestRunning() {
-		List<Identity> identities = getIdentities();
+		Identities identities = getIdentities(false);
 		if(isTestQTI21()) {
 			return qtiService.isRunningAssessmentTestSession(getCourseRepositoryEntry(),
-					courseNode.getIdent(), getReferencedRepositoryEntry(), identities);
-		}
-
-		for(Identity assessedIdentity:identities) {
-			if(((IQTESTCourseNode)courseNode).isQTI12TestRunning(assessedIdentity, getCourseEnvironment())) {
-				return true;
+					courseNode.getIdent(), getReferencedRepositoryEntry(), identities.getIdentities());
+		} else if(!identities.isEmpty()) {
+			for(Identity assessedIdentity:identities.getIdentities()) {
+				if(((IQTESTCourseNode)courseNode).isQTI12TestRunning(assessedIdentity, getCourseEnvironment())) {
+					return true;
+				}
 			}
 		}
 		return false;
@@ -247,12 +271,24 @@ public class IQIdentityListCourseNodeController extends IdentityListCourseNodeCo
 	@Override
 	protected void loadModel(UserRequest ureq) {
 		super.loadModel(ureq);
-		
-		if(((IQTESTCourseNode)courseNode).hasQTI21TimeLimit(getReferencedRepositoryEntry())) {
-			Map<Long,ExtraTimeInfos> extraTimeInfos = getExtraTimes();
-			List<AssessedIdentityElementRow> rows = usersTableModel.getObjects();
-			for(AssessedIdentityElementRow row:rows) {
-				row.setDetails(extraTimeInfos.get(row.getIdentityKey()));
+
+		RepositoryEntry testEntry = getReferencedRepositoryEntry();
+		boolean timeLimit = ((IQTESTCourseNode)courseNode).hasQTI21TimeLimit(testEntry);
+		Map<Long,ExtraInfos> extraInfos = getExtraInfos();
+		List<AssessedIdentityElementRow> rows = usersTableModel.getObjects();
+		for(AssessedIdentityElementRow row:rows) {
+			ExtraInfos infos = extraInfos.get(row.getIdentityKey());
+			if(infos != null) {
+				if(timeLimit) {
+					row.setDetails(infos);
+				}
+				row.setMaxScore(infos.getMaxScore());
+				if(infos.getCompletion() != null) {
+					row.getCurrentCompletion().setCompletion(infos.getCompletion());
+				}
+				if(infos.getStart() != null) {
+					row.getCurrentRunStart().setDate(infos.getStart());
+				}
 			}
 		}
 		
@@ -267,26 +303,44 @@ public class IQIdentityListCourseNodeController extends IdentityListCourseNodeCo
 	/**
 	 * @return A map identity key to extra time
 	 */
-	private Map<Long,ExtraTimeInfos> getExtraTimes() {
-		Map<Long,ExtraTimeInfos> identityToExtraTime = new HashMap<>();
+	private Map<Long,ExtraInfos> getExtraInfos() {
+		Map<Long,ExtraInfos> identityToExtraTime = new HashMap<>();
 		List<AssessmentTestSession> sessions = qtiService
 				.getAssessmentTestSessions(getCourseRepositoryEntry(), courseNode.getIdent(), getReferencedRepositoryEntry());
 		//sort by identity, then by creation date
 		Collections.sort(sessions, new AssessmentTestSessionComparator());
-		
+
 		Long currentIdentityKey = null;
 		for(AssessmentTestSession session:sessions) {
 			Long identityKey = session.getIdentity().getKey();
 			if(currentIdentityKey == null || !currentIdentityKey.equals(identityKey)) {
-				if(session.getFinishTime() == null && session.getExtraTime() != null) {
-					Integer extraTimeInSeconds = session.getExtraTime();
-					Date start = session.getCreationDate();
-					ExtraTimeInfos infos = new ExtraTimeInfos(extraTimeInSeconds, start);
-					identityToExtraTime.put(identityKey, infos);
+				Date start = null;
+				Double completion = null;
+				Integer extraTimeInSeconds = null;
+				if(session.getFinishTime() == null && session.getTerminationTime() == null) {
+					start = session.getCreationDate();
+					extraTimeInSeconds = session.getExtraTime();
+					if(session.getNumOfQuestions() != null && session.getNumOfQuestions().intValue() > 0 && session.getNumOfAnsweredQuestions() != null) {
+						completion = session.getNumOfAnsweredQuestions().doubleValue() / session.getNumOfQuestions().doubleValue();
+					}
 				}
+				
+				ExtraInfos infos = new ExtraInfos(extraTimeInSeconds, start, completion, session.getMaxScore());
+				identityToExtraTime.put(identityKey, infos);
 				currentIdentityKey = identityKey;
 			}
 		}
+
+		List<DisadvantageCompensation> compensations = disadvantageCompensationService
+				.getActiveDisadvantageCompensations(courseEntry, courseNode.getIdent());
+		for(DisadvantageCompensation compensation:compensations) {
+			Long identityKey = compensation.getIdentity().getKey();
+			Integer extraTimeInSeconds = compensation.getExtraTime();
+			ExtraInfos infos = identityToExtraTime.computeIfAbsent(identityKey,
+					key -> new ExtraInfos());
+			infos.setCompensationExtraTimeInSeconds(extraTimeInSeconds);
+		}
+
 		return identityToExtraTime;	
 	}
 
@@ -335,6 +389,18 @@ public class IQIdentityListCourseNodeController extends IdentityListCourseNodeCo
 				doUpdateCourseNode(catse.getTestSessions(), catse.getAssessmentTest(), catse.getStatus());
 				loadModel(ureq);	
 				fireEvent(ureq, Event.CHANGED_EVENT);
+			} else if(event == Event.DONE_EVENT) {
+				loadModel(ureq);
+			}
+		} else if(reopenForCorrectionCtrl == source) {
+			CorrectionOverviewController correctionCtrl = (CorrectionOverviewController)reopenForCorrectionCtrl.getUserObject();
+			cmc.deactivate();
+			cleanUp();
+			if(event == Event.CHANGED_EVENT) {
+				doReopenAssessmentEntries(correctionCtrl);
+				doOpenCorrection(correctionCtrl);
+			} else if(event == Event.DONE_EVENT) {
+				doOpenCorrection(correctionCtrl);
 			}
 		}
 		super.event(ureq, source, event);
@@ -363,10 +429,12 @@ public class IQIdentityListCourseNodeController extends IdentityListCourseNodeCo
 	
 	@Override
 	protected void cleanUp() {
+		removeAsListenerAndDispose(reopenForCorrectionCtrl);
 		removeAsListenerAndDispose(retrieveConfirmationCtr);
 		removeAsListenerAndDispose(validationCtrl);
 		removeAsListenerAndDispose(extraTimeCtrl);
 		removeAsListenerAndDispose(resetDataCtrl);
+		reopenForCorrectionCtrl = null;
 		retrieveConfirmationCtr = null;
 		validationCtrl = null;
 		extraTimeCtrl = null;
@@ -384,28 +452,41 @@ public class IQIdentityListCourseNodeController extends IdentityListCourseNodeCo
 				courseNode, assessedIdentity, coachCourseEnv);
 	}
 	
-	private List<Identity> getIdentities() {
+	/**
+	 * 
+	 * @param allIfAdmin Admin. have the possibility to see not participants.
+	 * @return A list of identities
+	 */
+	private Identities getIdentities(boolean allIfAdmin) {
 		AssessmentToolOptions asOptions = getOptions();
+		boolean withNonParticipants = false;
 		List<Identity> identities = asOptions.getIdentities();
 		if (group != null) {
 			identities = groupService.getMembers(group, GroupRoles.participant.toString());
 		} else if (identities != null) {
 			identities = asOptions.getIdentities();			
-		} else if (asOptions.isAdmin()){
-			identities = ScoreAccountingHelper.loadParticipants(getCourseEnvironment());
+		} else if (asOptions.isAdmin()) {
+			if(allIfAdmin) {
+				withNonParticipants = true;
+				identities = ScoreAccountingHelper.loadUsers(getCourseEnvironment());
+			} else {
+				identities = ScoreAccountingHelper.loadParticipants(getCourseEnvironment());
+			}
 		}
-		return identities;
+		return new Identities(identities, withNonParticipants);
 	}
 	
 	private void doExportResults(UserRequest ureq) {
-		List<Identity> identities = getIdentities();
-		if (identities != null && !identities.isEmpty()) {
+		Identities identities = getIdentities(true);
+		if (!identities.isEmpty()) {
 			MediaResource resource;
 			CourseEnvironment courseEnv = getCourseEnvironment();
 			if(isTestQTI21()) {
-				resource = new QTI21ResultsExportMediaResource(courseEnv, identities, (IQTESTCourseNode)courseNode, "", getLocale());
+				resource = new QTI21ResultsExportMediaResource(courseEnv, identities.getIdentities(), identities.isWithNonParticipants(),
+						(IQTESTCourseNode)courseNode, "", getLocale());
 			} else {
-				resource = new QTI12ResultsExportMediaResource(courseEnv, identities, (IQTESTCourseNode)courseNode, "", getLocale());
+				resource = new QTI12ResultsExportMediaResource(courseEnv, identities.getIdentities(),
+						(IQTESTCourseNode)courseNode, "", getLocale());
 			}
 			ureq.getDispatchResult().setResultingMediaResource(resource);
 		} else {
@@ -427,14 +508,51 @@ public class IQIdentityListCourseNodeController extends IdentityListCourseNodeCo
 	private void doStartCorrection(UserRequest ureq) {
 		AssessmentToolOptions asOptions = getOptions();
 
-		correctionIdentitiesCtrl = new CorrectionOverviewController(ureq, getWindowControl(), stackPanel,
+		CorrectionOverviewController correctionCtrl = new CorrectionOverviewController(ureq, getWindowControl(), stackPanel,
 				getCourseEnvironment(), asOptions, (IQTESTCourseNode)courseNode);
-		if(correctionIdentitiesCtrl.getNumberOfAssessedIdentities() == 0) {
+		long numOfAssessmentEntriesDone = usersTableModel.getObjects().stream()
+				.filter(row -> row.getAssessmentStatus() == AssessmentEntryStatus.done)
+				.count();
+		if(correctionCtrl.getNumberOfAssessedIdentities() == 0) {
 			showWarning("grade.nobody");
-			correctionIdentitiesCtrl = null;
+		} else if(numOfAssessmentEntriesDone > 0) {
+			doReopenForCorrection(ureq, correctionCtrl, numOfAssessmentEntriesDone);
 		} else {
-			listenTo(correctionIdentitiesCtrl);
-			stackPanel.pushController(translate("correction.test.title"), correctionIdentitiesCtrl);
+			doOpenCorrection(correctionCtrl);
+		}
+	}
+	
+	private void doOpenCorrection(CorrectionOverviewController correctionCtrl) {
+		correctionIdentitiesCtrl = correctionCtrl;
+		listenTo(correctionIdentitiesCtrl);
+		stackPanel.pushController(translate("correction.test.title"), correctionIdentitiesCtrl);
+	}
+	
+	private void doReopenForCorrection(UserRequest ureq, CorrectionOverviewController correctionCtrl, long numOfAssessmentEntriesDone) {
+		if(guardModalController(reopenForCorrectionCtrl)) return;
+		
+		reopenForCorrectionCtrl = new ConfirmReopenAssessmentEntriesController(ureq, getWindowControl(), numOfAssessmentEntriesDone);
+		reopenForCorrectionCtrl.setUserObject(correctionCtrl);
+		listenTo(reopenForCorrectionCtrl);
+		
+		cmc = new CloseableModalController(getWindowControl(), "close", reopenForCorrectionCtrl.getInitialComponent(),
+				true, translate("reopen.assessments.title"));
+		cmc.activate();
+		listenTo(cmc);
+	}
+	
+	private void doReopenAssessmentEntries(CorrectionOverviewController correctionCtrl) {
+		List<Identity> assessedIdentities = correctionCtrl.getAssessedIdentities();
+		Set<Long> assessedIdentitiesKeys = assessedIdentities.stream()
+				.map(Identity::getKey)
+				.collect(Collectors.toSet());
+		List<AssessedIdentityElementRow> rows = usersTableModel.getObjects();
+		ICourse course = CourseFactory.loadCourse(courseEntry);
+		for(AssessedIdentityElementRow row:rows) {
+			if(row.getAssessmentStatus() == AssessmentEntryStatus.done && assessedIdentitiesKeys.contains(row.getIdentityKey())) {
+				Identity assessedIdentity = securityManager.loadIdentityByKey(row.getIdentityKey());
+				doSetStatus(assessedIdentity, AssessmentEntryStatus.inReview, courseNode, course);
+				dbInstance.commitAndCloseSession();			}
 		}
 	}
 	
@@ -446,6 +564,8 @@ public class IQIdentityListCourseNodeController extends IdentityListCourseNodeCo
 		CourseEnvironment courseEnv = getCourseEnvironment();
 		RepositoryEntry testEntry = getReferencedRepositoryEntry();
 		AssessmentConfig assessmentConfig = courseAssessmentService.getAssessmentConfig(courseNode);
+		
+		boolean userVisibleAfter = ((IQTESTCourseNode)courseNode).isScoreVisibleAfterCorrection();
 
 		for(AssessmentTestSession testSession:testSessionsToComplete) {
 			UserCourseEnvironment assessedUserCourseEnv = AssessmentHelper
@@ -460,8 +580,12 @@ public class IQIdentityListCourseNodeController extends IdentityListCourseNodeCo
 				passed = Boolean.valueOf(calculated);
 			}
 			AssessmentEntryStatus finalStatus = status == null ? scoreEval.getAssessmentStatus() : status;
+			Boolean userVisible = scoreEval.getUserVisible();
+			if(finalStatus == AssessmentEntryStatus.done) {
+				userVisible = Boolean.valueOf(userVisibleAfter);
+			}
 			ScoreEvaluation manualScoreEval = new ScoreEvaluation(score, passed,
-					finalStatus, scoreEval.getUserVisible(), scoreEval.getCurrentRunCompletion(),
+					finalStatus, userVisible, scoreEval.getCurrentRunStartDate(), scoreEval.getCurrentRunCompletion(),
 					scoreEval.getCurrentRunStatus(), testSession.getKey());
 			courseAssessmentService.updateScoreEvaluation(courseNode, manualScoreEval, assessedUserCourseEnv,
 					getIdentity(), false, Role.coach);
@@ -471,7 +595,7 @@ public class IQIdentityListCourseNodeController extends IdentityListCourseNodeCo
 				GradingAssignment assignment = gradingService.getGradingAssignment(testEntry, assessmentEntry);
 				if(assignment != null) {
 					Long metadataTime = qtiService.getMetadataCorrectionTimeInSeconds(testEntry, testSession);
-					gradingService.assignmentDone(assignment, metadataTime);
+					gradingService.assignmentDone(assignment, metadataTime, userVisible);
 				}
 			}
 		}
@@ -532,7 +656,7 @@ public class IQIdentityListCourseNodeController extends IdentityListCourseNodeCo
 		List<AssessmentTestSession> testSessions = new ArrayList<>(identities.size());
 		for(IdentityRef identity:identities) {
 			List<AssessmentTestSessionStatistics> sessionsStatistics = qtiService
-					.getAssessmentTestSessionsStatistics(getCourseRepositoryEntry(), courseNode.getIdent(), identity);
+					.getAssessmentTestSessionsStatistics(getCourseRepositoryEntry(), courseNode.getIdent(), identity, true);
 			if(!sessionsStatistics.isEmpty()) {
 				if(sessionsStatistics.size() > 1) {
 					Collections.sort(sessionsStatistics, new AssessmentTestSessionDetailsComparator());
@@ -578,6 +702,29 @@ public class IQIdentityListCourseNodeController extends IdentityListCourseNodeCo
 				c = start2.compareTo(start1);
 			}
 			return c;
+		}
+	}
+	
+	private static class Identities {
+		
+		private final List<Identity> identities;
+		private final boolean withNonParticipants;
+		
+		public Identities(List<Identity> identities, boolean withNonParticipants) {
+			this.identities = identities;
+			this.withNonParticipants = withNonParticipants;
+		}
+
+		public List<Identity> getIdentities() {
+			return identities;
+		}
+
+		public boolean isWithNonParticipants() {
+			return withNonParticipants;
+		}
+		
+		public boolean isEmpty() {
+			return identities == null || identities.isEmpty();
 		}
 	}
 }

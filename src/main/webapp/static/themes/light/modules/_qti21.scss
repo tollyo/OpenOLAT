@@ -63,8 +63,6 @@ ul.sessionControl {
 
 .sketch, .sketch>canvas {
 	touch-action: none;
-	user-drag: none;
-	-webkit-user-drag: none;
 	user-select: none;
 	-moz-user-select: none;
 	-webkit-user-drag: none;
@@ -116,6 +114,10 @@ ul.sessionControl {
 	.o_item {
 		float: left;
 	}
+}
+
+.o_qti_max_attempts.o_warning {
+	margin: 0;
 }
 
 /* Hotspot */
@@ -389,7 +391,11 @@ span.o_qti_gaptext_score_alternative {
 	}
 }
 
-.o_assessmentitem{
+.o_assessment_test_results .o_info.o_assessmentsection_rubrics {
+	margin: $o-box-margin 0;
+}
+
+.o_assessmentitem {
 	h1 {
 		margin-bottom: 0;
 	}
@@ -412,132 +418,6 @@ span.o_qti_gaptext_score_alternative {
   			display: none;
 		}
 	}
-	
-	.sliderInteraction {
-		margin: 1em;
-		.sliderVertical .sliderValue {
-			margin: 1em 0;
-		}
-		.sliderVertical .sliderWidget {
-			height: 200px;
-		}
-		.sliderHorizontal .sliderValue {
-			text-align: center;
-		}
-	}
-	
-	div.orderInteraction {
-		div.highlight {
-			border: 1px solid $o-qti-highlight-color;
-		}
-		
-		div.box.vertical {
-			width: 50%;
-			float: left;
-			position: relative;
-			padding: 0;
-			margin-top: 5px;
-			
-			ul {
-				min-height: 200px;
-			}
-		}
-		
-		div.box.horizontal {
-			ul {
-				min-height: 50px;
-				width: 100%;
-			}
-		}
-		
-		div.box.source {
-			padding: 5px 10px;
-			border: 1px solid $o-qti-order-sources-border-color;
-			border-radius: $o-qti-order-border-radius;
-			background: $o-qti-order-sources-bg;
-		}
-		
-		div.box.source.horizontal {
-			padding: 5px 10px 15px 10px;
-		}
-		
-		div.box.target {
-			ul {
-				border: 2px solid $o-qti-order-target-border-color;
-				border-radius: $o-qti-order-border-radius;
-				background: $o-qti-order-target-bg;
-				
-				&.oo-accepted {
-					border-color: $o-qti-order-drop-accept-border-color;
-				}
-			}	
-		}
-		
-		div.box.target.vertical {
-			padding: 6px 0 0 10px;
-			
-			ul {
-				padding: 10px;
-			}
-		}
-		
-		div.box.target.horizontal {
-			padding-top: 10px;
-			
-			ul {
-				padding: 10px 10px 0 10px;
-			}
-		}
-		
-		div.box.horizontal ul li {
-			float: left;
-			width: auto;
-			margin-right: 10px;
-			min-width: 50px;
-		}
-
-		div.box span.info {
-			color: $o-qti-box-color;
-			font-style: italic;
-			font-size: smaller;
-		}
-
-		ul {
-			list-style-type: none;
-			margin: 0;
-			padding: 0;
-		}
-	}
-
-	.hottext {		
-		position: relative;
-		margin: -2px 0.15em -2px 0.15em;
-		white-space: nowrap;
-
-		input {
-			margin: 0 3px 0 2px;
-			position: absolute;
-			top: 0.1em;
-			left: 0.05em;
-			+label {
-				display: inline;
-				padding: 0 0.1em 0 1.2em;
-				background: $o-qti-hottext-bg;
-				border: 1px solid $o-qti-hottext-border-color;
-				border-radius: $o-qti-hottext-border-radius;
-				
-				color: $o-qti-hottext-color;
-				font-weight: normal;
-				white-space: normal;
-			}
-			&:checked+label {
-				color: $o-qti-hottext-checked-color;
-				background: $o-qti-hottext-checked-bg;
-				border: 1px solid $o-qti-hottext-checked-border-color;
-			}
-		}
-	}
-
 
 	.gap {
 		font-weight: bold;
@@ -835,7 +715,7 @@ tr.choiceinteraction {
 }
 
 .choiceInteraction input + i  {
-	background-color: red;
+	display: none;
 }
 
 .choiceInteraction div.o_qti_item_choice_option_flow  {
@@ -1025,6 +905,134 @@ table.o_qti_item_kprim {
 	
 	td.o_match_true_false_wrong {
 		background-color: $o-qti-match-true-false-wrong-bg;
+	}
+}
+
+/* Hottext interaction */
+.hottextInteraction	.hottext {		
+	position: relative;
+	margin: -2px 0.15em -2px 0.15em;
+	white-space: nowrap;
+
+	input {
+		margin: 0 3px 0 2px;
+		position: absolute;
+		top: 0.1em;
+		left: 0.05em;
+		+label {
+			display: inline;
+			padding: 0 0.1em 0 1.2em;
+			background: $o-qti-hottext-bg;
+			border: 1px solid $o-qti-hottext-border-color;
+			border-radius: $o-qti-hottext-border-radius;
+			
+			color: $o-qti-hottext-color;
+			font-weight: normal;
+			white-space: normal;
+		}
+		&:checked+label {
+			color: $o-qti-hottext-checked-color;
+			background: $o-qti-hottext-checked-bg;
+			border: 1px solid $o-qti-hottext-checked-border-color;
+		}
+	}
+}
+
+/* Order interaction */
+.orderInteraction {
+	div.highlight {
+		border: 1px solid $o-qti-highlight-color;
+	}
+	
+	div.box.vertical {
+		width: 50%;
+		float: left;
+		position: relative;
+		padding: 0;
+		margin-top: 5px;
+		
+		ul {
+			min-height: 200px;
+		}
+	}
+	
+	div.box.horizontal {
+		ul {
+			min-height: 50px;
+			width: 100%;
+		}
+	}
+	
+	div.box.source {
+		padding: 5px 10px;
+		border: 1px solid $o-qti-order-sources-border-color;
+		border-radius: $o-qti-order-border-radius;
+		background: $o-qti-order-sources-bg;
+	}
+	
+	div.box.source.horizontal {
+		padding: 5px 10px 15px 10px;
+	}
+	
+	div.box.target {
+		ul {
+			border: 2px solid $o-qti-order-target-border-color;
+			border-radius: $o-qti-order-border-radius;
+			background: $o-qti-order-target-bg;
+			
+			&.oo-accepted {
+				border-color: $o-qti-order-drop-accept-border-color;
+			}
+		}	
+	}
+	
+	div.box.target.vertical {
+		padding: 6px 0 0 10px;
+		
+		ul {
+			padding: 10px;
+		}
+	}
+	
+	div.box.target.horizontal {
+		padding-top: 10px;
+		
+		ul {
+			padding: 10px 10px 0 10px;
+		}
+	}
+	
+	div.box.horizontal ul li {
+		float: left;
+		width: auto;
+		margin-right: 10px;
+		min-width: 50px;
+	}
+
+	div.box span.info {
+		color: $o-qti-box-color;
+		font-style: italic;
+		font-size: smaller;
+	}
+
+	ul {
+		list-style-type: none;
+		margin: 0;
+		padding: 0;
+	}
+}
+
+/* Slider interaction */
+.sliderInteraction {
+	margin: 1em;
+	.sliderVertical .sliderValue {
+		margin: 1em 0;
+	}
+	.sliderVertical .sliderWidget {
+		height: 200px;
+	}
+	.sliderHorizontal .sliderValue {
+		text-align: center;
 	}
 }
 
@@ -1362,6 +1370,10 @@ ul.testPartDrilldown {
 	margin-top: 0.5em;
 }
 
+tr.o_test_session_error>td, tr.o_test_session_cancelled>td {
+	text-decoration: line-through;
+}
+
 /* Statistics */
 /* Override the same for QTI 1.2 */
 ul.o_qti_statistics_answers li span.o_qti_statistics_answer {
@@ -1421,7 +1433,6 @@ ul.o_qti_statistics_answers li span.o_qti_statistics_answer {
 						margin: 0;
 						padding: 5px 10px 10px 5px;
 						border-top: 1px solid $panel-default-border;
-						broder-bottom: 1px solid $panel-default-border;
 						h4 {
 							font-size: 100%;
 							font-weight: bold;
@@ -1449,6 +1460,65 @@ ul.o_qti_statistics_answers li span.o_qti_statistics_answer {
 	width: auto;
 }
 
+/* Statistics */
+div.o_qti_statistics {
+	ul { 
+		list-style-type: none;
+		padding:0; 
+		margin:0;
+		font-size: 90%;
+		
+		strong {font-weight: normal;}
+		li { 
+			padding-left: 48px; 
+			margin-left: 0;
+			margin-bottom: 10px;	
+			&.o_qti_statistics-ncorrect:before { font-size: 125%; content:'\2A2F\00A0\00A0'; }
+			&.o_qti_statistics-correct:before { font-size: 125%; content:'\2713\00A0\00A0'; }
+			&.o_qti_statistics-kplus:before { font-size: 125%; content:'\2713\00A0\2A2F\00A0\00A0'; }
+			&.o_qti_statistics-kminus:before { font-size: 125%; content:'\2A2F\00A0\2713\00A0\00A0'; }
+			img { vertical-align: top;}
+		}
+	}
+
+	/* table style that floats to a two column table when enough space available */	
+	table.o_qti_statistics_figures {
+		tr { float: left; }		
+		tr:nth-child(2n+1) { clear: left; padding-right: 20px; }
+		td, th { width: 300px; padding-left: 0; vertical-align: bottom; }
+		th+td { width: 100px; }
+	}
+	
+	.o_qti_statistics_answer {
+		background: #F5F5F5;
+		padding: 1px 2px;
+		width: 90%;
+	}
+	
+	div.o_qti_statistics_legend {
+		padding-top: 10px;
+		width: 470px;
+		border: 1px solid $table-border-color;
+		border-radius: $panel-border-radius;
+		ul li {
+			.bar_green { background-color:#9dd53a; }
+			.bar_red { background-color:#f85032; }
+			.bar_grey { background-color:lightgrey; }
+			
+			.bar_color_legend {
+				display: inline-block;
+				width: 1em;
+				height: 1em;
+				margin-right: 0.3em;
+			}
+		}
+	}
+}
+
+/* Instead of media print because Firefox doesn't take some rules in account */
+.o_qti_print div.o_qti_statistics { width:680px; }
+
+
 @media print {
 	canvas, div.hotspotInteraction>div>div {
 		-webkit-print-color-adjust: exact;
@@ -1470,6 +1540,7 @@ ul.o_qti_statistics_answers li span.o_qti_statistics_answer {
 	
 	.choiceinteraction input + i,
 	.matchInteraction input + i  {
+		display: inline;
 		font-family: FontAwesome;
 		font-style: normal;
 		font-weight: normal;
@@ -1495,5 +1566,9 @@ ul.o_qti_statistics_answers li span.o_qti_statistics_answer {
 	.choiceInteraction input[type="checkbox"][disabled]:checked + i:before,
 	.matchInteraction input[type="checkbox"][disabled]:checked + i:before {
 		content: $fa-var-check-square-o;
+	}
+	
+	div.o_qti_statistics {
+		width:680px;
 	}
 }

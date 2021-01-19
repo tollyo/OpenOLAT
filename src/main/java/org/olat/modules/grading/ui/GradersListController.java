@@ -58,6 +58,7 @@ import org.olat.core.util.mail.MailTemplate;
 import org.olat.core.util.mail.MailerResult;
 import org.olat.modules.co.ContactFormController;
 import org.olat.modules.grading.GraderStatus;
+import org.olat.modules.grading.GradingSecurityCallback;
 import org.olat.modules.grading.GradingService;
 import org.olat.modules.grading.RepositoryEntryGradingConfiguration;
 import org.olat.modules.grading.model.GraderWithStatistics;
@@ -95,8 +96,9 @@ public class GradersListController extends FormBasicController {
 	
 	private int counter = 0;
 	private final RepositoryEntry referenceEntry;
-	private final boolean isAdministrativeUser;
 	private List<UserPropertyHandler> userPropertyHandlers;
+	
+	private final GradingSecurityCallback secCallback;
 	
 	private ToolsController toolsCtrl;
 	private CloseableModalController cmc;
@@ -117,21 +119,23 @@ public class GradersListController extends FormBasicController {
 	@Autowired
 	private BaseSecurityModule securityModule;
 	
-	public GradersListController(UserRequest ureq, WindowControl wControl) {
-		this(ureq, wControl, null);
+	public GradersListController(UserRequest ureq, WindowControl wControl, GradingSecurityCallback secCallback) {
+		this(ureq, wControl, null, secCallback);
 
 		searchCtrl = new GradersSearchController(ureq, getWindowControl(), mainForm);
 		listenTo(searchCtrl);
 		flc.add("search", searchCtrl.getInitialFormItem());
 	}
 	
-	public GradersListController(UserRequest ureq, WindowControl wControl, RepositoryEntry referenceEntry) {
+	public GradersListController(UserRequest ureq, WindowControl wControl,
+			RepositoryEntry referenceEntry, GradingSecurityCallback secCallback) {
 		super(ureq, wControl, "graders_list");
 		setTranslator(userManager.getPropertyHandlerTranslator(getTranslator()));
+		this.secCallback = secCallback;
 		this.referenceEntry = referenceEntry;
 		
 		Roles roles = ureq.getUserSession().getRoles();
-		isAdministrativeUser = securityModule.isUserAllowedAdminProps(roles);
+		boolean isAdministrativeUser = securityModule.isUserAllowedAdminProps(roles);
 		userPropertyHandlers = userManager.getUserPropertyHandlersFor(USER_PROPS_ID, isAdministrativeUser);
 		
 		initForm(ureq);
@@ -142,12 +146,9 @@ public class GradersListController extends FormBasicController {
 	protected void initForm(FormItemContainer formLayout, Controller listener, UserRequest ureq) {
 		addGraderButton = uifactory.addFormLink("add.grader", formLayout, Link.BUTTON);
 		addGraderButton.setIconLeftCSS("o_icon o_icon_add_item");
+		addGraderButton.setElementCssClass("o_sel_repo_grading_add_graders");
 		
 		FlexiTableColumnModel columnsModel = FlexiTableDataModelFactory.createFlexiTableColumnModel();
-		if(isAdministrativeUser) {
-			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(GradersCol.username));
-		}
-		
 		int colPos = USER_PROPS_OFFSET;
 		for (UserPropertyHandler userPropertyHandler : userPropertyHandlers) {
 			if (userPropertyHandler == null) continue;
@@ -167,7 +168,9 @@ public class GradersListController extends FormBasicController {
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(GradersCol.overdue, "overdue"));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(GradersCol.oldestOpenAssignment));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(GradersCol.recordedMetadataTime));
-		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(GradersCol.recordedTime));
+		if(secCallback.canViewRecordedRealMinutes()) {
+			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(GradersCol.recordedTime));
+		}
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(GradersCol.absence, new GraderAbsenceLeaveCellRenderer(getTranslator())));
 		
 		DefaultFlexiColumnModel toolsCol = new DefaultFlexiColumnModel(GradersCol.tools);
@@ -333,14 +336,9 @@ public class GradersListController extends FormBasicController {
 	
 	private void doAddGrader(UserRequest ureq) {
 		removeAsListenerAndDispose(importGradersWizard);
-		
-		RepositoryEntryGradingConfiguration configuration = null;
-		if(referenceEntry != null) {
-			configuration = gradingService.getOrCreateConfiguration(referenceEntry);
-		}
 
 		final ImportGradersContext graders = new ImportGradersContext(referenceEntry);
-		GraderMailTemplate mailTemplate = GraderMailTemplate.graderTo(getTranslator(), null, null, referenceEntry, configuration);
+		GraderMailTemplate mailTemplate = GraderMailTemplate.graderTo(getTranslator(), null, null, referenceEntry);
 		
 		Step start = new ImportGrader1ChooseMemberStep(ureq, graders, mailTemplate, referenceEntry == null);
 		StepRunnerCallback finish = (uureq, wControl, runContext) -> {
@@ -422,7 +420,7 @@ public class GradersListController extends FormBasicController {
 		
 		List<MailTemplate> templates = new ArrayList<>();
 		templates.add(GraderMailTemplate.empty(getTranslator(), null, null, referenceEntry));
-		templates.add(GraderMailTemplate.graderTo(getTranslator(), null, null, refEntry, configuration));
+		templates.add(GraderMailTemplate.graderTo(getTranslator(), null, null, refEntry));
 		templates.add(GraderMailTemplate.notification(getTranslator(), null, null, refEntry, configuration));
 		templates.add(GraderMailTemplate.firstReminder(getTranslator(), null, null, refEntry, configuration));
 		templates.add(GraderMailTemplate.secondReminder(getTranslator(), null, null, refEntry, configuration));

@@ -50,7 +50,9 @@ import org.olat.core.id.OrganisationRef;
 import org.olat.core.id.Roles;
 import org.olat.core.logging.AssertException;
 import org.olat.core.util.coordinate.CoordinatorManager;
+import org.olat.core.util.mail.MailPackage;
 import org.olat.core.util.resource.OresHelper;
+import org.olat.modules.coach.manager.CoachingDAO;
 import org.olat.modules.curriculum.Curriculum;
 import org.olat.modules.curriculum.CurriculumCalendars;
 import org.olat.modules.curriculum.CurriculumDataDeletable;
@@ -83,9 +85,11 @@ import org.olat.modules.curriculum.model.CurriculumElementWebDAVInfos;
 import org.olat.modules.curriculum.model.CurriculumImpl;
 import org.olat.modules.curriculum.model.CurriculumInfos;
 import org.olat.modules.curriculum.model.CurriculumMember;
+import org.olat.modules.curriculum.model.CurriculumMemberStats;
 import org.olat.modules.curriculum.model.CurriculumRefImpl;
 import org.olat.modules.curriculum.model.CurriculumSearchParameters;
 import org.olat.modules.curriculum.model.SearchMemberParameters;
+import org.olat.modules.curriculum.ui.CurriculumMailing;
 import org.olat.modules.lecture.manager.LectureBlockToGroupDAO;
 import org.olat.modules.taxonomy.TaxonomyLevel;
 import org.olat.modules.taxonomy.TaxonomyLevelRef;
@@ -115,6 +119,8 @@ public class CurriculumServiceImpl implements CurriculumService, OrganisationDat
 	private DB dbInstance;
 	@Autowired
 	private GroupDAO groupDao;
+	@Autowired
+	private CoachingDAO coachingDao;
 	@Autowired
 	private CurriculumDAO curriculumDao;
 	@Autowired
@@ -162,7 +168,7 @@ public class CurriculumServiceImpl implements CurriculumService, OrganisationDat
 		for(CurriculumElement rootElement:curriculum.getRootElements()) {
 			deleted &= deleteCurriculumElement(rootElement);
 		}
-		dbInstance.commit();
+		dbInstance.commitAndCloseSession();
 		curriculum = (CurriculumImpl)getCurriculum(curriculumRef);
 		if(deleted) {
 			curriculumDao.delete(curriculum);
@@ -304,7 +310,7 @@ public class CurriculumServiceImpl implements CurriculumService, OrganisationDat
 	@Override
 	public List<CurriculumRef> getMyActiveCurriculumRefs(Identity identity) {
 		List<Long> curriculumKeys = curriculumDao.getMyActiveCurriculumKeys(identity);
-		return curriculumKeys.stream().map(CurriculumRefImpl::new).collect(Collectors.toList());
+		return curriculumKeys.stream().distinct().map(CurriculumRefImpl::new).collect(Collectors.toList());
 	}
 
 	@Override
@@ -319,7 +325,8 @@ public class CurriculumServiceImpl implements CurriculumService, OrganisationDat
 				beginDate, endDate, parentRef, elementType, calendars, lectures, learningProgress, curriculum);
 		if(element.getParent() != null) {
 			Group organisationGroup = element.getGroup();
-			List<GroupMembership> memberships = groupDao.getMemberships(element.getParent().getGroup());
+			List<GroupMembership> memberships = groupDao.getMemberships(element.getParent().getGroup(),
+					GroupMembershipInheritance.inherited, GroupMembershipInheritance.root);
 			for(GroupMembership membership:memberships) {
 				if(membership.getInheritanceMode() == GroupMembershipInheritance.inherited
 						|| membership.getInheritanceMode() == GroupMembershipInheritance.root) {
@@ -401,9 +408,12 @@ public class CurriculumServiceImpl implements CurriculumService, OrganisationDat
 
 	@Override
 	public boolean deleteCurriculumElement(CurriculumElementRef element) {
+		if(element == null) return true; // nothing to do
+
+		boolean delete = true;
 		List<CurriculumElement> children = curriculumElementDao.getChildren(element);
 		for(CurriculumElement child:children) {
-			deleteCurriculumElement(child);
+			delete &= deleteCurriculumElement(child);
 		}
 
 		CurriculumElementImpl reloadedElement = (CurriculumElementImpl)curriculumElementDao.loadByKey(element.getKey());
@@ -420,7 +430,6 @@ public class CurriculumServiceImpl implements CurriculumService, OrganisationDat
 		// remove relations to lecture blocks
 		lectureBlockToGroupDao.deleteLectureBlockToGroup(reloadedElement.getGroup());
 		
-		boolean delete = true;
 		Map<String,CurriculumDataDeletable> deleteDelegates = CoreSpringFactory.getBeansOfType(CurriculumDataDeletable.class);
 		for(CurriculumDataDeletable deleteDelegate:deleteDelegates.values()) {
 			delete &= deleteDelegate.deleteCurriculumElementData(reloadedElement);
@@ -456,7 +465,8 @@ public class CurriculumServiceImpl implements CurriculumService, OrganisationDat
 		List<GroupMembership> membershipsToPropagate = new ArrayList<>();
 		Map<IdentityToRoleKey,GroupMembership> identityRoleToNewParentMembership = new HashMap<>();
 		if(newParent != null) {
-			List<GroupMembership> memberships = groupDao.getMemberships(newParent.getGroup());
+			List<GroupMembership> memberships = groupDao.getMemberships(newParent.getGroup(),
+					GroupMembershipInheritance.inherited, GroupMembershipInheritance.root);
 			for(GroupMembership membership:memberships) {
 				if(membership.getInheritanceMode() == GroupMembershipInheritance.inherited || membership.getInheritanceMode() == GroupMembershipInheritance.root) {
 					membershipsToPropagate.add(membership);
@@ -568,6 +578,30 @@ public class CurriculumServiceImpl implements CurriculumService, OrganisationDat
 	}
 	
 	@Override
+	public List<CurriculumMemberStats> getMembersWithStats(CurriculumElement element, SearchMemberParameters params) {
+		List<CurriculumMember> members = memberQueries.getMembers(element, params);
+		
+		Map<Identity, CurriculumMemberStats> rowMap = new HashMap<>();
+		Map<Long, CurriculumMemberStats> rowLongMap = new HashMap<>();
+		for(CurriculumMember member:members) {
+			CurriculumMemberStats row = rowMap.computeIfAbsent(member.getIdentity(), CurriculumMemberStats::new);
+			row.getMembership().setCurriculumElementRole(member.getRole());
+			row.addFirstTime(member.getCreationDate());
+			if(row.getMembership().isParticipant()) {
+				rowLongMap.put(member.getIdentity().getKey(), row);
+			}
+		}
+		
+		if(!rowLongMap.isEmpty()) {
+			List<CurriculumElement> descendants = curriculumElementDao.getDescendants(element);
+			descendants.add(element);
+			coachingDao.getStudentsCompletionStatement(descendants, rowLongMap);
+		}
+		
+		return new ArrayList<>(rowMap.values());
+	}
+
+	@Override
 	public List<Identity> getMembersIdentity(CurriculumElementRef element, CurriculumRoles role) {
 		return curriculumElementDao.getMembersIdentity(element, role.name());
 	}
@@ -593,7 +627,7 @@ public class CurriculumServiceImpl implements CurriculumService, OrganisationDat
 
 	@Override
 	public void updateCurriculumElementMemberships(Identity doer, Roles roles,
-			List<CurriculumElementMembershipChange> changes) {
+			List<CurriculumElementMembershipChange> changes, MailPackage mailing) {
 		
 		int count = 0;
 		for(CurriculumElementMembershipChange change:changes) {
@@ -603,6 +637,31 @@ public class CurriculumServiceImpl implements CurriculumService, OrganisationDat
 			}
 		}
 		dbInstance.commitAndCloseSession();
+		
+		if(mailing != null && mailing.isSendEmail()) {
+			sendMembershipNotificationsEmail(doer, changes, mailing);
+		}
+	}
+	
+	private void sendMembershipNotificationsEmail(Identity doer, List<CurriculumElementMembershipChange> changes, MailPackage mailing) {
+		Map<Identity,CurriculumElementMembershipChange> additionsToNotifiy = new HashMap<>();
+		for(CurriculumElementMembershipChange change:changes) {
+			if(change.addRole()) {
+				if(!additionsToNotifiy.containsKey(change.getMember())) {
+					additionsToNotifiy.put(change.getMember(), change);
+				} else {
+					CurriculumElementMembershipChange currentChange = additionsToNotifiy.get(change.getMember());
+					if(change.numOfSegments() < currentChange.numOfSegments()) {
+						additionsToNotifiy.put(change.getMember(), change);
+					}
+				}
+			}
+		}
+		
+		for(CurriculumElementMembershipChange additionToNotifiy:additionsToNotifiy.values()) {
+			Curriculum curriculum = additionToNotifiy.getElement().getCurriculum();
+			CurriculumMailing.sendEmail(doer, additionToNotifiy.getMember(), curriculum, additionToNotifiy.getElement(), mailing);
+		}
 	}
 	
 	private void updateCurriculumElementMembership(CurriculumElementMembershipChange changes) {
@@ -613,6 +672,14 @@ public class CurriculumServiceImpl implements CurriculumService, OrganisationDat
 				addMember(element, changes.getMember(), CurriculumRoles.curriculumelementowner);
 			} else {
 				removeMember(element, changes.getMember(), CurriculumRoles.curriculumelementowner);
+			}
+		}
+		
+		if(changes.getMasterCoach() != null) {
+			if(changes.getMasterCoach().booleanValue()) {
+				addMember(element, changes.getMember(), CurriculumRoles.mastercoach);
+			} else {
+				removeMember(element, changes.getMember(), CurriculumRoles.mastercoach);
 			}
 		}
 		
@@ -650,6 +717,7 @@ public class CurriculumServiceImpl implements CurriculumService, OrganisationDat
 			inheritanceMode = GroupMembershipInheritance.none;
 		}
 		addMember(element, member, role, inheritanceMode);
+		dbInstance.commit();
 	}
 	
 	public void addMember(CurriculumElement element, Identity member, CurriculumRoles role, GroupMembershipInheritance inheritanceMode) {
@@ -836,7 +904,7 @@ public class CurriculumServiceImpl implements CurriculumService, OrganisationDat
 	}
 
 	@Override
-	public List<CurriculumElementRepositoryEntryViews> getCurriculumElements(Identity identity, Roles roles, List<CurriculumRef> curriculums) {
+	public List<CurriculumElementRepositoryEntryViews> getCurriculumElements(Identity identity, Roles roles, List<? extends CurriculumRef> curriculums) {
 		if(curriculums == null || curriculums.isEmpty()) return Collections.emptyList();
 		
 		List<CurriculumElementMembership> memberships = curriculumElementDao.getMembershipInfos(curriculums, null, identity);

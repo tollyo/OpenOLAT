@@ -149,7 +149,7 @@ public class DisplayPortraitController extends BasicController implements Generi
 		this.displayPortraitImage = displayPortraitImage;
 		
 		UserSession usess = ureq.getUserSession();
-		isAnonymous = usess == null ? false : ureq.getUserSession().getRoles().isGuestOnly();// export data doesn't have a session
+		isAnonymous = usess != null && usess.getRoles().isGuestOnly();// export data doesn't have a session
 
 		mapper = new UserAvatarMapper(useLarge);
 		mapperPath = registerMapper(ureq, mapper);
@@ -183,7 +183,7 @@ public class DisplayPortraitController extends BasicController implements Generi
 			}
 			
 			if (useLarge) {
-				image = displayPortraitManager.getBigPortrait(portraitIdent.getName());
+				image = displayPortraitManager.getBigPortrait(portraitIdent);
 				if (image != null && !forceAnonymous && !isDeletedUser) {
 					myContent.contextPut("portraitCssClass", DisplayPortraitManager.AVATAR_BIG_CSS_CLASS);
 				} else if (isAnonymous || forceAnonymous || isDeletedUser) {
@@ -196,7 +196,7 @@ public class DisplayPortraitController extends BasicController implements Generi
 					myContent.contextPut("portraitCssClass", DisplayPortraitManager.DUMMY_FEMALE_BIG_CSS_CLASS);
 				}
 			} else {
-				image = displayPortraitManager.getSmallPortrait(portraitIdent.getName());
+				image = displayPortraitManager.getSmallPortrait(portraitIdent);
 				if (image != null && !forceAnonymous && !isDeletedUser) {
 					myContent.contextPut("portraitCssClass", DisplayPortraitManager.AVATAR_SMALL_CSS_CLASS);					
 				} else if (isAnonymous || forceAnonymous || isDeletedUser) {
@@ -237,9 +237,6 @@ public class DisplayPortraitController extends BasicController implements Generi
 		}
 	}
 
-	/**
-	 * @see org.olat.core.gui.control.DefaultController#event(org.olat.core.gui.UserRequest, org.olat.core.gui.components.Component, org.olat.core.gui.control.Event)
-	 */
 	@Override
 	public void event(UserRequest ureq, Component source, Event event) {
 		if (source == myContent) {

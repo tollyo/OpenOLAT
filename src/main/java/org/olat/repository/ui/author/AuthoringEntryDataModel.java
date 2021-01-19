@@ -23,7 +23,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.olat.core.CoreSpringFactory;
+import org.olat.core.gui.components.Component;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.DefaultFlexiTableDataSourceModel;
+import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiBusinessPathModel;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiTableColumnModel;
 import org.olat.core.id.Identity;
 import org.olat.core.id.Roles;
@@ -38,7 +40,7 @@ import org.olat.repository.handlers.RepositoryHandlerFactory;
  * @author srosse, stephane.rosse@frentix.com, http://www.frentix.com
  *
  */
-class AuthoringEntryDataModel extends DefaultFlexiTableDataSourceModel<AuthoringEntryRow> {
+class AuthoringEntryDataModel extends DefaultFlexiTableDataSourceModel<AuthoringEntryRow> implements FlexiBusinessPathModel {
 
 	private final RepositoryHandlerFactory handlerFactory;
 	private Identity identity;
@@ -87,6 +89,23 @@ class AuthoringEntryDataModel extends DefaultFlexiTableDataSourceModel<Authoring
 		super.clear();
 		getSourceDelegate().resetCount();
 	}
+	
+	@Override
+	public String getUrl(Component source, Object object, String action) {
+		if(action == null) return null;
+		
+		AuthoringEntryRow row = (AuthoringEntryRow)object;
+		if("select".equals(action)) {
+			return row.getUrl();
+		}
+		if("details".equals(action)) {
+			return row.getUrl().concat("/Infos/0");
+		}
+		if("edit".equals(action)) {
+			return row.getUrl().concat("/Editor/0");
+		}
+		return null;
+	}
 
 	@Override
 	public Object getValueAt(int row, int col) {
@@ -104,6 +123,8 @@ class AuthoringEntryDataModel extends DefaultFlexiTableDataSourceModel<Authoring
 			case lifecycleSoftkey: return item.getLifecycleSoftKey();
 			case lifecycleStart: return item.getLifecycleStart();
 			case lifecycleEnd: return item.getLifecycleEnd();
+			case taxonomyLevels: return item.getTaxonomyLevels();
+			case taxonomyPaths: return item.getTaxonomyLevels();
 			case externalId: return item.getExternalId();
 			case externalRef: return item.getExternalRef();
 			case author: return item.getAuthor();
@@ -157,6 +178,8 @@ class AuthoringEntryDataModel extends DefaultFlexiTableDataSourceModel<Authoring
 		lifecycleSoftkey("table.header.lifecycle.softkey"),
 		lifecycleStart("table.header.lifecycle.start"),
 		lifecycleEnd("table.header.lifecycle.end"),
+		taxonomyLevels("table.header.taxonomy.levels"),
+		taxonomyPaths("table.header.taxonomy.paths"),
 		externalId("table.header.externalid"),
 		externalRef("table.header.externalref"),
 		displayName("cif.displayname"),

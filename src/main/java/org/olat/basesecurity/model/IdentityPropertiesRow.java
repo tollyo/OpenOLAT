@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Locale;
 
 import org.olat.core.id.Identity;
+import org.olat.core.id.IdentityLifecycle;
 import org.olat.user.UserPropertiesRow;
 import org.olat.user.propertyhandlers.UserPropertyHandler;
 
@@ -33,36 +34,64 @@ import org.olat.user.propertyhandlers.UserPropertyHandler;
  * @author srosse, stephane.rosse@frentix.com, http://www.frentix.com
  *
  */
-public class IdentityPropertiesRow extends UserPropertiesRow {
+public class IdentityPropertiesRow extends UserPropertiesRow implements IdentityLifecycle {
 	
 	private final Integer status;
 	private final Date lastLogin;
 	private final Date creationDate;
+	private final Date inactivationDate;
+	private final Date reactivationDate;
+	private final Date expirationDate;
 	
 	public IdentityPropertiesRow(Identity identity, List<UserPropertyHandler> userPropertyHandlers, Locale locale) {
 		super(identity, userPropertyHandlers, locale);
 		status = identity.getStatus();
 		lastLogin = identity.getLastLogin();
 		creationDate = identity.getCreationDate();
+		inactivationDate = identity.getInactivationDate();
+		reactivationDate = identity.getReactivationDate();
+		expirationDate = identity.getExpirationDate();
 	}
 	
-	public IdentityPropertiesRow(Long identityKey, String identityName, Date creationDate, Date lastLogin, Integer status,
+	public IdentityPropertiesRow(Long identityKey, Date creationDate, Date lastLogin, Integer status,
+			Date inactivationDate, Date reactivationDate, Date expirationDate,
 			List<UserPropertyHandler> userPropertyHandlers, String[] identityProps, Locale locale) {
-		super(identityKey, identityName, userPropertyHandlers, identityProps, locale);
+		super(identityKey, userPropertyHandlers, identityProps, locale);
 		this.status = status;
 		this.creationDate = creationDate;
 		this.lastLogin = lastLogin;	
+		this.inactivationDate = inactivationDate;
+		this.reactivationDate = reactivationDate;
+		this.expirationDate = expirationDate;
 	}
 	
+	@Override
 	public Integer getStatus() {
 		return status;
 	}
 
+	@Override
 	public Date getCreationDate() {
 		return creationDate;
 	}
 
+	@Override
 	public Date getLastLogin() {
 		return lastLogin;
+	}
+
+	@Override
+	public Date getInactivationDate() {
+		return inactivationDate;
+	}
+
+	@Override
+	public Date getReactivationDate() {
+		return reactivationDate;
+	}
+
+	@Override
+	public Date getExpirationDate() {
+		return expirationDate;
 	}
 }

@@ -91,7 +91,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 public class VideoDisplayController extends BasicController {
 
 	private static final String GUIPREF_KEY_PREFERRED_RESOLUTION = "preferredResolution";
-
+	private static final int EXPIRATION_TIME = 60 * 60;// one hour
+	
 	private VideoAssessmentItemController questionCtrl;
 	private UserCommentsAndRatingsController commentsAndRatingCtr;
 	
@@ -103,7 +104,6 @@ public class VideoDisplayController extends BasicController {
 	private Integer userPreferredResolution;
 	
 	private RepositoryEntry videoEntry;
-	private String descriptionText;
 	private String mediaRepoBaseUrl;
 	private VideoMeta videoMetadata;
 	private VideoMarkers videoMarkers;
@@ -118,13 +118,9 @@ public class VideoDisplayController extends BasicController {
 	private VideoModule videoModule;
 	@Autowired
 	private VideoManager videoManager;
-
-	public VideoDisplayController(UserRequest ureq, WindowControl wControl, RepositoryEntry videoEntry, boolean autoWidth) {
-		this(ureq, wControl, videoEntry, null, null, VideoDisplayOptions.valueOf(false, false, false, true, true, false, autoWidth, null, false, false));
-	}
 	
 	public VideoDisplayController(UserRequest ureq, WindowControl wControl, RepositoryEntry videoEntry) {
-		this(ureq, wControl, videoEntry, null, null, VideoDisplayOptions.valueOf(false, false, false, true, true, false, false, null, false, false));
+		this(ureq, wControl, videoEntry, null, null, VideoDisplayOptions.valueOf(false, false, false, true, true, true, videoEntry.getDescription(), false, false));
 	}
 	
 	/**
@@ -141,7 +137,6 @@ public class VideoDisplayController extends BasicController {
 		super(ureq, wControl);
 		this.videoEntry = videoEntry;
 		this.displayOptions = displayOptions;
-		this.descriptionText = getDescription(courseNode, displayOptions);
 		
 		mainVC = createVelocityContainer("video_run");
 		putInitialPanel(mainVC);
@@ -223,12 +218,6 @@ public class VideoDisplayController extends BasicController {
 		SubscriptionContext ctx = new SubscriptionContext(ores.getResourceableTypeName(), ores.getResourceableId(), subIdent);
 		PublisherData data = new PublisherData(VideoFileResource.TYPE_NAME, ores.getResourceableId() + "-" + subIdent, businessPath);
 		return new PublishingInformations(data, ctx);
-	}
-
-	private String getDescription(VideoCourseNode courseNode, VideoDisplayOptions options) {
-		if (options.isCustomDescription()) return options.getDescriptionText();
-		if (courseNode != null) return courseNode.getLearningObjectives();
-		return null;
 	}
 	
 	public VideoMeta getVideoMetadata() {
@@ -349,9 +338,10 @@ public class VideoDisplayController extends BasicController {
 			// Mapper for Video
 			
 			// Mapper for versions specific because not in same base as the resource itself
-			String transcodingMapperId = "transcoding-" + videoEntry.getOlatResource().getResourceableId();
+			String transcodingMapperId = mainVC.getDispatchID() + "-transcoding-" + videoEntry.getOlatResource().getResourceableId();
 			VFSContainer transcodedContainer = videoManager.getTranscodingContainer(videoEntry.getOlatResource());
-			String transcodedUrl = registerCacheableMapper(ureq, transcodingMapperId, new VideoMediaMapper(transcodedContainer));
+			String transcodedUrl = registerCacheableMapper(ureq, transcodingMapperId,
+					new VideoMediaMapper(transcodedContainer), EXPIRATION_TIME);
 			mainVC.contextPut("transcodedUrl", transcodedUrl);
 			
 			// Add transcoded versions
@@ -420,14 +410,14 @@ public class VideoDisplayController extends BasicController {
 	}
 	
 	private void loadMetadataAndDisplayOptions(UserRequest ureq) {
-		String masterMapperId = "master-" + videoEntry.getOlatResource().getResourceableId();
-		String masterUrl = registerCacheableMapper(ureq, masterMapperId, new VideoMediaMapper(videoManager.getMasterContainer(videoEntry.getOlatResource())));
+		String masterMapperId = mainVC.getDispatchID() + "-master-" + videoEntry.getOlatResource().getResourceableId();
+		String masterUrl = registerCacheableMapper(ureq, masterMapperId,
+				new VideoMediaMapper(videoManager.getMasterContainer(videoEntry.getOlatResource())), EXPIRATION_TIME);
 		mainVC.contextPut("masterUrl", masterUrl);
 		
 		mainVC.contextPut("title", videoEntry.getDisplayname());
-		if(displayOptions == null || displayOptions.isShowDescription()) {
-			String desc = (StringHelper.containsNonWhitespace(descriptionText) ? descriptionText : videoEntry.getDescription());
-			setText(desc, "description");
+		if(displayOptions.isShowDescription()) {
+			setText(displayOptions.getDescriptionText(), "description");
 		}
 		
 		String authors = videoEntry.getAuthors();

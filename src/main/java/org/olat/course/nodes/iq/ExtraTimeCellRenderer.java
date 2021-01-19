@@ -19,17 +19,12 @@
  */
 package org.olat.course.nodes.iq;
 
-import java.util.Calendar;
-import java.util.Date;
-import java.util.Locale;
-
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiCellRenderer;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiTableComponent;
 import org.olat.core.gui.render.Renderer;
 import org.olat.core.gui.render.StringOutput;
 import org.olat.core.gui.render.URLBuilder;
 import org.olat.core.gui.translator.Translator;
-import org.olat.core.util.Formatter;
 
 /**
  * 
@@ -38,48 +33,22 @@ import org.olat.core.util.Formatter;
  *
  */
 public class ExtraTimeCellRenderer implements FlexiCellRenderer {
-	
-	private final boolean renderDueDate;
-	private final int timeLimitInSeconds;
-	private final Formatter formatter;
-	
-	public ExtraTimeCellRenderer(boolean renderDueDate, int timeLimitInSeconds, Locale locale) {
-		this.renderDueDate = renderDueDate;
-		this.timeLimitInSeconds = timeLimitInSeconds;
-		formatter = Formatter.getInstance(locale);
-	}
 
 	@Override
 	public void render(Renderer renderer, StringOutput target, Object cellValue, int row,
 			FlexiTableComponent source, URLBuilder ubu, Translator translator) {
-		if(cellValue instanceof ExtraTimeInfos) {
-			ExtraTimeInfos infos = (ExtraTimeInfos)cellValue;
+		if(cellValue instanceof ExtraInfos) {
+			ExtraInfos infos = (ExtraInfos)cellValue;
 			Integer extraTimeInSeconds = infos.getExtraTimeInSeconds();
-			
-			if(renderDueDate) {
-				if(infos.getStart() != null) {
-					int totalTime = timeLimitInSeconds;
-					if(extraTimeInSeconds != null) {
-						totalTime += extraTimeInSeconds;
-					}
-					
-					Calendar now = Calendar.getInstance();
-					Calendar cal = Calendar.getInstance();
-					cal.setTime(infos.getStart());
-					cal.add(Calendar.SECOND, totalTime);
-					Date dueDate = cal.getTime();
-
-					boolean sameDay = now.get(Calendar.YEAR) == cal.get(Calendar.YEAR)
-							&& now.get(Calendar.DAY_OF_YEAR) == cal.get(Calendar.DAY_OF_YEAR);
-					if(sameDay) {
-						target.append(formatter.formatTime(dueDate));
-					} else {
-						target.append(formatter.formatDateAndTime(dueDate));
-					}
-				}
-			} else if(extraTimeInSeconds != null) {
+			Integer compensationExtraTimeInSeconds = infos.getCompensationExtraTimeInSeconds();
+	
+			if(extraTimeInSeconds != null) {
 				int extraTimeInMinutes = extraTimeInSeconds.intValue() / 60;
-				target.append("+").append(extraTimeInMinutes).append("m");
+				target.append("<i class='o_icon o_icon_extra_time'> </i> ").append("+").append(extraTimeInMinutes).append("m");
+			}
+			if(compensationExtraTimeInSeconds != null) {
+				int extraTimeInMinutes = compensationExtraTimeInSeconds.intValue() / 60;
+				target.append("<i class='o_icon o_icon_disadvantage_compensation'> </i> ").append("+").append(extraTimeInMinutes).append("m");
 			}
 		}
 	}

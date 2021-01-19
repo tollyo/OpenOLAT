@@ -23,22 +23,32 @@ import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.form.flexible.FormItem;
 import org.olat.core.gui.components.form.flexible.FormItemContainer;
 import org.olat.core.gui.components.form.flexible.elements.MultipleSelectionElement;
+import org.olat.core.gui.components.form.flexible.elements.SingleSelection;
 import org.olat.core.gui.components.form.flexible.elements.TextElement;
 import org.olat.core.gui.components.form.flexible.impl.FormBasicController;
 import org.olat.core.gui.components.form.flexible.impl.FormEvent;
 import org.olat.core.gui.components.form.flexible.impl.FormLayoutContainer;
 import org.olat.core.gui.components.form.flexible.impl.elements.FormSubmit;
+import org.olat.core.gui.components.util.KeyValues;
 import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.WindowControl;
+import org.olat.core.helpers.Settings;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.Util;
 import org.olat.course.assessment.AssessmentHelper;
+import org.olat.ims.qti21.QTI21DeliveryOptions;
+import org.olat.ims.qti21.QTI21DeliveryOptions.PassedType;
+import org.olat.ims.qti21.QTI21Service;
 import org.olat.ims.qti21.model.xml.AssessmentTestBuilder;
+import org.olat.ims.qti21.model.xml.QtiMaxScoreEstimator;
 import org.olat.ims.qti21.ui.AssessmentTestDisplayController;
 import org.olat.ims.qti21.ui.editor.events.AssessmentTestEvent;
+import org.olat.repository.RepositoryEntry;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import uk.ac.ed.ph.jqtiplus.node.test.AssessmentTest;
 import uk.ac.ed.ph.jqtiplus.node.test.TimeLimits;
+import uk.ac.ed.ph.jqtiplus.resolution.ResolvedAssessmentTest;
 
 /**
  * 
@@ -53,19 +63,32 @@ public class AssessmentTestOptionsEditorController extends FormBasicController {
 
 	private FormLayoutContainer maxTimeCont;
 	private MultipleSelectionElement maxTimeEl;
-	private TextElement maxTimeHourEl, maxTimeMinuteEl;
-	private TextElement titleEl, maxScoreEl, cutValueEl;
+	private MultipleSelectionElement passedEnabledEl;
+	private SingleSelection passedTypeEl;
+	private TextElement titleEl;
+	private TextElement cutValueEl;
+	private TextElement maxTimeHourEl;
+	private TextElement maxTimeMinuteEl;
 	
+	private final RepositoryEntry testEntry;
 	private final boolean restrictedEdit;
 	private final AssessmentTest assessmentTest;
 	private final AssessmentTestBuilder testBuilder;
+	private final ResolvedAssessmentTest resolvedAssessmentTest;
+	private QTI21DeliveryOptions deliveryOptions;
 	
-	public AssessmentTestOptionsEditorController(UserRequest ureq, WindowControl wControl,
-			AssessmentTest assessmentTest, AssessmentTestBuilder testBuilder, boolean restrictedEdit) {
+	@Autowired
+	private QTI21Service qti21Service;
+	
+	public AssessmentTestOptionsEditorController(UserRequest ureq, WindowControl wControl, RepositoryEntry testEntry,
+			AssessmentTest assessmentTest, ResolvedAssessmentTest resolvedAssessmentTest, AssessmentTestBuilder testBuilder, boolean restrictedEdit) {
 		super(ureq, wControl, Util.createPackageTranslator(AssessmentTestDisplayController.class, ureq.getLocale()));
+		this.testEntry = testEntry;
 		this.assessmentTest = assessmentTest;
+		this.resolvedAssessmentTest = resolvedAssessmentTest;
 		this.testBuilder = testBuilder;
 		this.restrictedEdit = restrictedEdit;
+		this.deliveryOptions = qti21Service.getDeliveryOptions(testEntry);
 		initForm(ureq);
 	}
 
@@ -78,14 +101,36 @@ public class AssessmentTestOptionsEditorController extends FormBasicController {
 		titleEl.setMandatory(true);
 		titleEl.setEnabled(testBuilder.isEditable());
 
-		//score
-		String maxScore = testBuilder.getMaxScore() == null ? "" : AssessmentHelper.getRoundedScore(testBuilder.getMaxScore());
-		maxScoreEl = uifactory.addTextElement("max.score", "max.score", 8, maxScore, formLayout);
-		maxScoreEl.setEnabled(false);
-		
+		// max score estimated with shuffled and randomized sections, items
+		String estimatedMaxScore = getEstimatedMaxScoreText();
+		uifactory.addStaticTextElement("max.score", estimatedMaxScore, formLayout);
+		if(Settings.isDebuging()) {
+			// mostly for me
+			Double absolutMaxScore = testBuilder.getMaxScore();
+			uifactory.addStaticTextElement("absolut.max.score", AssessmentHelper.getRoundedScore(absolutMaxScore), formLayout);
+		}
+
 		Double cutValue = testBuilder.getCutValue();
+		PassedType passedType = deliveryOptions.getPassedType(cutValue);
+		
+		passedEnabledEl = uifactory.addCheckboxesHorizontal("passed.enabled", "passed.enabled", formLayout, onKeys, onValues);
+		passedEnabledEl.select(passedEnabledEl.getKey(0), passedType != PassedType.none);
+		passedEnabledEl.addActionListener(FormEvent.ONCHANGE);
+		passedEnabledEl.setEnabled(!restrictedEdit && testBuilder.isEditable());
+		
+		KeyValues passeddTypeKV = new KeyValues();
+		passeddTypeKV.add(KeyValues.entry(PassedType.manually.name(), translate("passed.manually")));
+		passeddTypeKV.add(KeyValues.entry(PassedType.cutValue.name(), translate("passed.cut.value")));
+		passedTypeEl = uifactory.addRadiosVertical("passed.type", formLayout, passeddTypeKV.keys(), passeddTypeKV.values());
+		passedTypeEl.addActionListener(FormEvent.ONCHANGE);
+		if (passedType != PassedType.none) {
+			passedTypeEl.select(passedType.name(), true);
+		}
+		passedTypeEl.setEnabled(!restrictedEdit && testBuilder.isEditable());
+		
 		String cutValueStr = cutValue == null ? "" : cutValue.toString();
 		cutValueEl = uifactory.addTextElement("cut.value", "cut.value", 8, cutValueStr, formLayout);
+		cutValueEl.setMandatory(true);
 		cutValueEl.setEnabled(!restrictedEdit && testBuilder.isEditable());
 		
 		TimeLimits timeLimits = assessmentTest.getTimeLimits();
@@ -125,8 +170,32 @@ public class AssessmentTestOptionsEditorController extends FormBasicController {
 		formLayout.add(buttonsCont);
 		FormSubmit submit = uifactory.addFormSubmitButton("save", "save", buttonsCont);
 		submit.setEnabled(testBuilder.isEditable());
+		
+		updateUI();
 	}
 	
+	private String getEstimatedMaxScoreText() {
+		Double estimatedMaxScore = QtiMaxScoreEstimator.estimateMaxScore(resolvedAssessmentTest);
+		if(estimatedMaxScore == null) {
+			estimatedMaxScore = testBuilder.getMaxScore();
+		}
+		StringBuilder sb = new StringBuilder();
+		if(estimatedMaxScore != null) {
+			sb.append(AssessmentHelper.getRoundedScore(estimatedMaxScore));
+		}
+		return sb.toString();
+	}
+	
+	private void updateUI() {
+		boolean passedTypeVisible = passedEnabledEl.isAtLeastSelected(1);
+		passedTypeEl.setVisible(passedTypeVisible);
+		
+		boolean cutValueVisible = passedTypeEl.isVisible()
+				&& passedTypeEl.isOneSelected()
+				&& passedTypeEl.getSelectedKey().equals(PassedType.cutValue.name());
+		cutValueEl.setVisible(cutValueVisible);
+	}
+
 	@Override
 	protected void doDispose() {
 		//
@@ -138,7 +207,7 @@ public class AssessmentTestOptionsEditorController extends FormBasicController {
 
 	@Override
 	protected boolean validateFormLogic(UserRequest ureq) {
-		boolean allOk = true;
+		boolean allOk = super.validateFormLogic(ureq);
 
 		titleEl.clearError();
 		if(!StringHelper.containsNonWhitespace(titleEl.getValue())) {
@@ -146,20 +215,31 @@ public class AssessmentTestOptionsEditorController extends FormBasicController {
 			allOk &= false;
 		}
 		
+		passedTypeEl.clearError();
+		if (passedTypeEl.isVisible() && passedTypeEl.isEnabled() && !passedTypeEl.isOneSelected()) {
+			passedTypeEl.setErrorKey("form.legende.mandatory", null);
+			allOk &= false;
+		}
+		
 		cutValueEl.clearError();
-		if(StringHelper.containsNonWhitespace(cutValueEl.getValue())) {
-			String cutValue = cutValueEl.getValue();
-			try {
-				double val = Double.parseDouble(cutValue);
-				if(val < 0.0) {
+		if (cutValueEl.isVisible() && cutValueEl.isEnabled()) {
+			if(StringHelper.containsNonWhitespace(cutValueEl.getValue())) {
+				String cutValue = cutValueEl.getValue();
+				try {
+					double val = Double.parseDouble(cutValue);
+					if(val < 0.0) {
+						cutValueEl.setErrorKey("form.error.nointeger", null);
+						allOk &= false;
+					}
+				} catch (NumberFormatException e) {
 					cutValueEl.setErrorKey("form.error.nointeger", null);
 					allOk &= false;
 				}
-			} catch (NumberFormatException e) {
-				cutValueEl.setErrorKey("form.error.nointeger", null);
-				allOk &= false;
+			} else {
+				cutValueEl.setErrorKey("form.legende.mandatory", null);
 			}
 		}
+
 		
 		maxTimeCont.clearError();
 		if(maxTimeEl.isAtLeastSelected(1)) {
@@ -167,7 +247,7 @@ public class AssessmentTestOptionsEditorController extends FormBasicController {
 			allOk &= validateTime(maxTimeMinuteEl);
 		}
 		
-		return allOk & super.validateFormLogic(ureq);
+		return allOk;
 	}
 	
 	private boolean validateTime(TextElement timeEl) {
@@ -191,18 +271,34 @@ public class AssessmentTestOptionsEditorController extends FormBasicController {
 	protected void formInnerEvent(UserRequest ureq, FormItem source, FormEvent event) {
 		if(maxTimeEl == source) {
 			maxTimeCont.setVisible(maxTimeEl.isAtLeastSelected(1));
+		} else if(passedEnabledEl == source) {
+			updateUI();
+		} else if(passedTypeEl == source) {
+			updateUI();
 		}
 		super.formInnerEvent(ureq, source, event);
 	}
 
 	@Override
 	protected void formOK(UserRequest ureq) {
+		boolean passedEnabled = passedEnabledEl.isAtLeastSelected(1);
+		if (passedEnabled) {
+			String passedTypeKey = passedTypeEl.isOneSelected()
+					? passedTypeEl.getSelectedKey()
+					: PassedType.none.name();
+			PassedType passedType = PassedType.valueOf(passedTypeKey);
+			deliveryOptions.setPassedType(passedType);
+		} else {
+			deliveryOptions.setPassedType(PassedType.none);
+		}
+		qti21Service.setDeliveryOptions(testEntry, deliveryOptions);
+		
 		String title = titleEl.getValue();
 		assessmentTest.setTitle(title);
 		
-		String cutValue = cutValueEl.getValue();
+		String cutValue = cutValueEl.isVisible()? cutValueEl.getValue(): null;
 		if(StringHelper.containsNonWhitespace(cutValue)) {
-			testBuilder.setCutValue(new Double(cutValue));
+			testBuilder.setCutValue(Double.valueOf(cutValue));
 		} else {
 			testBuilder.setCutValue(null);
 		}

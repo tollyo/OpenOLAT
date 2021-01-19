@@ -25,17 +25,18 @@
 */ 
 package org.olat.core.gui.components.form.flexible.impl.elements;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.apache.logging.log4j.Logger;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.form.flexible.elements.MultipleSelectionElement;
 import org.olat.core.gui.components.form.flexible.impl.Form;
 import org.olat.core.gui.components.form.flexible.impl.FormItemImpl;
-import org.apache.logging.log4j.Logger;
 import org.olat.core.logging.Tracing;
 import org.olat.core.util.ConsumableBoolean;
 import org.olat.core.util.ValidationStatus;
@@ -136,6 +137,21 @@ public class MultipleSelectionElementImpl extends FormItemImpl implements Multip
 	public Collection<String> getSelectedKeys() {
 		return selected;
 	}
+	
+	@Override
+	public List<String> getSelectedValues() {
+		if (selected == null || selected.isEmpty()) return new ArrayList<>(0);
+		
+		List<String> selectedValues = new ArrayList<>();
+		for (int i = 0; i < keys.length; i++) {
+			String key = keys[i];
+			if (selected.contains(key)) {
+				String value = values[i];
+				selectedValues.add(value);
+			}
+		}
+		return selectedValues;
+	}
 
 	@Override
 	public void setKeysAndValues(String[] keys, String[] values) {
@@ -153,8 +169,7 @@ public class MultipleSelectionElementImpl extends FormItemImpl implements Multip
 	
 	@Override
 	public boolean isAtLeastSelected(int howmany) {
-		boolean ok = selected.size() >= howmany;
-		return ok;
+		return selected.size() >= howmany;
 	}
 
 	@Override
@@ -209,10 +224,10 @@ public class MultipleSelectionElementImpl extends FormItemImpl implements Multip
 		}
 		if(!originalIsDefined) {
 			originalIsDefined = true;
-			if(selected != null && selected.size() > 0){
+			if(!selected.isEmpty()){
 				original = new String[selected.size()];
 				original = selected.toArray(original);
-			}else{
+			} else {
 				original = null;
 			}
 		}
@@ -243,8 +258,7 @@ public class MultipleSelectionElementImpl extends FormItemImpl implements Multip
 				j++;
 			}
 			if (!foundKey){
-				log.warn("submitted key '" + key + "' was not found in the keys of formelement named "
-					+ this.getName() + " , keys=" + Arrays.asList(keys));
+				log.warn("submitted key '{}' was not found in the keys of formelement named {} , keys={}", key, getName(), Arrays.asList(keys));
 			}else{
 				selected.add(key);	
 			}
@@ -285,12 +299,18 @@ public class MultipleSelectionElementImpl extends FormItemImpl implements Multip
 				reqVals = form.getRequestParameterValues(getName() + "_SELBOX");
 			}
 			//
-			selected= new HashSet<>();
-			if (reqVals != null) {
-				for (int i = 0; i < reqVals.length; i++) {
-					selected.add(reqVals[i]);
+			Set<String> updatedSelected = new HashSet<>();
+			for(CheckboxElement check : component.getCheckComponents()) {
+				if(!check.isEnabled() && selected.contains(check.getKey())) {
+					updatedSelected.add(check.getKey());
 				}
 			}
+			if (reqVals != null) {
+				for (int i = 0; i < reqVals.length; i++) {
+					updatedSelected.add(reqVals[i]);
+				}
+			}
+			selected = updatedSelected;
 		}
 		String dispatchuri = form.getRequestParameter("dispatchuri");
 		if(dispatchuri != null && dispatchuri.equals(component.getFormDispatchId())) {

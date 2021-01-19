@@ -34,6 +34,7 @@ import org.olat.core.gui.components.form.flexible.elements.FlexiTableElement;
 import org.olat.core.gui.components.form.flexible.elements.FormLink;
 import org.olat.core.gui.components.form.flexible.impl.FormBasicController;
 import org.olat.core.gui.components.form.flexible.impl.FormEvent;
+import org.olat.core.gui.components.form.flexible.impl.FormLayoutContainer;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.DefaultFlexiColumnModel;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiTableColumnModel;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiTableDataModelFactory;
@@ -57,10 +58,12 @@ import org.olat.core.util.coordinate.CoordinatorManager;
 import org.olat.core.util.coordinate.LockResult;
 import org.olat.core.util.resource.OresHelper;
 import org.olat.ims.qti21.AssessmentItemSession;
+import org.olat.ims.qti21.AssessmentTestHelper;
 import org.olat.ims.qti21.AssessmentTestSession;
 import org.olat.ims.qti21.QTI21Module;
 import org.olat.ims.qti21.QTI21Module.CorrectionWorkflow;
 import org.olat.ims.qti21.QTI21Service;
+import org.olat.ims.qti21.model.ParentPartItemRefs;
 import org.olat.ims.qti21.model.xml.ManifestMetadataBuilder;
 import org.olat.ims.qti21.ui.assessment.CorrectionAssessmentItemTableModel.ItemCols;
 import org.olat.ims.qti21.ui.assessment.components.AutoCorrectedFlexiCellRenderer;
@@ -91,7 +94,7 @@ import uk.ac.ed.ph.jqtiplus.state.TestSessionState;
 
 /**
  * A table with the list of assessment items of the test
- * with statistics about the users wo answered (or not answered)
+ * with statistics about the users who answered (or not answered)
  * every assessment item.
  * 
  * 
@@ -139,6 +142,11 @@ public class CorrectionAssessmentItemListController extends FormBasicController 
 
 	@Override
 	protected void initForm(FormItemContainer formLayout, Controller listener, UserRequest ureq) {
+		if(model.hasErrors() && formLayout instanceof FormLayoutContainer) {
+			String errorMsg = getErrorMessage();
+			((FormLayoutContainer)formLayout).contextPut("errorMsg", errorMsg);
+		}
+		
 		FlexiTableColumnModel columnsModel = FlexiTableDataModelFactory.createFlexiTableColumnModel();
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(ItemCols.section));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(ItemCols.itemTitle, "select"));
@@ -163,6 +171,16 @@ public class CorrectionAssessmentItemListController extends FormBasicController 
 		
 		saveTestsButton = uifactory.addFormLink("save.tests", formLayout, Link.BUTTON);
 		saveTestsButton.setElementCssClass("o_sel_correction_save_tests");
+	}
+	
+	public String getErrorMessage() {
+		StringBuilder sb = new StringBuilder(1024);
+		List<Identity> identities = model.getIdentityWithErrors();
+		for(Identity identity:identities) {
+			if(sb.length() > 0) sb.append(", ");
+			sb.append(userManager.getUserDisplayName(identity));
+		}
+		return translate("error.assessment.test.session.identities", new String[] { sb.toString() });
 	}
 	
 	public void reloadModel() {
@@ -438,14 +456,23 @@ public class CorrectionAssessmentItemListController extends FormBasicController 
 		// lock on item, need to check the lock on identity / test
 		String lockSubKey = "item-" + listEntry.getAssessedIdentity().getKey() + "-" + listEntry.getItemRef().getIdentifier().toString();
 		OLATResourceable testOres = OresHelper.clone(model.getTestEntry().getOlatResource());
-		lockResult = CoordinatorManager.getInstance().getCoordinator().getLocker().acquireLock(testOres, getIdentity(), lockSubKey);
+		lockResult = CoordinatorManager.getInstance().getCoordinator().getLocker().acquireLock(testOres, getIdentity(), lockSubKey, getWindow());
 		if(lockResult.isSuccess()) {
 			Identity assessedIdentity = listEntry.getAssessedIdentity();
 			AssessmentTestSession candidateSession = listEntry.getTestSession();
 			TestSessionState testSessionState = qtiService.loadTestSessionState(listEntry.getTestSession());
-			
+
 			List<TestPlanNode> nodes = testSessionState.getTestPlan().getNodes(itemRef.getIdentifier());
 			if(nodes.size() == 1) {
+				if(reloadItemSession == null) {
+					TestPlanNode itemNode = nodes.get(0);
+					String stringuifiedIdentifier = itemNode.getKey().getIdentifier().toString();
+					ParentPartItemRefs parentParts = AssessmentTestHelper
+							.getParentSection(itemNode.getKey(), testSessionState, model.getResolvedAssessmentTest());
+					reloadItemSession = qtiService
+							.getOrCreateAssessmentItemSession(candidateSession, parentParts, stringuifiedIdentifier);
+				}
+				
 				TestPlanNode itemNode = nodes.get(0);
 				ItemSessionState itemSessionState = testSessionState.getItemSessionStates().get(itemNode.getKey());
 				AssessmentItemCorrection itemCorrection = new AssessmentItemCorrection(assessedIdentity, 
@@ -453,10 +480,10 @@ public class CorrectionAssessmentItemListController extends FormBasicController 
 						itemRef, itemNode);
 				itemCorrection.setItemSession(reloadItemSession);
 
-				boolean readOnly = model.isReadOnly(assessedIdentity);
+				boolean assessmentEntryDone = model.isAssessmentEntryDone(assessedIdentity);
 				identityItemCtrl = new CorrectionIdentityAssessmentItemNavigationController(ureq, getWindowControl(),
 						model.getTestEntry(), model.getResolvedAssessmentTest(), itemCorrection, listEntry,
-						selectedItemSessions, model, null, readOnly);
+						selectedItemSessions, model, null, assessmentEntryDone, true);
 				listenTo(identityItemCtrl);
 				updatePreviousNext();
 				
@@ -464,7 +491,8 @@ public class CorrectionAssessmentItemListController extends FormBasicController 
 			}
 		} else {
 			String lockOwnerName = userManager.getUserDisplayName(lockResult.getOwner());
-			showWarning("warning.assessment.item.locked", new String[] { lockOwnerName });
+			String mgs = lockResult.isDifferentWindows() ? "warning.assessment.item.locked.same.user" : "warning.assessment.item.locked";
+			showWarning(mgs, new String[] { lockOwnerName });
 		}
 	}
 	

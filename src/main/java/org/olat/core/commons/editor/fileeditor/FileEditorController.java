@@ -26,32 +26,38 @@
 
 package org.olat.core.commons.editor.fileeditor;
 
+import java.util.List;
+
+import org.apache.logging.log4j.Logger;
 import org.olat.core.commons.controllers.linkchooser.CustomLinkTreeModel;
 import org.olat.core.commons.editor.htmleditor.HTMLEditorConfig;
 import org.olat.core.commons.editor.htmleditor.HTMLEditorController;
 import org.olat.core.commons.editor.htmleditor.HTMLReadOnlyController;
 import org.olat.core.commons.editor.htmleditor.WysiwygFactory;
 import org.olat.core.commons.editor.plaintexteditor.TextEditorController;
-import org.olat.core.commons.services.doceditor.DocEditorConfigs;
-import org.olat.core.commons.services.doceditor.DocEditorSecurityCallback;
 import org.olat.core.commons.services.doceditor.DocEditor.Mode;
+import org.olat.core.commons.services.doceditor.DocEditorConfigs;
 import org.olat.core.commons.services.doceditor.DocEditorConfigs.Config;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
+import org.olat.core.gui.components.Window;
 import org.olat.core.gui.components.velocity.VelocityContainer;
 import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.Event;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.control.controller.BasicController;
 import org.olat.core.gui.control.controller.BlankController;
-import org.apache.logging.log4j.Logger;
+import org.olat.core.gui.control.generic.dtabs.Activateable2;
+import org.olat.core.gui.control.winmgr.CommandFactory;
+import org.olat.core.id.context.ContextEntry;
+import org.olat.core.id.context.StateEntry;
 import org.olat.core.logging.Tracing;
 import org.olat.core.util.vfs.VFSLeaf;
 import org.olat.core.util.vfs.VFSLockApplicationType;
 import org.olat.core.util.vfs.VFSLockManager;
 import org.springframework.beans.factory.annotation.Autowired;
 
-public class FileEditorController extends BasicController {
+public class FileEditorController extends BasicController implements Activateable2 {
 
 	private static final Logger log = Tracing.createLoggerFor(FileEditorController.class);
 
@@ -64,11 +70,13 @@ public class FileEditorController extends BasicController {
 	private VFSLockManager vfsLockManager;
 
 	protected FileEditorController(UserRequest ureq, WindowControl wControl, VFSLeaf vfsLeaf,
-			DocEditorSecurityCallback secCallback, DocEditorConfigs configs) {
+			DocEditorConfigs configs) {
 		super(ureq, wControl);
 		this.vfsLeaf = vfsLeaf;
 		
-		boolean isEdit = Mode.EDIT.equals(secCallback.getMode());
+		wControl.getWindowBackOffice().getWindow().addListener(this);
+		
+		boolean isEdit = Mode.EDIT.equals(configs.getMode());
 		if (isEdit) {
 			if(vfsLockManager.isLockedForMe(vfsLeaf, ureq.getIdentity(), VFSLockApplicationType.vfs, null)) {
 				// It the file is locked by someone other, show it in preview mode
@@ -86,8 +94,8 @@ public class FileEditorController extends BasicController {
 			Config configObj = configs.getConfig(HTMLEditorConfig.TYPE);
 			HTMLEditorConfig config = null;
 			if (!(configObj instanceof HTMLEditorConfig)) {
-				log.error("FileEditor started without configuration! Displayd blank page. File: " + vfsLeaf + ", Identity: "
-					+ getIdentity());
+				log.error("FileEditor started without configuration! Displayd blank page. File: {}, Identity: {}",
+						vfsLeaf, getIdentity());
 				editCtrl = new BlankController(ureq, wControl);
 			}
 			config = (HTMLEditorConfig) configObj;
@@ -96,11 +104,11 @@ public class FileEditorController extends BasicController {
 				CustomLinkTreeModel customLinkTreeModel = config.getCustomLinkTreeModel();
 				if (customLinkTreeModel != null) {
 					htmlCtrl = WysiwygFactory.createWysiwygControllerWithInternalLink(ureq, getWindowControl(),
-							config.getVfsContainer(), config.getFilePath(), true, secCallback.isVersionControlled(), customLinkTreeModel,
-							config.getEdusharingProvider());
+							config.getVfsContainer(), config.getFilePath(), true, configs.isVersionControlled(), customLinkTreeModel,
+							null, config.getEdusharingProvider());
 				} else {
 					htmlCtrl = WysiwygFactory.createWysiwygController(ureq, getWindowControl(), config.getVfsContainer(),
-							config.getFilePath(), config.getMediaPath(), true, secCallback.isVersionControlled(), config.getEdusharingProvider());
+							config.getFilePath(), config.getMediaPath(), true, configs.isVersionControlled(), config.getEdusharingProvider());
 				}
 				
 				htmlCtrl.setNewFile(false);
@@ -111,11 +119,11 @@ public class FileEditorController extends BasicController {
 				
 				editCtrl = htmlCtrl;
 			} else {
-				editCtrl = new HTMLReadOnlyController(ureq, getWindowControl(), vfsLeaf.getParentContainer(), vfsLeaf.getName(), secCallback.canClose());
+				editCtrl = new HTMLReadOnlyController(ureq, getWindowControl(), vfsLeaf.getParentContainer(), vfsLeaf.getName(), false);
 			}
 		}
 		else {
-			editCtrl = new TextEditorController(ureq, getWindowControl(), vfsLeaf, "utf-8", !isEdit, secCallback.isVersionControlled());
+			editCtrl = new TextEditorController(ureq, getWindowControl(), vfsLeaf, "utf-8", !isEdit, configs.isVersionControlled());
 		}
 		listenTo(editCtrl);
 		
@@ -125,15 +133,34 @@ public class FileEditorController extends BasicController {
 	}
 
 	@Override
+	public void activate(UserRequest ureq, List<ContextEntry> entries, StateEntry state) {
+		if(editCtrl instanceof Activateable2) {
+			((Activateable2)editCtrl).activate(ureq, entries, state);
+		}
+	}
+
+	@Override
 	public void event(UserRequest ureq, Component source, Event event) {
-		// nothing to do here
+		if(event == Window.CLOSE_WINDOW) {
+			if(editCtrl != null) {
+				editCtrl.dispatchEvent(ureq, source, event);
+			}
+			doUnlock();
+		}
 	}
 
 	@Override
 	public void event(UserRequest ureq, Controller source, Event event) {
 		if (source == editCtrl) {
-			fireEvent(ureq, event);
+			if(event == Event.DONE_EVENT || event == Event.CANCELLED_EVENT) {
+				fireEvent(ureq, Event.CLOSE_EVENT);
+				doUnlock();
+				getWindowControl().getWindowBackOffice().sendCommandTo(CommandFactory.createNewWindowCancelRedirectTo());
+			} else {
+				fireEvent(ureq, event);
+			}
 		}
+		super.event(ureq, source, event);
 	}
 
 	@Override
@@ -145,7 +172,9 @@ public class FileEditorController extends BasicController {
 	
 	private void doUnlock() {
 		if (temporaryLock) {
+			log.info("Unlock HTML editor: {}", vfsLeaf);
 			vfsLockManager.unlock(vfsLeaf, VFSLockApplicationType.vfs);
+			temporaryLock = false;
 		}
 	}
 }

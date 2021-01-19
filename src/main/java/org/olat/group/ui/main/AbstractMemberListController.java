@@ -45,7 +45,6 @@ import org.olat.core.gui.components.form.flexible.elements.FormLink;
 import org.olat.core.gui.components.form.flexible.impl.FormBasicController;
 import org.olat.core.gui.components.form.flexible.impl.FormEvent;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.DefaultFlexiColumnModel;
-import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiCellRenderer;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiColumnModel;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiTableColumnModel;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiTableDataModelFactory;
@@ -67,6 +66,10 @@ import org.olat.core.gui.control.generic.closablewrapper.CloseableModalControlle
 import org.olat.core.gui.control.generic.dtabs.Activateable2;
 import org.olat.core.gui.control.generic.modal.DialogBoxController;
 import org.olat.core.gui.control.generic.modal.DialogBoxUIFactory;
+import org.olat.core.gui.control.generic.wizard.Step;
+import org.olat.core.gui.control.generic.wizard.StepRunnerCallback;
+import org.olat.core.gui.control.generic.wizard.StepsMainRunController;
+import org.olat.core.gui.control.generic.wizard.StepsRunContext;
 import org.olat.core.gui.translator.Translator;
 import org.olat.core.id.Identity;
 import org.olat.core.id.OLATResourceable;
@@ -82,6 +85,7 @@ import org.olat.core.util.resource.OresHelper;
 import org.olat.core.util.session.UserSessionManager;
 import org.olat.course.assessment.manager.UserCourseInformationsManager;
 import org.olat.course.member.MemberListController;
+import org.olat.course.member.wizard.MembersContext;
 import org.olat.group.BusinessGroup;
 import org.olat.group.BusinessGroupManagedFlag;
 import org.olat.group.BusinessGroupModule;
@@ -100,6 +104,7 @@ import org.olat.modules.co.ContactFormController;
 import org.olat.modules.curriculum.CurriculumElement;
 import org.olat.modules.curriculum.CurriculumElementManagedFlag;
 import org.olat.modules.curriculum.CurriculumService;
+import org.olat.modules.curriculum.model.CurriculumElementMembershipChange;
 import org.olat.repository.RepositoryEntry;
 import org.olat.repository.RepositoryEntryManagedFlag;
 import org.olat.repository.RepositoryManager;
@@ -108,6 +113,7 @@ import org.olat.repository.model.RepositoryEntryPermissionChangeEvent;
 import org.olat.user.UserInfoMainController;
 import org.olat.user.UserManager;
 import org.olat.user.propertyhandlers.UserPropertyHandler;
+import org.olat.user.ui.admin.IdentityStatusCellRenderer;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
@@ -146,13 +152,13 @@ public abstract class AbstractMemberListController extends FormBasicController i
 	private MemberLeaveConfirmationController leaveDialogBox;
 	private CloseableCalloutWindowController toolsCalloutCtrl;
 	private EditSingleMembershipController editSingleMemberCtrl;
-	private final List<UserPropertyHandler> userPropertyHandlers;
+	private StepsMainRunController editMemberShipStepsController;
 
+	private final List<UserPropertyHandler> userPropertyHandlers;
 	private final AtomicInteger counter = new AtomicInteger();
 	protected final RepositoryEntry repoEntry;
 	private final BusinessGroup businessGroup;
 	private final boolean isLastVisitVisible;
-	private final boolean isAdministrativeUser;
 	private final boolean chatEnabled;
 	
 	private boolean overrideManaged = false;
@@ -209,7 +215,7 @@ public abstract class AbstractMemberListController extends FormBasicController i
 		
 		Roles roles = ureq.getUserSession().getRoles();
 		chatEnabled = imModule.isEnabled() && imModule.isPrivateEnabled() && !secCallback.isReadonly();
-		isAdministrativeUser = securityModule.isUserAllowedAdminProps(roles);
+		boolean isAdministrativeUser = securityModule.isUserAllowedAdminProps(roles);
 		isLastVisitVisible = securityModule.isUserLastVisitVisible(roles);
 		userPropertyHandlers = userManager.getUserPropertyHandlersFor(USER_PROPS_ID, isAdministrativeUser);
 		
@@ -243,7 +249,7 @@ public abstract class AbstractMemberListController extends FormBasicController i
 		membersTable = uifactory.addTableElement(getWindowControl(), "memberList", memberListModel, 20, false, getTranslator(), formLayout);
 		membersTable.setMultiSelect(true);
 		membersTable.setEmtpyTableMessageKey("nomembers");
-		membersTable.setAndLoadPersistedPreferences(ureq, this.getClass().getSimpleName());
+		membersTable.setAndLoadPersistedPreferences(ureq, this.getClass().getSimpleName() + "-v3");
 		membersTable.setSearchEnabled(true);
 		
 		membersTable.setExportEnabled(true);
@@ -299,12 +305,8 @@ public abstract class AbstractMemberListController extends FormBasicController i
 			chatCol.setExportable(false);
 			columnsModel.addFlexiColumnModel(chatCol);
 		}
-		if(isAdministrativeUser) {
-			FlexiCellRenderer renderer = new StaticFlexiCellRenderer(editAction, new TextFlexiCellRenderer());
-			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(Cols.username.i18n(), Cols.username.ordinal(), editAction,
-					true, Cols.username.name(), renderer));
-			defaultSortKey = new SortKey(Cols.username.name(), true);
-		}
+
+		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(false, Cols.identityStatus, new IdentityStatusCellRenderer(getLocale())));
 		
 		int colPos = USER_PROPS_OFFSET;
 		for (UserPropertyHandler userPropertyHandler : userPropertyHandlers) {
@@ -329,19 +331,19 @@ public abstract class AbstractMemberListController extends FormBasicController i
 			}
 		}
 
-		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(Cols.firstTime.i18n(), Cols.firstTime.ordinal(), true, Cols.firstTime.name()));
+		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(Cols.firstTime));
 		if(isLastVisitVisible) {
-			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(Cols.lastTime.i18n(), Cols.lastTime.ordinal(), true, Cols.lastTime.name()));
+			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(Cols.lastTime));
 		}
 		
 		CourseRoleCellRenderer roleRenderer = new CourseRoleCellRenderer(getLocale());
-		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(Cols.role.i18n(), Cols.role.ordinal(), true, Cols.role.name(), roleRenderer));
+		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(Cols.role, roleRenderer));
 		if(repoEntry != null) {
 			GroupCellRenderer groupRenderer = new GroupCellRenderer();
-			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(Cols.groups.i18n(), Cols.groups.ordinal(), true, Cols.groups.name(), groupRenderer));
+			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(Cols.groups, groupRenderer));
 		}
 		
-		DefaultFlexiColumnModel toolsCol = new DefaultFlexiColumnModel(Cols.tools.i18n(), Cols.tools.ordinal());
+		DefaultFlexiColumnModel toolsCol = new DefaultFlexiColumnModel(Cols.tools);
 		toolsCol.setExportable(false);
 		toolsCol.setAlwaysVisible(true);
 		columnsModel.addFlexiColumnModel(toolsCol);
@@ -432,12 +434,21 @@ public abstract class AbstractMemberListController extends FormBasicController i
 			}
 			cmc.deactivate();
 			cleanUpPopups();
+		} else if (source == editMemberShipStepsController) {
+            if(event == Event.CANCELLED_EVENT || event == Event.DONE_EVENT || event == Event.CHANGED_EVENT) {
+                // Close the dialog
+                getWindowControl().pop();
+                cleanUpPopups();
+                
+                // Reload form
+                reloadModel();
+            }
 		} else if(source == editMembersCtrl) {
-			cmc.deactivate();
+			/*cmc.deactivate();
 			if(event instanceof MemberPermissionChangeEvent) {
 				MemberPermissionChangeEvent e = (MemberPermissionChangeEvent)event;
 				doConfirmChangePermission(ureq, e, editMembersCtrl.getMembers());
-			}
+			}*/
 		} else if(source == editSingleMemberCtrl) {
 			cmc.deactivate();
 			cleanUpPopups();
@@ -484,11 +495,14 @@ public abstract class AbstractMemberListController extends FormBasicController i
 		removeAsListenerAndDispose(editSingleMemberCtrl);
 		removeAsListenerAndDispose(leaveDialogBox);
 		removeAsListenerAndDispose(contactCtrl);
+        removeAsListenerAndDispose(editMemberShipStepsController);
+        
 		cmc = null;
 		contactCtrl = null;
 		leaveDialogBox = null;
 		editMembersCtrl = null;
 		editSingleMemberCtrl = null;
+		editMemberShipStepsController = null;
 	}
 	
 	protected final void doConfirmRemoveMembers(UserRequest ureq, List<MemberRow> members) {
@@ -508,6 +522,13 @@ public abstract class AbstractMemberListController extends FormBasicController i
 				}
 			}
 			if(numOfRemovedOwner == 0 || numOfOwners - numOfRemovedOwner > 0) {
+				for (MemberRow member : members) {
+					if (member.getCurriculumElements() != null) {
+						showWarning("error.remove.user.from.curriculum");
+						return;
+					}
+				}
+				
 				List<Identity> ids = securityManager.loadIdentityByKeys(identityKeys);
 				leaveDialogBox = new MemberLeaveConfirmationController(ureq, getWindowControl(), ids, repoEntry != null);
 				listenTo(leaveDialogBox);
@@ -545,14 +566,33 @@ public abstract class AbstractMemberListController extends FormBasicController i
 				listenTo(editSingleMemberCtrl);
 				cmc = new CloseableModalController(getWindowControl(), translate("close"), editSingleMemberCtrl.getInitialComponent(),
 						true, translate("edit.member"));
+				cmc.activate();
+				listenTo(cmc);
 			} else {
+				// Collect data in membersContext
+				boolean sendMailMandatory = groupModule.isMandatoryEnrolmentEmail(ureq.getUserSession().getRoles());
+				MembersContext membersContext = MembersContext.valueOf(repoEntry, businessGroup, overrideManaged, sendMailMandatory);
+				
+				
+				// Create first step and finish callback
+		        Step editMembershipStep = new EditMembershipStep1(ureq, identities, membersContext);
+		        FinishedCallback finish = new FinishedCallback();
+		        CancelCallback cancel = new CancelCallback();
+		        
+		        
+		        // Create step controller
+		        editMemberShipStepsController = new StepsMainRunController(ureq, getWindowControl(), editMembershipStep, finish, cancel, translate("edit.member"), null);
+		        listenTo(editMemberShipStepsController);
+		        getWindowControl().pushAsModalDialog(editMemberShipStepsController.getInitialComponent());
+		        
+				/*
 				editMembersCtrl = new EditMembershipController(ureq, getWindowControl(), identities, repoEntry, businessGroup, overrideManaged);
 				listenTo(editMembersCtrl);
 				cmc = new CloseableModalController(getWindowControl(), translate("close"), editMembersCtrl.getInitialComponent(),
 						true, translate("edit.member"));
+						*/
 			}
-			cmc.activate();
-			listenTo(cmc);
+			
 		}
 	}
 	
@@ -622,7 +662,7 @@ public abstract class AbstractMemberListController extends FormBasicController i
 			List<RepositoryEntryPermissionChangeEvent> changes = Collections.singletonList((RepositoryEntryPermissionChangeEvent)e);
 			repositoryManager.updateRepositoryEntryMemberships(getIdentity(), roles, repoEntry, changes, mailing);
 			
-			curriculumService.updateCurriculumElementMemberships(getIdentity(), roles, e.getCurriculumChanges());
+			curriculumService.updateCurriculumElementMemberships(getIdentity(), roles, e.getCurriculumChanges(), mailing);
 		}
 
 		businessGroupService.updateMemberships(getIdentity(), e.getGroupChanges(), mailing);
@@ -635,14 +675,15 @@ public abstract class AbstractMemberListController extends FormBasicController i
 		MailPackage mailing = new MailPackage(sendMail);
 		if(repoEntry != null) {
 			Roles roles = ureq.getUserSession().getRoles();
-			List<RepositoryEntryPermissionChangeEvent> repoChanges = changes.generateRepositoryChanges(members);
+			List<RepositoryEntryPermissionChangeEvent> repoChanges = changes.getRepoChanges();
 			repositoryManager.updateRepositoryEntryMemberships(getIdentity(), roles, repoEntry, repoChanges, mailing);
 
-			curriculumService.updateCurriculumElementMemberships(getIdentity(), roles, changes.getCurriculumChanges());
+			List<CurriculumElementMembershipChange> curriuclumChanges = changes.getCurriculumChanges();
+			curriculumService.updateCurriculumElementMemberships(getIdentity(), roles, curriuclumChanges, mailing);
 		}
 
 		//commit all changes to the group memberships
-		List<BusinessGroupMembershipChange> allModifications = changes.generateBusinessGroupMembershipChange(members);
+		List<BusinessGroupMembershipChange> allModifications = changes.getGroupChanges();
 		businessGroupService.updateMemberships(getIdentity(), allModifications, mailing);
 
 		reloadModel();
@@ -674,7 +715,12 @@ public abstract class AbstractMemberListController extends FormBasicController i
 		}
 		
 		ContactMessage contactMessage = new ContactMessage(getIdentity());
-		String name = repoEntry != null ? repoEntry.getDisplayname() : businessGroup.getName();
+		String name;
+		if(identities.size() == 1) {
+			name = userManager.getUserDisplayName(identities.get(0));
+		} else {
+			name = repoEntry != null ? repoEntry.getDisplayname() : businessGroup.getName();
+		}
 		ContactList contactList = new ContactList(name);
 		contactList.addAllIdentites(identities);
 		contactMessage.addEmailTo(contactList);
@@ -859,6 +905,36 @@ public abstract class AbstractMemberListController extends FormBasicController i
 		chatLink.setUserObject(row);
 		row.setChatLink(chatLink);
 	}
+	
+	private class FinishedCallback implements StepRunnerCallback {
+        @Override
+        public Step execute(UserRequest ureq, WindowControl wControl, StepsRunContext runContext) {
+        	// Extract data from wizard
+            MemberPermissionChangeEvent changeEvent = (MemberPermissionChangeEvent) runContext.get("membershipChanges");
+            @SuppressWarnings("unchecked")
+			List<Identity> members = (List<Identity>) runContext.get("members");
+            boolean sendMail = (Boolean) runContext.get("sendMail");
+            
+            // Apply changes
+            if(changeEvent.size() != 0) {
+            	if(members == null) {
+    				doChangePermission(ureq, changeEvent, sendMail);
+    			} else {
+    				doChangePermission(ureq, changeEvent, members, sendMail);
+    			}
+    		}
+
+            // Fire event
+            return StepsMainRunController.DONE_MODIFIED;
+        }
+    }
+
+    private static class CancelCallback implements StepRunnerCallback {
+        @Override
+        public Step execute(UserRequest ureq, WindowControl wControl, StepsRunContext runContext) {
+            return Step.NOSTEP;
+        }
+    }	
 	
 	private class GraduationConfirmation {
 		private final List<MemberRow> rows;

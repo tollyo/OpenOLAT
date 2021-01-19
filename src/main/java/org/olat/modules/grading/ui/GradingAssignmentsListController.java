@@ -156,11 +156,11 @@ public class GradingAssignmentsListController extends FormBasicController implem
 	
 	private int counter = 0;
 	private Identity grader;
+	private final boolean isManager;
 	private RepositoryEntry testEntry;
 	private GradingAssessedIdentityVisibility testEntryAssessedIdentityVisibility;
 	
 	private final boolean myView;
-	private final boolean isAdministrativeUser;
 	private List<UserPropertyHandler> userPropertyHandlers;
 	private List<UserPropertyHandler> assessedUserPropertyHandlers;
 	private final GradingSecurityCallback secCallback;
@@ -214,6 +214,7 @@ public class GradingAssignmentsListController extends FormBasicController implem
 		setTranslator(userManager.getPropertyHandlerTranslator(getTranslator()));
 		this.grader = grader;
 		this.testEntry = testEntry;
+		isManager = (testEntry == null && grader == null);
 		myView = grader != null && grader.getKey().equals(getIdentity().getKey())
 				&& secCallback.canGrade() && !secCallback.canManage();
 		if(testEntry != null) {
@@ -225,7 +226,7 @@ public class GradingAssignmentsListController extends FormBasicController implem
 		this.secCallback = secCallback;
 		
 		Roles roles = ureq.getUserSession().getRoles();
-		isAdministrativeUser = securityModule.isUserAllowedAdminProps(roles);
+		boolean isAdministrativeUser = securityModule.isUserAllowedAdminProps(roles);
 		userPropertyHandlers = userManager.getUserPropertyHandlersFor(USER_PROPS_ID, isAdministrativeUser);
 		assessedUserPropertyHandlers = userManager.getUserPropertyHandlersFor(ASSESSED_PROPS_ID, isAdministrativeUser);
 		
@@ -252,10 +253,6 @@ public class GradingAssignmentsListController extends FormBasicController implem
 		
 		FlexiTableColumnModel columnsModel = FlexiTableDataModelFactory.createFlexiTableColumnModel();
 		if(!myView) {
-			if(isAdministrativeUser) {
-				columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(GAssignmentsCol.username));
-			}
-			
 			int colPos = USER_PROPS_OFFSET;
 			for (UserPropertyHandler userPropertyHandler : userPropertyHandlers) {
 				if (userPropertyHandler == null) continue;
@@ -274,10 +271,6 @@ public class GradingAssignmentsListController extends FormBasicController implem
 		
 		// assessed user props
 		if(testEntry == null || testEntryAssessedIdentityVisibility == GradingAssessedIdentityVisibility.nameVisible) {
-			if(isAdministrativeUser) {
-				columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(GAssignmentsCol.assessedIdentityUsername));
-			}
-			
 			int aColPos = ASSESSED_PROPS_OFFSET;
 			for (UserPropertyHandler userPropertyHandler : assessedUserPropertyHandlers) {
 				if (userPropertyHandler == null) continue;
@@ -299,7 +292,9 @@ public class GradingAssignmentsListController extends FormBasicController implem
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(GAssignmentsCol.courseElement, "open_course"));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(false, GAssignmentsCol.assessmentDate));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(false, GAssignmentsCol.correctionMetadataMinutes));
-		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(false, GAssignmentsCol.correctionMinutes));
+		if(secCallback.canViewRecordedRealMinutes()) {
+			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(false, GAssignmentsCol.correctionMinutes));
+		}
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(false, GAssignmentsCol.assignmentDate));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(false, GAssignmentsCol.doneDate));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(false, GAssignmentsCol.score, new ScoreCellRenderer()));
@@ -325,8 +320,9 @@ public class GradingAssignmentsListController extends FormBasicController implem
 				userPropertyHandlers, assessedUserPropertyHandlers, getTranslator(), getLocale());
 		tableEl = uifactory.addTableElement(getWindowControl(), "assignments", tableModel, 24, false, getTranslator(), formLayout);
 		tableEl.setEmptyTableSettings("table.assignments.empty", true);
+		tableEl.setElementCssClass("o_sel_grading_assignments_list");
 		tableEl.setExportEnabled(true);
-		String id = "grading-assignments-list-" + (testEntry == null ? "coaching" : testEntry.getKey());
+		String id = "grading-assignments-list-v2-" + (testEntry == null ? "coaching" : testEntry.getKey());
 		tableEl.setAndLoadPersistedPreferences(ureq, id);
 		
 		if(secCallback.canReport()) {
@@ -392,7 +388,7 @@ public class GradingAssignmentsListController extends FormBasicController implem
 			}
 		}
 		
-		if(testEntry == null && grader == null) {
+		if(isManager) {
 			searchParams.setManager(getIdentity());
 		}
 		
@@ -401,7 +397,7 @@ public class GradingAssignmentsListController extends FormBasicController implem
 	
 	private GradingAssignmentRow forgeRow(GradingAssignmentWithInfos assignment) {
 		boolean canGrade = secCallback.canGrade() && secCallback.canGrade(assignment.getAssignment());
-		GradingAssignmentRow row = new GradingAssignmentRow(assignment, canGrade);
+		GradingAssignmentRow row = new GradingAssignmentRow(assignment, canGrade, isManager);
 		
 		// tools
 		String linkName = "tools-" + counter++;
@@ -584,24 +580,36 @@ public class GradingAssignmentsListController extends FormBasicController implem
 		
 		AssessmentTestSession session = qtiService
 				.getLastAssessmentTestSessions(entry, courseNode.getIdent(), referenceEntry, assessedIdentity);
-		
-		File unzippedDirRoot = FileResourceManager.getInstance().unzipFileResource(referenceEntry.getOlatResource());
-		ResolvedAssessmentTest resolvedAssessmentTest = qtiService.loadAndResolveAssessmentTest(unzippedDirRoot, false, false);
-		ManifestBuilder manifestBuilder = ManifestBuilder.read(new File(unzippedDirRoot, "imsmanifest.xml"));
-		TestSessionState testSessionState = qtiService.loadTestSessionState(session);
-		// use mutable maps to allow updates
-		Map<Identity,AssessmentTestSession> lastSessions = new HashMap<>();
-		lastSessions.put(assessedIdentity, session);
-		Map<Identity, TestSessionState> testSessionStates = new HashMap<>();
-		testSessionStates.put(assessedIdentity, testSessionState);
-		CorrectionOverviewModel model = new CorrectionOverviewModel(entry, courseNode, referenceEntry,
-				resolvedAssessmentTest, manifestBuilder, lastSessions, testSessionStates);
-		GradingTimeRecordRef record = gradingService.getCurrentTimeRecord(assignment, ureq.getRequestTimestamp());
-		
-		correctionCtrl = new CorrectionIdentityAssessmentItemListController(ureq, getWindowControl(), stackPanel,
-				model, assessedIdentity, assignment, record, readOnly, anonymous);
-		listenTo(correctionCtrl);
-		stackPanel.pushController(translate("correction"), correctionCtrl);
+		if(session == null) {
+			gradingService.deactivateAssignment(assignment);
+			showWarning("warning.assignement.deactivated");
+			loadModel();
+		} else {
+			try {
+				File unzippedDirRoot = FileResourceManager.getInstance().unzipFileResource(referenceEntry.getOlatResource());
+				ResolvedAssessmentTest resolvedAssessmentTest = qtiService.loadAndResolveAssessmentTest(unzippedDirRoot, false, false);
+				ManifestBuilder manifestBuilder = ManifestBuilder.read(new File(unzippedDirRoot, "imsmanifest.xml"));
+				TestSessionState testSessionState = qtiService.loadTestSessionState(session);
+				// use mutable maps to allow updates
+				Map<Identity,AssessmentTestSession> lastSessions = new HashMap<>();
+				lastSessions.put(assessedIdentity, session);
+				Map<Identity, TestSessionState> testSessionStates = new HashMap<>();
+				testSessionStates.put(assessedIdentity, testSessionState);
+				CorrectionOverviewModel model = new CorrectionOverviewModel(entry, courseNode, referenceEntry,
+						resolvedAssessmentTest, manifestBuilder, lastSessions, testSessionStates);
+				GradingTimeRecordRef record = gradingService.getCurrentTimeRecord(assignment, ureq.getRequestTimestamp());
+				
+				correctionCtrl = new CorrectionIdentityAssessmentItemListController(ureq, getWindowControl(), stackPanel,
+						model, assessedIdentity, assignment, record, readOnly, anonymous);
+				listenTo(correctionCtrl);
+				stackPanel.pushController(translate("correction"), correctionCtrl);
+			} catch (Exception e) {
+				logError("", e);
+				
+				String assessedFullname = userManager.getUserDisplayName(assessedIdentity);
+				showError("error.assessment.test.session.identities", new String[] { assessedFullname });
+			}
+		}
 	}
 	
 	private void doUpdateCourseNode(AssessmentTestSession testSessionsToComplete, AssessmentTest assessmentTest,
@@ -613,6 +621,8 @@ public class GradingAssignmentsListController extends FormBasicController implem
 		assessment = gradingService.loadFullAssessmentEntry(assessment);
 
 		RepositoryEntry entry = assessment.getRepositoryEntry();
+		
+		Boolean userVisible = null;
 		if(StringHelper.containsNonWhitespace(assessment.getSubIdent())) {
 			ICourse course = CourseFactory.loadCourse(entry);
 			CourseNode courseNode = course.getRunStructure().getNode(assessment.getSubIdent());
@@ -633,8 +643,12 @@ public class GradingAssignmentsListController extends FormBasicController implem
 				passed = Boolean.valueOf(calculated);
 			}
 			AssessmentEntryStatus finalStatus = status == null ? scoreEval.getAssessmentStatus() : status;
+			userVisible = scoreEval.getUserVisible();
+			if(finalStatus == AssessmentEntryStatus.done && courseNode instanceof IQTESTCourseNode) {
+				userVisible = Boolean.valueOf(((IQTESTCourseNode)courseNode).isScoreVisibleAfterCorrection());
+			}
 			ScoreEvaluation manualScoreEval = new ScoreEvaluation(score, passed,
-					finalStatus, scoreEval.getUserVisible(), scoreEval.getCurrentRunCompletion(),
+					finalStatus, userVisible, scoreEval.getCurrentRunStartDate(), scoreEval.getCurrentRunCompletion(),
 					scoreEval.getCurrentRunStatus(), testSessionsToComplete.getKey());
 			courseAssessmentService.updateScoreEvaluation(courseNode, manualScoreEval, assessedUserCourseEnv,
 					getIdentity(), false, Role.coach);
@@ -643,7 +657,7 @@ public class GradingAssignmentsListController extends FormBasicController implem
 		
 		if(status == AssessmentEntryStatus.done) {
 			Long metadataTime = qtiService.getMetadataCorrectionTimeInSeconds(assignment.getReferenceEntry(), testSessionsToComplete);
-			gradingService.assignmentDone(assignment, metadataTime);
+			gradingService.assignmentDone(assignment, metadataTime, userVisible);
 		}
 		
 		dbInstance.commit();// commit all
@@ -844,7 +858,7 @@ public class GradingAssignmentsListController extends FormBasicController implem
 		
 		List<MailTemplate> templates = new ArrayList<>();
 		templates.add(GraderMailTemplate.empty(getTranslator(), entry, null, referenceEntry));
-		templates.add(GraderMailTemplate.graderTo(getTranslator(), entry, null, referenceEntry, configuration));
+		templates.add(GraderMailTemplate.graderTo(getTranslator(), entry, null, referenceEntry));
 		templates.add(GraderMailTemplate.notification(getTranslator(), entry, null, referenceEntry, configuration));
 		templates.add(GraderMailTemplate.firstReminder(getTranslator(), entry, null, referenceEntry, configuration));
 		templates.add(GraderMailTemplate.secondReminder(getTranslator(), entry, null, referenceEntry, configuration));
@@ -878,16 +892,21 @@ public class GradingAssignmentsListController extends FormBasicController implem
 	
 	private void doUnassign(UserRequest ureq, List<GradingAssignmentRow> rows) {
 		List<GradingAssignment> assignments = rows.stream()
+				.filter(GradingAssignmentRow::hasGrader)
 				.map(GradingAssignmentRow::getAssignment)
 				.collect(Collectors.toList());
-		confirmUnassignGraderCtrl = new ConfirmUnassignGraderController(ureq, getWindowControl(), assignments);
-		listenTo(confirmUnassignGraderCtrl);
-
-		String gradersNames = getGradersNames(rows);
-		String title = translate("confirm.unassign.grader.title", new String[] { gradersNames });
-		cmc = new CloseableModalController(getWindowControl(), "close", confirmUnassignGraderCtrl.getInitialComponent(), true, title);
-		listenTo(cmc);
-		cmc.activate();
+		if(assignments.isEmpty()) {
+			showWarning("warning.atleastone.assignment.with.grader");
+		} else {
+			confirmUnassignGraderCtrl = new ConfirmUnassignGraderController(ureq, getWindowControl(), assignments);
+			listenTo(confirmUnassignGraderCtrl);
+	
+			String gradersNames = getGradersNames(rows);
+			String title = translate("confirm.unassign.grader.title", new String[] { gradersNames });
+			cmc = new CloseableModalController(getWindowControl(), "close", confirmUnassignGraderCtrl.getInitialComponent(), true, title);
+			listenTo(cmc);
+			cmc.activate();
+		}
 	}
 	
 	private void doBatchExtendDeadline(UserRequest ureq) {

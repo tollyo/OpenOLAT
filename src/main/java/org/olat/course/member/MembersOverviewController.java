@@ -20,6 +20,8 @@
 package org.olat.course.member;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.olat.basesecurity.GroupRoles;
 import org.olat.basesecurity.OrganisationRoles;
@@ -55,8 +57,11 @@ import org.olat.core.util.mail.MailPackage;
 import org.olat.core.util.mail.MailTemplate;
 import org.olat.core.util.mail.MailerResult;
 import org.olat.core.util.resource.OresHelper;
+import org.olat.course.member.wizard.ImportMemberByUsernamesController;
 import org.olat.course.member.wizard.ImportMember_1a_LoginListStep;
 import org.olat.course.member.wizard.ImportMember_1b_ChooseMemberStep;
+import org.olat.course.member.wizard.MembersByNameContext;
+import org.olat.course.member.wizard.MembersContext;
 import org.olat.course.run.userview.UserCourseEnvironment;
 import org.olat.group.BusinessGroupService;
 import org.olat.group.model.BusinessGroupMembershipChange;
@@ -90,8 +95,17 @@ public class MembersOverviewController extends BasicController implements Activa
 	private static final String SEG_WAITING_MEMBERS = "Waiting";
 	private static final String SEG_SEARCH_MEMBERS = "Search";
 	
-	private Link overrideLink, unOverrideLink;
-	private final Link allMembersLink, ownersLink, tutorsLink, participantsLink, waitingListLink, searchLink;
+	private Link overrideLink;
+	private Link unOverrideLink;
+	private final Link dedupLink;
+	private final Link addMemberLink;
+	private final Link importMemberLink;
+	private final Link ownersLink;
+	private final Link tutorsLink;
+	private final Link searchLink;
+	private final Link allMembersLink;
+	private final Link waitingListLink;
+	private final Link participantsLink;
 	private final SegmentViewComponent segmentView;
 	private final VelocityContainer mainVC;
 	private final TooledStackedPanel toolbarPanel;
@@ -103,7 +117,6 @@ public class MembersOverviewController extends BasicController implements Activa
 	private AbstractMemberListController waitingCtrl;
 	private AbstractMemberListController selectedCtrl;
 	private AbstractMemberListController searchCtrl;
-	private final Link importMemberLink, addMemberLink, dedupLink;
 
 	private CloseableModalController cmc;
 	private StepsMainRunController importMembersWizard;
@@ -354,7 +367,8 @@ public class MembersOverviewController extends BasicController implements Activa
 	private void doChooseMembers(UserRequest ureq) {
 		removeAsListenerAndDispose(importMembersWizard);
 
-		Step start = new ImportMember_1b_ChooseMemberStep(ureq, repoEntry, null, null, overrideManaged);
+		MembersContext membersContext = MembersContext.valueOf(repoEntry, overrideManaged);
+		Step start = new ImportMember_1b_ChooseMemberStep(ureq, membersContext);
 		StepRunnerCallback finish = (uureq, wControl, runContext) -> {
 			addMembers(uureq, runContext);
 			return StepsMainRunController.DONE_MODIFIED;
@@ -369,11 +383,15 @@ public class MembersOverviewController extends BasicController implements Activa
 	private void doImportMembers(UserRequest ureq) {
 		removeAsListenerAndDispose(importMembersWizard);
 
-		Step start = new ImportMember_1a_LoginListStep(ureq, repoEntry, null, null, overrideManaged);
+		MembersContext membersContext = MembersContext.valueOf(repoEntry, overrideManaged);
+		Step start = new ImportMember_1a_LoginListStep(ureq, membersContext);
 		StepRunnerCallback finish = (uureq, wControl, runContext) -> {
 			addMembers(uureq, runContext);
-			if(runContext.containsKey("notFounds")) {
-				showWarning("user.notfound", runContext.get("notFounds").toString());
+			MembersByNameContext membersByNameContext = (MembersByNameContext)runContext.get(ImportMemberByUsernamesController.RUN_CONTEXT_KEY);
+			if(!membersByNameContext.getNotFoundNames().isEmpty()) {
+				String notFoundNames = membersByNameContext.getNotFoundNames().stream()
+						.collect(Collectors.joining(", "));
+				showWarning("user.notfound", notFoundNames);
 			}
 			return StepsMainRunController.DONE_MODIFIED;
 		};
@@ -385,8 +403,7 @@ public class MembersOverviewController extends BasicController implements Activa
 	}
 	
 	protected void addMembers(UserRequest ureq, StepsRunContext runContext) {
-		@SuppressWarnings("unchecked")
-		List<Identity> members = (List<Identity>)runContext.get("members");
+		Set<Identity> members = ((MembersByNameContext)runContext.get(ImportMemberByUsernamesController.RUN_CONTEXT_KEY)).getIdentities();
 		
 		MemberPermissionChangeEvent changes = (MemberPermissionChangeEvent)runContext.get("permissions");
 		
@@ -405,12 +422,12 @@ public class MembersOverviewController extends BasicController implements Activa
 		MailPackage mailing = new MailPackage(template, result, getWindowControl().getBusinessControl().getAsString(), template != null);
 		businessGroupService.updateMemberships(getIdentity(), allModifications, mailing);
 		
-		boolean detailedErrorOutput = roles.isAdministrator() || roles.isSystemAdmin();
-		MailHelper.printErrorsAndWarnings(result, getWindowControl(), detailedErrorOutput, getLocale());
-		
 		//commit all changes to the curriculum memberships
 		List<CurriculumElementMembershipChange> curriculumChanges = changes.generateCurriculumElementMembershipChange(members);
-		curriculumService.updateCurriculumElementMemberships(getIdentity(), roles, curriculumChanges);
+		curriculumService.updateCurriculumElementMemberships(getIdentity(), roles, curriculumChanges, mailing);
+		
+		boolean detailedErrorOutput = roles.isAdministrator() || roles.isSystemAdmin();
+		MailHelper.printErrorsAndWarnings(result, getWindowControl(), detailedErrorOutput, getLocale());
 		
 		switchToAllMembers(ureq);
 	}

@@ -52,6 +52,7 @@ import org.olat.core.CoreSpringFactory;
 import org.olat.core.commons.fullWebApp.LayoutMain3ColsController;
 import org.olat.core.commons.modules.bc.FolderConfig;
 import org.olat.core.commons.persistence.DBFactory;
+import org.olat.core.commons.services.help.HelpModule;
 import org.olat.core.commons.services.notifications.NotificationsManager;
 import org.olat.core.commons.services.notifications.Publisher;
 import org.olat.core.commons.services.notifications.SubscriptionContext;
@@ -105,6 +106,8 @@ import org.olat.course.editor.PublishSetInformations;
 import org.olat.course.editor.StatusDescription;
 import org.olat.course.groupsandrights.CourseGroupManager;
 import org.olat.course.groupsandrights.PersistingCourseGroupManager;
+import org.olat.course.nodeaccess.NodeAccessService;
+import org.olat.course.nodeaccess.NodeAccessType;
 import org.olat.course.nodes.BCCourseNode;
 import org.olat.course.nodes.CourseNode;
 import org.olat.course.nodes.STCourseNode;
@@ -121,6 +124,7 @@ import org.olat.course.tree.PublishTreeModel;
 import org.olat.group.BusinessGroup;
 import org.olat.instantMessaging.InstantMessagingService;
 import org.olat.instantMessaging.manager.ChatLogHelper;
+import org.olat.modules.ModuleConfiguration;
 import org.olat.repository.RepositoryEntry;
 import org.olat.repository.RepositoryEntrySecurity;
 import org.olat.repository.RepositoryEntryStatusEnum;
@@ -150,7 +154,10 @@ public class CourseFactory {
 	private static ConcurrentMap<Long, ModifyCourseEvent> modifyCourseEvents = new ConcurrentHashMap<>();
 
 	public static final String COURSE_EDITOR_LOCK = "courseEditLock";
-  //this is the lock that must be aquired at course editing, copy course, export course, configure course.
+	/**
+	 * This is the lock that must be acquired at course editing, copy course, export course, configure course. It must
+	 * be very short life: acquire, do something, release.
+	 */
 	private static Map<Long,PersistingCourseImpl> courseEditSessionMap = new ConcurrentHashMap<>();
 	private static final Logger log = Tracing.createLoggerFor(CourseFactory.class);
 	private static ReferenceManager referenceManager;
@@ -187,7 +194,11 @@ public class CourseFactory {
 
 			Translator translator = Util.createPackageTranslator(RunMainController.class, ureq.getLocale());
 			String lockerName = CoreSpringFactory.getImpl(UserManager.class).getUserDisplayName(emc.getLockEntry().getOwner());
-			wControl.setWarning(translator.translate("error.editoralreadylocked", new String[] { lockerName }));
+			if(emc.getLockEntry().isDifferentWindows()) {
+				wControl.setWarning(translator.translate("error.editoralreadylocked.same.user", new String[] { lockerName }));
+			} else {
+				wControl.setWarning(translator.translate("error.editoralreadylocked", new String[] { lockerName }));
+			}
 			return null;
 		}
 		//set the logger if editor is started
@@ -236,6 +247,47 @@ public class CourseFactory {
 		return newCourse;
 	}
 
+	/**
+	 * Set the type of the course.
+	 * 
+	 * @param addedEntry The course repository entry
+	 * @param type The type of the course
+	 * @param identity The user which do the initialization
+	 * @return
+	 */
+	public static ICourse initNodeAccessType(RepositoryEntry addedEntry, NodeAccessType type) {
+		OLATResourceable courseOres = addedEntry.getOlatResource();
+		if (CourseFactory.isCourseEditSessionOpen(courseOres.getResourceableId())) {
+			log.warn("Not able to set the course node access type: Edit session is already open!");
+			return loadCourse(addedEntry);
+		}
+		
+		ICourse course = CourseFactory.openCourseEditSession(courseOres.getResourceableId());
+		CourseConfig courseConfig = course.getCourseEnvironment().getCourseConfig();
+		String nodeAccessType = type.getType();
+		courseConfig.setNodeAccessType(nodeAccessType);
+		
+		ModuleConfiguration runConfig = course.getCourseEnvironment().getRunStructure().getRootNode().getModuleConfiguration();
+		CourseEditorTreeNode courseEditorTreeNode = (CourseEditorTreeNode)course.getEditorTreeModel().getRootNode();
+		ModuleConfiguration editorConfig = courseEditorTreeNode.getCourseNode().getModuleConfiguration();
+		
+		NodeAccessService nodeAccessService = CoreSpringFactory.getImpl(NodeAccessService.class);
+		boolean scoreCalculatorSupported = nodeAccessService.isScoreCalculatorSupported(type);
+		runConfig.setBooleanEntry(STCourseNode.CONFIG_SCORE_CALCULATOR_SUPPORTED, scoreCalculatorSupported);
+		editorConfig.setBooleanEntry(STCourseNode.CONFIG_SCORE_CALCULATOR_SUPPORTED, scoreCalculatorSupported);
+		
+		if (!scoreCalculatorSupported) {
+			runConfig.setStringValue(STCourseNode.CONFIG_SCORE_KEY, STCourseNode.CONFIG_SCORE_VALUE_SUM);
+			runConfig.setBooleanEntry(STCourseNode.CONFIG_PASSED_PROGRESS, true);
+			editorConfig.setStringValue(STCourseNode.CONFIG_SCORE_KEY, STCourseNode.CONFIG_SCORE_VALUE_SUM);
+			editorConfig.setBooleanEntry(STCourseNode.CONFIG_PASSED_PROGRESS, true);
+		}
+		
+		CourseFactory.setCourseConfig(course.getResourceableId(), courseConfig);
+		CourseFactory.saveCourse(addedEntry.getOlatResource().getResourceableId());
+		CourseFactory.closeCourseEditSession(course.getResourceableId(), true);
+		return course;
+	}
 
 
 	/**
@@ -388,8 +440,10 @@ public class CourseFactory {
 		// delete course directory
 		VFSContainer fCourseBasePath = getCourseBaseContainer(res.getResourceableId());
 		VFSStatus status = fCourseBasePath.deleteSilently();
+		DBFactory.getInstance().commitAndCloseSession();
 		boolean deletionSuccessful = (status == VFSConstants.YES || status == VFSConstants.SUCCESS);
-		log.info("deleteCourse: finished deletion. res="+res+", deletion successful: "+deletionSuccessful+", duration: "+(System.currentTimeMillis()-start)+" ms.");
+		log.info("deleteCourse: finished deletion. res={}, deletion successful: {}, duration: {} ms.",
+				res, deletionSuccessful, (System.currentTimeMillis()-start));
 	}
 
 	/**
@@ -571,7 +625,7 @@ public class CourseFactory {
 			 //publish not possible when there are errors
 			 for(int i = 0; i < status.length; i++) {
 				 if(status[i].isError()) {
-					 log.error("Status error by publish: " + status[i].getLongDescription(locale));
+					 log.error("Status error by publish: {}", status[i].getLongDescription(locale));
 					 return;
 				 }
 			 }
@@ -596,12 +650,17 @@ public class CourseFactory {
 	 */
 	public static Controller createHelpCourseLaunchController(UserRequest ureq, WindowControl wControl) {
 		// Find repository entry for this course
-		String helpCourseSoftKey = CoreSpringFactory.getImpl(CourseModule.class).getHelpCourseSoftKey();
+		String helpCourseSoftKey = CoreSpringFactory.getImpl(HelpModule.class).getCourseSoftkey();
 		RepositoryManager rm = RepositoryManager.getInstance();
 		RepositoryService rs = CoreSpringFactory.getImpl(RepositoryService.class);
 		RepositoryEntry entry = null;
 		if (StringHelper.containsNonWhitespace(helpCourseSoftKey)) {
 			entry = rm.lookupRepositoryEntryBySoftkey(helpCourseSoftKey, false);
+			if (entry == null) {
+				try {
+					entry = rm.lookupRepositoryEntry(Long.valueOf(helpCourseSoftKey), false);
+				} catch (Exception e) {}
+			}
 		}
 		if (entry == null) {
 			Translator translator = Util.createPackageTranslator(CourseFactory.class, ureq.getLocale());
@@ -615,9 +674,28 @@ public class CourseFactory {
 
 			ContextEntry ce = BusinessControlFactory.getInstance().createContextEntry(entry);
 			WindowControl bwControl = BusinessControlFactory.getInstance().createBusinessWindowControl(ce, wControl);
-			RepositoryEntrySecurity reSecurity = new RepositoryEntrySecurityImpl(false, false, false, false, false, false, false, false, false, false, false, false, true, false);
+			RepositoryEntrySecurity reSecurity = new RepositoryEntrySecurityImpl(false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false);
 			return new RunMainController(ureq, bwControl, null, course, entry, reSecurity, null);
 		}
+	}
+	
+	public static boolean isHelpCourseExisting(String helpCourseKey) {
+		// Find repository entry for this course
+		RepositoryManager rm = RepositoryManager.getInstance();
+		RepositoryEntry entry = null;
+		
+		if (StringHelper.containsNonWhitespace(helpCourseKey)) {
+			entry = rm.lookupRepositoryEntryBySoftkey(helpCourseKey, false);
+			if (entry == null) {
+				try {
+					entry = rm.lookupRepositoryEntry(Long.valueOf(helpCourseKey), false);
+				} catch (Exception e) {
+					//
+				}
+			}
+		}
+		
+		return entry != null;
 	}
 
 	/**
@@ -688,6 +766,7 @@ public class CourseFactory {
 		course.getCourseEnvironment().getCourseGroupManager().archiveCourseGroups(exportDirectory);
 
 		CoreSpringFactory.getImpl(ChatLogHelper.class).archive(course, exportDirectory);
+		DBFactory.getInstance().commitAndCloseSession();
 
 	}
 
@@ -702,7 +781,7 @@ public class CourseFactory {
 	public static File getOrCreateDataExportDirectory(Identity identity, String courseName) {
 		String courseFolder = StringHelper.transformDisplayNameToFileSystemName(courseName);
 		// folder where exported user data should be put
-		File exportFolder = new File(FolderConfig.getCanonicalRoot() + FolderConfig.getUserHomes() + "/" + identity.getName() + "/private/archive/"
+		File exportFolder = new File(FolderConfig.getCanonicalRoot() + FolderConfig.getUserHome(identity) + "/private/archive/"
 						+ courseFolder);
 		if (exportFolder.exists()) {
 			if (!exportFolder.isDirectory()) { throw new OLATRuntimeException(ExportUtil.class, "File " + exportFolder.getAbsolutePath()
@@ -724,7 +803,7 @@ public class CourseFactory {
 	public static File getDataExportDirectory(Identity identity, String courseName) {
 		File exportFolder = new File( // folder where exported user data should be
 				// put
-				FolderConfig.getCanonicalRoot() + FolderConfig.getUserHomes() + "/" + identity.getName() + "/private/archive/"
+				FolderConfig.getCanonicalRoot() + FolderConfig.getUserHome(identity) + "/private/archive/"
 						+ Formatter.makeStringFilesystemSave(courseName));
 		return exportFolder;
 	}
@@ -742,7 +821,7 @@ public class CourseFactory {
 		if (identity==null) {
 			return null;
 		}
-		return new File(FolderConfig.getCanonicalRoot() + FolderConfig.getUserHomes() + "/" + identity.getName());
+		return new File(FolderConfig.getCanonicalRoot() + FolderConfig.getUserHome(identity));
 	}
 
 	/**
@@ -756,7 +835,7 @@ public class CourseFactory {
 	public static File getOrCreateStatisticDirectory(Identity identity, String courseName) {
 		File exportFolder = new File( // folder where exported user data should be
 				// put
-				FolderConfig.getCanonicalRoot() + FolderConfig.getUserHomes() + "/" + identity.getName() + "/private/statistics/"
+				FolderConfig.getCanonicalRoot() + FolderConfig.getUserHome(identity) + "/private/statistics/"
 						+ Formatter.makeStringFilesystemSave(courseName));
 		if (exportFolder.exists()) {
 			if (!exportFolder.isDirectory()) { throw new OLATRuntimeException(ExportUtil.class, "File " + exportFolder.getAbsolutePath()
@@ -910,18 +989,18 @@ public class CourseFactory {
 	 * The courseEditSession object should live between acquire course lock and release course lock.
 	 * 
 	 * @param resourceableId The resource id
-	 * @return
+	 * @return The course
 	 */
 	public static PersistingCourseImpl openCourseEditSession(Long resourceableId) {
 		PersistingCourseImpl course = courseEditSessionMap.get(resourceableId);
 		if(course != null) {
 			throw new AssertException("There is already an edit session open for this course: " + resourceableId);
-		} else {
-			course = (PersistingCourseImpl)loadCourse(resourceableId);
-			course.setReadAndWrite(true);
-			courseEditSessionMap.put(resourceableId, course);
-			log.debug("getCourseEditSession - put course in courseEditSessionMap: {}", resourceableId);
 		}
+		
+		course = (PersistingCourseImpl)loadCourse(resourceableId);
+		course.setReadAndWrite(true);
+		courseEditSessionMap.put(resourceableId, course);
+		log.debug("getCourseEditSession - put course in courseEditSessionMap: {}", resourceableId);
 		return course;
 	}
 
@@ -939,7 +1018,7 @@ public class CourseFactory {
 	 */
 	public static PersistingCourseImpl getCourseEditSession(Long resourceableId) {
 		PersistingCourseImpl course = courseEditSessionMap.get(resourceableId);
-		if(course==null) {
+		if(course == null) {
 			throw new AssertException("No edit session open for this course: " + resourceableId + " - Open a session first!");
 		}
 		return course;
@@ -947,12 +1026,13 @@ public class CourseFactory {
 
 	public static void closeCourseEditSession(Long resourceableId, boolean checkIfAnyAvailable) {
 		PersistingCourseImpl course = courseEditSessionMap.get(resourceableId);
-		if(course==null && checkIfAnyAvailable) {
+		if(course == null && checkIfAnyAvailable) {
 			throw new AssertException("No edit session open for this course: " + resourceableId + " - There is nothing to be closed!");
-		}	else if (course!=null) {
-		  course.setReadAndWrite(false);
-		  courseEditSessionMap.remove(resourceableId);
-		  log.debug("removeCourseEditSession for course: {}", resourceableId);
+		}
+		if(course != null) {
+			course.setReadAndWrite(false);
+			courseEditSessionMap.remove(resourceableId);
+			log.debug("removeCourseEditSession for course: {}", resourceableId);
 		}
 	}
 
@@ -993,7 +1073,7 @@ public class CourseFactory {
 
 			String archiveName = cn.getType() + "_"
 					+ StringHelper.transformDisplayNameToFileSystemName(cn.getShortName())
-					+ "_" + Formatter.formatDatetimeFilesystemSave(new Date(System.currentTimeMillis()));
+					+ "_" + Formatter.formatDatetimeFilesystemSave(new Date(System.currentTimeMillis())) + ".zip";
 
 			File exportFile = new File(exportPath, archiveName);
 			try(FileOutputStream fileStream = new FileOutputStream(exportFile);

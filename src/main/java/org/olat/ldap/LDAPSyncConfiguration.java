@@ -99,6 +99,8 @@ public class LDAPSyncConfiguration {
 	private String learningResourceManagerRoleAttribute;
 	private String learningResourceManagerRoleValue;
 	
+	private String groupCoachAsParticipant;
+	
 	/**
 	 * Static user properties that should be added to user when syncing
 	 */ 
@@ -260,6 +262,18 @@ public class LDAPSyncConfiguration {
 	public void setAuthorRoleValue(String value) {
 		this.authorRoleValue = value;
 	}
+	
+	public boolean isGroupCoachParticipant() {
+		return "true".equals(groupCoachAsParticipant);
+	}
+
+	public String getGroupCoachAsParticipant() {
+		return groupCoachAsParticipant;
+	}
+
+	public void setGroupCoachAsParticipant(String groupCoachAsParticipant) {
+		this.groupCoachAsParticipant = groupCoachAsParticipant;
+	}
 
 	public List<String> getUserManagersGroupBase() {
 		return userManagersGroupBase;
@@ -401,10 +415,24 @@ public class LDAPSyncConfiguration {
 		this.ldapUserPasswordAttribute = attribute;
 	}
 
+	public List<String> getLdapUserLoginAttributes() {
+		if(StringHelper.containsNonWhitespace(ldapUserLoginAttribute)) {
+			String[] attrs = ldapUserLoginAttribute.split("[,]");
+			return List.of(attrs);
+		}
+		return List.of();
+	}
+	
+	/**
+	 * @return One or several attributes comma separated
+	 */
 	public String getLdapUserLoginAttribute() {
 		return ldapUserLoginAttribute;
 	}
 
+	/**
+	 * @param ldapUserLoginAttribute One or several attributes comma separated
+	 */
 	public void setLdapUserLoginAttribute(String ldapUserLoginAttribute) {
 		this.ldapUserLoginAttribute = ldapUserLoginAttribute;
 	}
@@ -497,11 +525,8 @@ public class LDAPSyncConfiguration {
 				}
 			}
 			if (!propertyExists) {
-				log.error("Error in checkIfOlatPropertiesExists(): configured LDAP attribute::"
-								+ ldapAttribute
-								+ " configured to map to OLAT user property::"
-								+ olatProperty
-								+ " but no such user property configured in olat_userconfig.xml");
+				log.error("Error in checkIfOlatPropertiesExists(): configured LDAP attribute::{} configured to map to OLAT user property::{} but no such user property configured in olat_userconfig.xml",
+						ldapAttribute, olatProperty);
 				return false;				
 			}
 		}
@@ -529,9 +554,7 @@ public class LDAPSyncConfiguration {
 				}
 			}
 			if ( ! propertyExists ) {
-				log.error("Error in checkIfStaticOlatPropertiesExists(): configured static OLAT user property::"
-						+ olatProperty
-						+ " is not configured in olat_userconfig.xml");
+				log.error("Error in checkIfStaticOlatPropertiesExists(): configured static OLAT user property::{} is not configured in olat_userconfig.xml", olatProperty);
 				return false;				
 			}			
 		}
@@ -547,17 +570,18 @@ public class LDAPSyncConfiguration {
 	 * @return null If all required Attributes are found, otherwise String[] of missing Attributes
 	 * 
 	 */
-	public String[] checkRequestAttributes(Attributes attrs) {
+	public List<String> checkRequestAttributes(Attributes attrs, boolean emailMandatory) {
 		Map<String, String> reqAttrMap = getRequestAttributes();
-		String[] missingAttr = new String[reqAttrMap.size()];
-		int y = 0;
+		List<String> missingAttrList = new ArrayList<>();
 		for (String attKey : reqAttrMap.keySet()) {
 			attKey = attKey.trim();
-			if (attrs.get(attKey) == null) {
-				missingAttr[y++] = attKey;
+			boolean missing = attrs.get(attKey) == null;
+			boolean optional = !emailMandatory && "email".equals(userAttributeMap.get(attKey));
+			if (missing && !optional) {
+				missingAttrList.add(attKey);
 			}
 		}
-		return (y == 0) ? null : missingAttr;
+		return missingAttrList;
 	}
 	
 	/**

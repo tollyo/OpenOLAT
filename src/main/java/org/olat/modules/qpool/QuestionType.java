@@ -40,6 +40,7 @@ public enum QuestionType {
 	MATCHDRAGANDDROP,
 	MATCHTRUEFALSE,
 	HOTTEXT,
+	ORDER,
 	UNKOWN
 
 }

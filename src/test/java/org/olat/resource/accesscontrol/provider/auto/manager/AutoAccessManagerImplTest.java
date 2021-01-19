@@ -20,6 +20,7 @@
 package org.olat.resource.accesscontrol.provider.auto.manager;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.isA;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -167,15 +168,6 @@ public class AutoAccessManagerImplTest {
 	}
 
 	@Test
-	public void shouldAddAdvanceEntryOnlyIfNotExists() {
-		when(advanceOrderDaoMock.exists(IDENTITY, IdentifierKey.internalId, SECOND_VALUE, accessMethodDummy)).thenReturn(true);
-
-		sut.createAdvanceOrders(advanceOrderInputMock);
-
-		verify(advanceOrderDaoMock, times(5)).create(any(Identity.class), any(IdentifierKey.class), anyString(), any(AutoAccessMethod.class));
-	}
-
-	@Test
 	public void shouldNotGrantAccessIfAlreadyDone() {
 		Collection<AdvanceOrder> advanceOrders = new ArrayList<>();
 		AdvanceOrderImpl doneAdvanceOrder = new AdvanceOrderImpl();
@@ -270,7 +262,7 @@ public class AutoAccessManagerImplTest {
 
 		sut.grantAccess(getPendingAdvanceOrders());
 
-		verify(advanceOrderDaoMock, times(2)).accomplishAndSave(any(AdvanceOrder.class));
+		verify(advanceOrderDaoMock, times(2)).accomplishAndSave(any(AdvanceOrder.class), anyBoolean());
 	}
 
 	@Test
@@ -282,4 +274,5 @@ public class AutoAccessManagerImplTest {
 
 		verify(identifierHandlerMock, times(IdentifierKey.values().length)).getRepositoryEntryValue(any(IdentifierKey.class), any(RepositoryEntry.class));
 	}
+	
 }

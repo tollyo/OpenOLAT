@@ -28,7 +28,6 @@ import java.util.List;
 
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
-import org.olat.core.gui.components.panel.LayeredPanel;
 import org.olat.core.gui.components.panel.Panel;
 import org.olat.core.gui.components.panel.SimpleStackedPanel;
 import org.olat.core.gui.components.panel.StackedPanel;
@@ -50,17 +49,18 @@ public class GuiStackNiceImpl implements GuiStack {
 	private static final String VELOCITY_ROOT = Util.getPackageVelocityRoot(GuiStackNiceImpl.class);
 	
 	private StackedPanel panel;
-	private StackedPanel modalPanel;
-	private int modalLayers;
+	private final StackedPanel modalPanel;
+	private final StackedPanel topModalPanel;
+	private int modalLayers = 0;
+	private int topModalLayers = 0;
 
 	private WindowBackOffice wbo;
 
 	private GuiStackNiceImpl() {
 		panel = new SimpleStackedPanel("guistackpanel");
 		// Use a layered panel instead of a standard panel to support multiple modal layers
-		modalPanel = new LayeredPanel("guistackmodalpanel", 900, 100);
-		modalLayers = 0;
-		
+		modalPanel = new LayeredPanel("guistackmodalpanel", "o_layered_panel", 900, 100);
+		topModalPanel = new LayeredPanel("topmodalpanel", "o_ltop_modal_panel", 70000, 100);
 	}
 
 	/**
@@ -72,9 +72,6 @@ public class GuiStackNiceImpl implements GuiStack {
 		setContent(initialBaseComponent);
 	}
 
-	/**
-	 * @see org.olat.core.gui.control.GuiStackHandle#setContent(org.olat.core.gui.components.Component)
-	 */
 	private void setContent(Component newContent) {
 		panel.setContent(newContent);
 	}
@@ -86,29 +83,15 @@ public class GuiStackNiceImpl implements GuiStack {
 	 */
 	@Override
 	public void pushModalDialog(Component content) {
+		if(this.topModalLayers > 0) {
+			pushTopModalDialog(content);
+			return;
+		}
+
 		wbo.sendCommandTo(new ScrollTopCommand());
 		
-		// wrap the component into a modal foreground dialog with alpha-blended-background
-		final Panel guiMsgPlace = new Panel("guimsgplace_for_modaldialog");
-		VelocityContainer inset = new VelocityContainer("inset", VELOCITY_ROOT + "/modalDialog.html", null, null) {
-			@Override
-			public void validate(UserRequest ureq, ValidationResult vr) {
-				super.validate(ureq, vr);
-				// just before rendering, we need to tell the windowbackoffice that we are a favorite for accepting gui-messages.
-				// the windowbackoffice doesn't know about guimessages, it is only a container that keeps them for one render cycle
-				List<ZIndexWrapper> zindexed = wbo.getGuiMessages();
-				zindexed.add(new ZIndexWrapper(guiMsgPlace, 10));
-			}
-		};
-		inset.put("cont", content);
-		inset.put("guimsgplace", guiMsgPlace);
 		int zindex = 900 + (modalLayers * 100) + 5;
-		inset.contextPut("zindexoverlay", zindex+1);
-		inset.contextPut("zindexshim", zindex);
-		inset.contextPut("zindexarea", zindex+5);
-		inset.contextPut("zindexextwindows", zindex+50);
-		
-		
+		VelocityContainer inset = wrapModal(content, zindex);
 		modalPanel.pushContent(inset);
 		// the links in the panel cannot be clicked because of the alpha-blended background over it, but if user chooses own css style ->
 		// FIXME:fj:b panel.setEnabled(false) causes effects if there is an image component in the panel -> the component is not dispatched
@@ -124,13 +107,16 @@ public class GuiStackNiceImpl implements GuiStack {
 		// within a controller
 		// - solution c is a safe and easy way to allow dispatching (only in case a mediaresource is returned as a result of the dispatching) even
 		// if parent elements are not enabled
-		
-		
+
 		modalLayers++;
 	}
 	
 	@Override
 	public boolean removeModalDialog(Component content) {
+		if(topModalLayers > 0 && removeTopModalDialog(content)) {
+			return true;
+		}
+		
 		Component insetCmp = modalPanel.getContent();
 		if(insetCmp instanceof VelocityContainer) {
 			VelocityContainer inset = (VelocityContainer)insetCmp;
@@ -144,10 +130,57 @@ public class GuiStackNiceImpl implements GuiStack {
 	}
 
 	@Override
+	public void pushTopModalDialog(Component content) {
+		wbo.sendCommandTo(new ScrollTopCommand());
+
+		int zindex = 70000 + (topModalLayers * 100) + 5;
+		VelocityContainer inset = wrapModal(content, zindex);
+		topModalPanel.pushContent(inset);
+		
+		topModalLayers++;
+	}
+	
+	private VelocityContainer wrapModal(Component content, int zindex) {
+		final Panel guiMsgPlace = new Panel("guimsgplace_for_topmodaldialog");
+		VelocityContainer inset = new VelocityContainer("topinset", VELOCITY_ROOT + "/modalDialog.html", null, null) {
+			@Override
+			public void validate(UserRequest ureq, ValidationResult vr) {
+				super.validate(ureq, vr);
+				// just before rendering, we need to tell the windowbackoffice that we are a favorite for accepting gui-messages.
+				// the windowbackoffice doesn't know about guimessages, it is only a container that keeps them for one render cycle
+				List<ZIndexWrapper> zindexed = wbo.getGuiMessages();
+				zindexed.add(new ZIndexWrapper(guiMsgPlace, 10));
+			}
+		};
+		inset.put("cont", content);
+		inset.put("guimsgplace", guiMsgPlace);
+		inset.contextPut("zindexoverlay", zindex + 1);
+		inset.contextPut("zindexshim", zindex);
+		inset.contextPut("zindexarea", zindex + 5);
+		inset.contextPut("zindexextwindows", zindex + 50);
+		return inset;
+	}
+
+	@Override
+	public boolean removeTopModalDialog(Component content) {
+		Component insetCmp = topModalPanel.getContent();
+		if(insetCmp instanceof VelocityContainer) {
+			VelocityContainer inset = (VelocityContainer)insetCmp;
+			Component topModalContent = inset.getComponent("cont");
+			if(topModalContent == content) {
+				popContent();
+				return true;
+			}
+		}
+		return false;
+	}
+
+	@Override
 	public void pushCallout(Component content, String targetId, CalloutSettings settings) {
 		// wrap the component into a modal foreground dialog with alpha-blended-background
 		final Panel guiMsgPlace = new Panel("guimsgplace_for_callout");
 		VelocityContainer inset = new VelocityContainer("inset", VELOCITY_ROOT + "/callout.html", null, null) {
+			@Override
 			public void validate(UserRequest ureq, ValidationResult vr) {
 				super.validate(ureq, vr);
 				// just before rendering, we need to tell the windowbackoffice that we are a favorite for accepting gui-messages.
@@ -190,7 +223,10 @@ public class GuiStackNiceImpl implements GuiStack {
 	@Override
 	public Component popContent() {
 		Component popComponent;
-		if (modalLayers > 0) {
+		if(topModalLayers > 0) {
+			topModalLayers--;
+			popComponent = topModalPanel.popContent();
+		} else if (modalLayers > 0) {
 			modalLayers--;
 			popComponent = modalPanel.popContent();
 		} else {
@@ -202,6 +238,7 @@ public class GuiStackNiceImpl implements GuiStack {
 	/**
 	 * @return
 	 */
+	@Override
 	public StackedPanel getPanel() {
 		return panel;
 	}
@@ -209,8 +246,13 @@ public class GuiStackNiceImpl implements GuiStack {
 	/**
 	 * @return Returns the modalPanel.
 	 */
+	@Override
 	public StackedPanel getModalPanel() {
 		return modalPanel;
 	}
 
+	@Override
+	public StackedPanel getTopModalPanel() {
+		return topModalPanel;
+	}
 }

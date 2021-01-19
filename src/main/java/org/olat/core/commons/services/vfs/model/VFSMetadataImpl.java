@@ -29,6 +29,7 @@ import javax.persistence.GenerationType;
 import javax.persistence.Id;
 import javax.persistence.JoinColumn;
 import javax.persistence.ManyToOne;
+import javax.persistence.NamedQuery;
 import javax.persistence.Table;
 import javax.persistence.Temporal;
 import javax.persistence.TemporalType;
@@ -40,6 +41,7 @@ import org.olat.core.commons.services.vfs.VFSMetadata;
 import org.olat.core.gui.util.CSSHelper;
 import org.olat.core.id.Identity;
 import org.olat.core.id.Persistable;
+import org.olat.core.util.StringHelper;
 
 /**
  * 
@@ -49,6 +51,7 @@ import org.olat.core.id.Persistable;
  */
 @Entity(name="filemetadata")
 @Table(name="o_vfs_metadata")
+@NamedQuery(name="metadataOnlyByParent", query="select metadata from filemetadata metadata where metadata.parent.key=:parentKey")
 public class VFSMetadataImpl implements Persistable, VFSMetadata {
 
 	private static final long serialVersionUID = 1360000029480576628L;
@@ -77,6 +80,9 @@ public class VFSMetadataImpl implements Persistable, VFSMetadata {
 	private boolean directory;
 	@Column(name="f_lastmodified", nullable=false, insertable=true, updatable=true)
 	private Date fileLastModified;
+	@ManyToOne(targetEntity=IdentityImpl.class,fetch=FetchType.LAZY,optional=true)
+	@JoinColumn(name="fk_lastmodified_by", nullable=true, insertable=true, updatable=true)
+	private Identity fileLastModifiedBy;
 	@Column(name="f_size", nullable=false, insertable=true, updatable=true)
 	private long fileSize;
 	@Column(name="f_uri", nullable=false, insertable=true, updatable=true)
@@ -206,6 +212,15 @@ public class VFSMetadataImpl implements Persistable, VFSMetadata {
 	}
 
 	@Override
+	public Identity getFileLastModifiedBy() {
+		return fileLastModifiedBy;
+	}
+
+	public void setFileLastModifiedBy(Identity fileLastModifiedBy) {
+		this.fileLastModifiedBy = fileLastModifiedBy;
+	}
+
+	@Override
 	public long getFileSize() {
 		return fileSize;
 	}
@@ -315,6 +330,7 @@ public class VFSMetadataImpl implements Persistable, VFSMetadata {
 		return uuid;
 	}
 
+	@Override
 	public void setUuid(String uuid) {
 		this.uuid = uuid;
 	}
@@ -494,6 +510,7 @@ public class VFSMetadataImpl implements Persistable, VFSMetadata {
 		this.materializedPathKeys = materializedPathKeys;
 	}
 
+	@Override
 	public String getMigrated() {
 		return migrated;
 	}
@@ -531,22 +548,46 @@ public class VFSMetadataImpl implements Persistable, VFSMetadata {
 	}
 
 	@Override
-	public void copyValues(VFSMetadata fromMeta) {
-		setAuthor(fromMeta.getAuthor());
-		setComment(fromMeta.getComment());
-		setCity(fromMeta.getCity());
-		setCreator(fromMeta.getCreator());
-		setLanguage(fromMeta.getLanguage());
-		setPages(fromMeta.getPages());
-		setPublicationDate(fromMeta.getPublicationDate()[1], fromMeta.getPublicationDate()[0]);
-		setPublisher(fromMeta.getPublisher());
-		setSource(fromMeta.getSource());
-		setTitle(fromMeta.getTitle());
-		setUrl(fromMeta.getUrl());
-		setLicenseType(fromMeta.getLicenseType());
-		setLicenseTypeName(fromMeta.getLicenseTypeName());
-		setLicensor(fromMeta.getLicensor());
-		setLicenseText(fromMeta.getLicenseText());
+	public void copyValues(VFSMetadata fromMeta, boolean override) {
+		if(override || getAuthor() == null) {
+			setAuthor(fromMeta.getAuthor());
+		}
+		if(override || !StringHelper.containsNonWhitespace(getComment())) {
+			setComment(fromMeta.getComment());
+		}
+		if(override || !StringHelper.containsNonWhitespace(getCity())) {
+			setCity(fromMeta.getCity());
+		}
+		if(override || !StringHelper.containsNonWhitespace(getCreator())) {
+			setCreator(fromMeta.getCreator());
+		}
+		if(override || !StringHelper.containsNonWhitespace(getLanguage())) {
+			setLanguage(fromMeta.getLanguage());
+		}
+		if(override || !StringHelper.containsNonWhitespace(getPages())) {
+			setPages(fromMeta.getPages());
+		}
+		if(override || getPublicationDate() == null) {
+			setPublicationDate(fromMeta.getPublicationDate()[1], fromMeta.getPublicationDate()[0]);
+		}
+		if(override || !StringHelper.containsNonWhitespace(getPublisher())) {
+			setPublisher(fromMeta.getPublisher());
+		}
+		if(override || !StringHelper.containsNonWhitespace(getSource())) {
+			setSource(fromMeta.getSource());
+		}
+		if(override || !StringHelper.containsNonWhitespace(getTitle())) {
+			setTitle(fromMeta.getTitle());
+		}
+		if(override || !StringHelper.containsNonWhitespace(getUrl())) {
+			setUrl(fromMeta.getUrl());
+		}
+		if(override || getLicenseType() == null) {
+			setLicenseType(fromMeta.getLicenseType());
+			setLicenseTypeName(fromMeta.getLicenseTypeName());
+			setLicensor(fromMeta.getLicensor());
+			setLicenseText(fromMeta.getLicenseText());
+		}
 	}
 	
 	public void copyValues(VFSRevisionImpl fromMeta) {

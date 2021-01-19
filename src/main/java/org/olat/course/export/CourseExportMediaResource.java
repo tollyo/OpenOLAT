@@ -23,6 +23,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -42,12 +43,14 @@ import org.olat.core.util.StringHelper;
 import org.olat.core.util.WebappHelper;
 import org.olat.core.util.ZipUtil;
 import org.olat.core.util.io.ShieldOutputStream;
-import org.olat.core.util.io.SystemFileFilter;
 import org.olat.core.util.nodes.INode;
 import org.olat.core.util.tree.TreeVisitor;
 import org.olat.core.util.vfs.LocalFolderImpl;
 import org.olat.core.util.vfs.VFSContainer;
+import org.olat.core.util.vfs.VFSItem;
 import org.olat.core.util.vfs.VFSManager;
+import org.olat.core.util.vfs.filters.VFSRevisionsAndThumbnailsFilter;
+import org.olat.core.util.vfs.filters.VFSSystemItemFilter;
 import org.olat.course.CourseFactory;
 import org.olat.course.ICourse;
 import org.olat.course.PersistingCourseImpl;
@@ -232,7 +235,7 @@ public class CourseExportMediaResource implements MediaResource, StreamingOutput
 		// export shared folder
 		CourseConfig config = sourceCourse.getCourseConfig();
 		if (config.hasCustomSharedFolder()) {
-			exportSharedFolder(config, sourceCourse, fExportedDataDir, zout);
+			exportSharedFolder(config, sourceCourse, zout);
 		}
 		// export glossary
 		if (config.hasGlossary()) {
@@ -298,42 +301,38 @@ public class CourseExportMediaResource implements MediaResource, StreamingOutput
 		}
 	}
 	
-	private void exportSharedFolder(CourseConfig config, PersistingCourseImpl sourceCourse, File fExportedDataDir, ZipOutputStream zout) {
-		File sharedFolderExportDataDir = new File(fExportedDataDir, "sharedfolder");
+	private void exportSharedFolder(CourseConfig config, PersistingCourseImpl sourceCourse, ZipOutputStream zout) {
 		try {
-			sharedFolderExportDataDir.mkdir();
-		
 			log.info("exportToFilesystem: exporting shared folder course: {}", sourceCourse);
-			if (!SharedFolderManager.getInstance().exportSharedFolder(config.getSharedFolderSoftkey(), sharedFolderExportDataDir)) {
+			String exportPath = ICourse.EXPORTED_DATA_FOLDERNAME + "/" + "sharedfolder";
+			if (!SharedFolderManager.getInstance().exportSharedFolder(config.getSharedFolderSoftkey(), exportPath, zout)) {
 				// export failed, delete reference to shared folder in the course config
 				log.info("exportToFilesystem: export of shared folder failed.");
 				config.setSharedFolderSoftkey(CourseConfig.VALUE_EMPTY_SHAREDFOLDER_SOFTKEY);
 				CoreSpringFactory.getImpl(CourseConfigManager.class).saveConfigTo(sourceCourse, config);
 			}
 			log.info("exportToFilesystem: exporting shared folder course done: {}", sourceCourse);
-			ZipUtil.addDirectoryToZip(sharedFolderExportDataDir.toPath(), ICourse.EXPORTED_DATA_FOLDERNAME, zout);
 		} catch (Exception e) {
 			log.error("", e);
 		} finally {
-			FileUtils.deleteDirsAndFiles(sharedFolderExportDataDir, true, true);
 			DBFactory.getInstance().commitAndCloseSession();
 		}
 	}
 	
 	private void exportCoursefolder(PersistingCourseImpl sourceCourse, ZipOutputStream zout) throws IOException {
-		File courseFolder = sourceCourse.getIsolatedCourseBaseFolder();
-		File[] hasChildren = courseFolder.listFiles(SystemFileFilter.DIRECTORY_FILES);
-		if(hasChildren != null && hasChildren.length > 0) {
+		VFSContainer courseFolder = sourceCourse.getIsolatedCourseBaseContainer();
+		List<VFSItem> hasChildren = courseFolder.getItems(new VFSSystemItemFilter());
+		if(hasChildren != null && !hasChildren.isEmpty()) {
 			zout.putNextEntry(new ZipEntry("oocoursefolder.zip"));
-			
 			// export course folder
 			try(OutputStream shieldedStream = new ShieldOutputStream(zout);
 					ZipOutputStream exportStream = new ZipOutputStream(shieldedStream)) {
-				ZipUtil.addPathToZip(courseFolder.toPath(), exportStream);	
+				for(VFSItem child:hasChildren) {
+					ZipUtil.addToZip(child, "", exportStream, new VFSSystemItemFilter(), true);
+				}
 			} catch(Exception e) {
 				log.error("", e);
 			}
-			
 			zout.closeEntry();
 		}			
 	}
@@ -385,13 +384,15 @@ public class CourseExportMediaResource implements MediaResource, StreamingOutput
 	}
 	
 	private void exportBCCourseNode(PersistingCourseImpl sourceCourse, BCCourseNode courseNode, ZipOutputStream zout) {
+		if(courseNode.isSharedFolder()) return;
+		
 		try(ShieldOutputStream fOut = new ShieldOutputStream(zout)) {
 			VFSContainer nodeContainer = VFSManager.olatRootContainer(BCCourseNode.getFoldernodePathRelToFolderBase(sourceCourse.getCourseEnvironment(), courseNode), null);
 	
 			String nodeDirectory = ZipUtil.concat(ICourse.EXPORTED_DATA_FOLDERNAME, courseNode.getIdent());
 			zout.putNextEntry(new ZipEntry(ZipUtil.concat(nodeDirectory, "oonode.zip")));
 			
-			ZipUtil.zip(nodeContainer, fOut);
+			ZipUtil.zip(nodeContainer, fOut, new VFSRevisionsAndThumbnailsFilter(), true);
 			
 			zout.closeEntry();
 		} catch (IOException e) {

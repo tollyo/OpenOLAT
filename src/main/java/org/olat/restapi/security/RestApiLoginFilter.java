@@ -38,8 +38,8 @@ import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 
 import org.apache.logging.log4j.Logger;
-import org.olat.admin.user.delete.service.UserDeletionManager;
 import org.olat.basesecurity.AuthHelper;
+import org.olat.basesecurity.BaseSecurity;
 import org.olat.basesecurity.BaseSecurityModule;
 import org.olat.core.CoreSpringFactory;
 import org.olat.core.commons.persistence.DBFactory;
@@ -56,6 +56,7 @@ import org.olat.core.util.UserSession;
 import org.olat.core.util.WebappHelper;
 import org.olat.core.util.i18n.I18nManager;
 import org.olat.core.util.session.UserSessionManager;
+import org.olat.login.auth.AuthenticationStatus;
 import org.olat.login.auth.OLATAuthManager;
 import org.olat.restapi.RestModule;
 
@@ -176,7 +177,7 @@ public class RestApiLoginFilter implements Filter {
 						String password = userPass.substring(p + 1);
 
 						OLATAuthManager olatAuthenticationSpi = CoreSpringFactory.getImpl(OLATAuthManager.class);
-						Identity identity = olatAuthenticationSpi.authenticate(null, username, password);
+						Identity identity = olatAuthenticationSpi.authenticate(null, username, password, new AuthenticationStatus());
 						if(identity == null) {
 							return false;
 						}
@@ -192,7 +193,7 @@ public class RestApiLoginFilter implements Filter {
 
 						int loginStatus = AuthHelper.doHeadlessLogin(identity, BaseSecurityModule.getDefaultAuthProviderIdentifier(), ureq, true);
 						if (loginStatus == AuthHelper.LOGIN_OK) {
-							CoreSpringFactory.getImpl(UserDeletionManager.class).setIdentityAsActiv(identity);
+							CoreSpringFactory.getImpl(BaseSecurity.class).setIdentityLastLogin(identity);
 							//Forge a new security token
 							RestSecurityBean securityBean = CoreSpringFactory.getImpl(RestSecurityBean.class);
 							String token = securityBean.generateToken(identity, request.getSession());
@@ -323,7 +324,7 @@ public class RestApiLoginFilter implements Filter {
 			usess.setRoles(Roles.userRoles());
 
 			String remoteAddr = request.getRemoteAddr();
-			SessionInfo sinfo = new SessionInfo(Long.valueOf(-1), "REST", request.getSession());
+			SessionInfo sinfo = new SessionInfo(Long.valueOf(-1), request.getSession());
 			sinfo.setFirstname("REST");
 			sinfo.setLastname(remoteAddr);
 			sinfo.setFromIP(remoteAddr);

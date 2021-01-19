@@ -38,16 +38,29 @@ import org.olat.core.util.Formatter;
 public class TimeFlexiCellRenderer implements FlexiCellRenderer {
 	
 	private final Formatter format;
+	private final boolean fullDateTooltip;
 	
 	public TimeFlexiCellRenderer(Locale locale) {
+		this(locale, false);
+	}
+	
+	public TimeFlexiCellRenderer(Locale locale, boolean fullDateTooltip) {
 		format = Formatter.getInstance(locale);
+		this.fullDateTooltip = fullDateTooltip;
 	}
 
 	@Override
 	public void render(Renderer renderer, StringOutput target, Object cellValue,
 			int row, FlexiTableComponent source, URLBuilder ubu, Translator translator) {
 		if(cellValue instanceof Date) {
-			target.append(format.formatTimeShort((Date)cellValue));
+			Date date = (Date)cellValue;
+			if(fullDateTooltip) {
+				target.append("<span title='").append(format.formatDateAndTime(date)).append("'>")
+					.append(format.formatTimeShort((Date)cellValue))
+					.append("</span>");
+			} else {
+				target.append(format.formatTimeShort((Date)cellValue));
+			}
 		}
 	}
 }

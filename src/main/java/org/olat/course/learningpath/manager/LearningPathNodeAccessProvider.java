@@ -39,10 +39,10 @@ import org.olat.course.run.CoursePaginationController;
 import org.olat.course.run.userview.CourseTreeModelBuilder;
 import org.olat.course.run.userview.UserCourseEnvironment;
 import org.olat.course.tree.CourseEditorTreeModel;
-import org.olat.modules.assessment.Role;
 import org.olat.modules.assessment.model.AssessmentEntryStatus;
 import org.olat.repository.RepositoryEntry;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
 /**
@@ -52,6 +52,7 @@ import org.springframework.stereotype.Service;
  *
  */
 @Service
+@Order(1)
 public class LearningPathNodeAccessProvider implements NodeAccessProvider {
 
 	public static final String TYPE = "learningpath";
@@ -75,6 +76,12 @@ public class LearningPathNodeAccessProvider implements NodeAccessProvider {
 		Translator translator = Util.createPackageTranslator(LearningPathNodeConfigController.class, locale);
 		return translator.translate("access.provider.name");
 	}
+	
+	@Override
+	public String getToolTipHelpText(Locale locale) {
+		Translator translator = Util.createPackageTranslator(LearningPathNodeConfigController.class, locale);
+		return translator.translate("access.provider.toolTip");
+	}
 
 	@Override
 	public boolean isSupported(String courseNodeType) {
@@ -83,6 +90,11 @@ public class LearningPathNodeAccessProvider implements NodeAccessProvider {
 
 	@Override
 	public boolean isGuestSupported() {
+		return false;
+	}
+
+	@Override
+	public boolean isConditionExpressionSupported() {
 		return false;
 	}
 
@@ -122,7 +134,7 @@ public class LearningPathNodeAccessProvider implements NodeAccessProvider {
 			AssessmentEntryStatus status = getStatus(courseNode, userCourseEnv, result.isDone(),
 					result.isFullyAssessed());
 			courseAssessmentService.updateFullyAssessed(courseNode, userCourseEnv,
-					Boolean.valueOf(result.isFullyAssessed()), status, Role.user);
+					Boolean.valueOf(result.isFullyAssessed()), status);
 			return true;
 		}
 		return false;
@@ -139,38 +151,37 @@ public class LearningPathNodeAccessProvider implements NodeAccessProvider {
 	@Override
 	public void onAssessmentConfirmed(CourseNode courseNode, UserCourseEnvironment userCourseEnv, boolean confirmed) {
 		FullyAssessedResult result = getConfigs(courseNode).isFullyAssessedOnConfirmation(confirmed);
-		updateFullyAssessed(courseNode, userCourseEnv, Role.user, result);
+		updateFullyAssessed(courseNode, userCourseEnv, result);
 	}
 
 	@Override
 	public void onScoreUpdated(CourseNode courseNode, UserCourseEnvironment userCourseEnv, Float score,
-			Boolean userVisibility, Role by) {
+			Boolean userVisibility) {
 		FullyAssessedResult result = getConfigs(courseNode).isFullyAssessedOnScore(score, userVisibility);
-		updateFullyAssessed(courseNode, userCourseEnv, by, result);
+		updateFullyAssessed(courseNode, userCourseEnv, result);
 	}
 
 	@Override
 	public void onPassedUpdated(CourseNode courseNode, UserCourseEnvironment userCourseEnv, Boolean passed,
-			Boolean userVisibility, Role by) {
+			Boolean userVisibility) {
 		FullyAssessedResult result = getConfigs(courseNode).isFullyAssessedOnPassed(passed, userVisibility);
-		updateFullyAssessed(courseNode, userCourseEnv, by, result);
+		updateFullyAssessed(courseNode, userCourseEnv, result);
 	}
 
 	@Override
 	public void onStatusUpdated(CourseNode courseNode, UserCourseEnvironment userCourseEnv,
-			AssessmentEntryStatus status, Role by) {
+			AssessmentEntryStatus status) {
 		FullyAssessedResult result = getConfigs(courseNode).isFullyAssessedOnStatus(status);
-		updateFullyAssessed(courseNode, userCourseEnv, by, result);
+		updateFullyAssessed(courseNode, userCourseEnv, result);
 	}
 
-	void updateFullyAssessed(CourseNode courseNode, UserCourseEnvironment userCourseEnv, Role by,
-			FullyAssessedResult result) {
+	void updateFullyAssessed(CourseNode courseNode, UserCourseEnvironment userCourseEnv, FullyAssessedResult result) {
 		boolean participant = userCourseEnv.isParticipant();
 		if (participant && result.isEnabled()) {
 			AssessmentEntryStatus status = getStatus(courseNode, userCourseEnv, result.isDone(),
 					result.isFullyAssessed());
 			courseAssessmentService.updateFullyAssessed(courseNode, userCourseEnv,
-					Boolean.valueOf(result.isFullyAssessed()), status, by);
+					Boolean.valueOf(result.isFullyAssessed()), status);
 		}
 	}
 

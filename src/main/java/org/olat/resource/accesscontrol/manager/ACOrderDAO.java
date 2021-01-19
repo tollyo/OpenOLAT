@@ -34,6 +34,7 @@ import org.olat.basesecurity.IdentityRef;
 import org.olat.core.commons.persistence.DB;
 import org.olat.core.commons.persistence.NativeQueryBuilder;
 import org.olat.core.commons.persistence.PersistenceHelper;
+import org.olat.core.commons.persistence.QueryBuilder;
 import org.olat.core.commons.persistence.SortKey;
 import org.olat.core.id.Identity;
 import org.olat.resource.OLATResource;
@@ -44,6 +45,7 @@ import org.olat.resource.accesscontrol.OrderLine;
 import org.olat.resource.accesscontrol.OrderPart;
 import org.olat.resource.accesscontrol.OrderStatus;
 import org.olat.resource.accesscontrol.model.AccessMethod;
+import org.olat.resource.accesscontrol.model.AccessTransactionStatus;
 import org.olat.resource.accesscontrol.model.OrderImpl;
 import org.olat.resource.accesscontrol.model.OrderLineImpl;
 import org.olat.resource.accesscontrol.model.OrderPartImpl;
@@ -253,6 +255,29 @@ public class ACOrderDAO {
 		Object rawOrders = query.getSingleResult();
 		return rawOrders instanceof Number ? ((Number)rawOrders).intValue() : 0;
 	}
+	
+	public List<Order> findPendingOrders(OLATResource resource, IdentityRef delivery) {
+		QueryBuilder sb = new QueryBuilder();
+		sb.append("select distinct o from ").append(OrderImpl.class.getName()).append(" o")
+		  .append(" inner join o.parts orderPart")
+		  .append(" inner join orderPart.lines orderLine")
+		  .append(" inner join orderLine.offer offer")
+		  .append(" where o.delivery.key=:deliveryKey and offer.resource.key=:resourceKey")
+		  .append(" and o.orderStatus=:status")
+		  .append(" and exists (select trx.key from actransaction as trx")
+		  .append("   where trx.order.key=o.key and trx.statusStr ").in(AccessTransactionStatus.PENDING)
+		  .append(" ) and not exists (select successTrx.key from actransaction as successTrx")
+		  .append("   where successTrx.order.key=o.key and successTrx.statusStr ")
+		  	.in(AccessTransactionStatus.SUCCESS, AccessTransactionStatus.ERROR, AccessTransactionStatus.CANCELED)
+		  .append(" )");
+
+		return dbInstance.getCurrentEntityManager()
+				.createQuery(sb.toString(), Order.class)
+				.setParameter("resourceKey", resource.getKey())
+				.setParameter("deliveryKey", delivery.getKey())
+				.setParameter("status", OrderStatus.PREPAYMENT.name())
+				.getResultList();
+	}
 
 	/**
 	 * The method is optimized for our settings: 1 order -> 1 order part -> 1 order line
@@ -276,7 +301,9 @@ public class ACOrderDAO {
 		  .append("  ").appendToArray("offer.resourcedisplayname").append(" as resDisplaynames,")
 		  .append("  ").appendToArray("trx.trx_status").append(" as trxStatus,")
 		  .append("  ").appendToArray("trx.fk_method_id").append(" as trxMethodIds,")
-		  .append("  ").appendToArray("pspTrx.trx_status").append(" as pspTrxStatus");
+		  .append("  ").appendToArray("pspTrx.trx_status").append(" as pspTrxStatus,")
+		  .append("  ").appendToArray("checkoutTrx.p_status").append(" as checkoutTrxStatus,")
+		  .append("  ").appendToArray("checkoutTrx.p_paypal_order_status").append(" as checkoutTrxPaypalStatus");
 		if(delivery == null) {
 			sb.append("  ,delivery.id as delivery_ident_id")
 			  .append("  ,delivery.name as delivery_ident_name")
@@ -297,6 +324,7 @@ public class ACOrderDAO {
 			  .append(" inner join o_user delivery_user on (delivery_user.fk_identity=delivery.id)");
 		}
 		sb.append(" left join o_ac_paypal_transaction pspTrx on (o.order_id = pspTrx.order_id)")
+		  .append(" left join o_ac_checkout_transaction checkoutTrx on (o.order_id = checkoutTrx.p_order_id)")
 		  .append(" left join o_ac_transaction trx on (o.order_id = trx.fk_order_id)");
 
 		boolean where = false;
@@ -403,6 +431,8 @@ public class ACOrderDAO {
 			String trxStatus = (String)order[pos++];
 			String trxMethodIds = (String)order[pos++];
 			String pspTrxStatus = (String)order[pos++];
+			String checkoutTrxStatus = (String)order[pos++];
+			String checkoutOrderTrxStatus = (String)order[pos++];
 
 			String username = null;
 			String[] userProperties = null;
@@ -418,7 +448,8 @@ public class ACOrderDAO {
 
 			RawOrderItem item = new RawOrderItem(orderKey, orderKey.toString(), totalCurrencyCode, totalAmount,
 					creationDate, orderStatus, deliveryKey, resourceName,
-					trxStatus, trxMethodIds, pspTrxStatus, username, userProperties);
+					trxStatus, trxMethodIds, pspTrxStatus, checkoutTrxStatus, checkoutOrderTrxStatus,
+					username, userProperties);
 			items.add(item);
 		}
 		return items;

@@ -21,7 +21,11 @@ package org.olat.course.assessment;
 
 import java.util.Date;
 
+import org.olat.basesecurity.IdentityRef;
+import org.olat.core.id.Identity;
 import org.olat.course.assessment.AssessmentMode.Status;
+import org.olat.course.assessment.model.AssessmentModeStatistics;
+import org.olat.course.assessment.model.TransientAssessmentMode;
 import org.olat.repository.RepositoryEntry;
 
 /**
@@ -47,6 +51,8 @@ public interface AssessmentModeCoordinationService {
 	 */
 	public boolean canStop(AssessmentMode assessmentMode);
 	
+	public boolean isDisadvantageCompensationExtensionTime(AssessmentMode assessmentMode);
+	
 	
 	public void processRepositoryEntryChangedStatus(RepositoryEntry entry);
 	
@@ -54,6 +60,12 @@ public interface AssessmentModeCoordinationService {
 	
 	public AssessmentMode startAssessment(AssessmentMode assessmentMode);
 	
-	public AssessmentMode stopAssessment(AssessmentMode assessmentMode);
+	public AssessmentMode stopAssessment(AssessmentMode assessmentMode, boolean pullTestSessions, boolean withDisadvantaged, Identity doer);
+	
+	public AssessmentModeStatistics getStatistics(AssessmentMode assessmentMode);
+	
+	public void waitFor(IdentityRef identity, TransientAssessmentMode assessmentMode);
+	
+	public void start(IdentityRef identity, TransientAssessmentMode assessmentMode);
 
 }

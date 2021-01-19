@@ -49,36 +49,42 @@ public class PasswordValidationRuleFactory {
 	}
 	
 	public ValidationRule createAtLeastLettersRule(int min) {
-		ValidationDescription description = createDescription("password.rule.at.least.letters", min);
+		String i18nKey = min > 1 ? "password.rule.at.least.letters" : "password.rule.at.least.letter";
+		ValidationDescription description = createDescription(i18nKey, min);
 		return new AtLeastCharacterRule(description, Character::isLetter, min);
 	}
 	
 	public ValidationRule createAtLeastLettersUppercaseRule(int min) {
-		ValidationDescription description = createDescription("password.rule.at.least.letters.uppercase", min);
+		String i18nKey = min > 1 ? "password.rule.at.least.letters.uppercase" : "password.rule.at.least.letter.uppercase";
+		ValidationDescription description = createDescription(i18nKey, min);
 		return new AtLeastCharacterRule(description, Character::isUpperCase, min);
 	}
 	
 	public ValidationRule createAtLeastLettersLowercaseRule(int min) {
-		ValidationDescription description = createDescription("password.rule.at.least.letters.lowercase", min);
+		String i18nKey = min > 1 ? "password.rule.at.least.letters.lowercase" : "password.rule.at.least.letter.lowercase";
+		ValidationDescription description = createDescription(i18nKey, min);
 		return new AtLeastCharacterRule(description, Character::isLowerCase, min);
 	}
 	
 	public ValidationRule createAtLeastDigitsRule(int min) {
-		ValidationDescription description = createDescription("password.rule.at.least.digits", min);
+		String i18nKey = min > 1 ? "password.rule.at.least.digits" : "password.rule.at.least.digit";
+		ValidationDescription description = createDescription(i18nKey, min);
 		return new AtLeastCharacterRule(description, Character::isDigit, min);
 	}
 	
 	public ValidationRule createAtLeastSpecialSignsRule(int min) {
-		ValidationDescription description = createDescription("password.rule.at.least.specials", min);
+		String i18nKey = min > 1 ? "password.rule.at.least.specials" : "password.rule.at.least.special";
+		ValidationDescription description = createDescription(i18nKey, min);
 		// at least 2: .*\\W.*\\W.*
-		String regex = Stream.generate(() -> ".*").limit(min + 1).collect(Collectors.joining("\\W"));
+		String regex = Stream.generate(() -> ".*").limit(min + 1).collect(Collectors.joining("[_|\\W]"));
 		Pattern pattern = Pattern.compile(regex, UNICODE_CHARACTER_CLASS);
 		return new RegexRule(description, pattern);
 	}
 	
 	public ValidationRule createAtLeastDigitsOrSpecialSignsRule(int min) {
-		ValidationDescription description = createDescription("password.rule.at.least.digits.specials", min);
-		String regex = Stream.generate(() -> ".*").limit(min + 1).collect(Collectors.joining("[\\d|\\W]"));
+		String i18nKey = min > 1 ? "password.rule.at.least.digits.specials" : "password.rule.at.least.digit.special";
+		ValidationDescription description = createDescription(i18nKey, min);
+		String regex = Stream.generate(() -> ".*").limit(min + 1).collect(Collectors.joining("[_|\\d|\\W]"));
 		Pattern pattern = Pattern.compile(regex, UNICODE_CHARACTER_CLASS);
 		return new RegexRule(description, pattern);
 	}
@@ -135,13 +141,13 @@ public class PasswordValidationRuleFactory {
 	
 	public ValidationRule createSpecialSignsForbiddenRule() {
 		ValidationDescription description = createDescription("password.rule.forbidden.specials");
-		Pattern pattern = Pattern.compile(".*\\W+.*", UNICODE_CHARACTER_CLASS);
+		Pattern pattern = Pattern.compile(".*[_|\\W]+.*", UNICODE_CHARACTER_CLASS);
 		return new OppositeRule(new RegexRule(description, pattern));
 	}
 	
 	public ValidationRule createDigitsAndSpecialSignsForbiddenRule() {
 		ValidationDescription description = createDescription("password.rule.forbidden.specials");
-		Pattern pattern = Pattern.compile(".*[\\W|\\d]+.*", UNICODE_CHARACTER_CLASS);
+		Pattern pattern = Pattern.compile(".*[_|\\W|\\d]+.*", UNICODE_CHARACTER_CLASS);
 		return new OppositeRule(new RegexRule(description, pattern));
 	}
 

@@ -14,7 +14,7 @@
 				author : 'frentix GmbH',
 				authorurl : 'https://www.frentix.com',
 				infourl : 'https://www.frentix.com',
-				version : '2.5.0'
+				version : '2.5.1'
 			};
 		},
 
@@ -36,7 +36,6 @@
 		init : function(ed, url) {
 			
 			var cachedTrans, cachedCoreTrans;
-			var cachedHelp;
 			
 			// Load the OLAT translator.
 			function translator() {	
@@ -113,7 +112,7 @@
 			
 			function getNextDomId() {
 				var count = 0;
-				var domIdentity = "olatFlashMovieViewer";
+				var domIdentity;
 				var placeHolders = ed.dom.select("img.mceItemOlatMovieViewer");
 				do {
 					domIdentity = "olatFlashMovieViewer" + (~~(Math.random() * 1000000));
@@ -192,7 +191,6 @@
 				var controlbar = typeof(p.controlbar) != "undefined" ? p.controlbar : true;
 				var provider = typeof(p.provider) != "undefined" ? p.provider : undefined;
 				var streamer = typeof(p.streamer) != "undefined" ? p.streamer : undefined;
-				var domIdentity = typeof(p.domIdentity) != "undefined" ? p.domIdentity : getNextDomId();
 				
 				//scale the video if to big to not overlap the buttons
 				var maxHeight = 400;
@@ -343,8 +341,8 @@
 					    	    	label: translator().translate('olatmovieviewer.provider'),
 					    	    	values: buildProviderList(),
 					    	    	onselect: function(e) {
-					    	    		var streaming = (this.value() == 'rtmp' || this.value() == 'http');
-					    	    		win.find('#streamer')[0].parent().visible(streaming);
+					    	    		var streamingProtocol = (this.value() == 'rtmp' || this.value() == 'http');
+					    	    		win.find('#streamer')[0].parent().visible(streamingProtocol);
 					    	    	}
 					    	    },
 					    	    { name: 'streamer', type: 'textbox', label: translator().translate('olatmovieviewer.streamer') },
@@ -389,8 +387,8 @@
 				} else {
 					fe = ed.dom.select("img.mceItemOlatMovieViewer", fe);
 					if (fe.length == 1 && /mceItemOlatMovieViewer/.test(ed.dom.getAttrib(fe[0], "class"))) {
-						var pl = "x={" + ed.dom.getAttrib(fe[0], "title") + "};";
-						deserializeParameters(pl, fe[0]);
+						var params = "x={" + ed.dom.getAttrib(fe[0], "title") + "};";
+						deserializeParameters(params, fe[0]);
 						setTimeout(generatePreview, 500);
 					}
 				}
@@ -430,11 +428,10 @@
 				pl += 'height:' + (settingsArr[3] - playerOffsetHeight) + ',';
 				pl += 'poster:' + settingsArr[11];
 				return pl;
-			};
+			}
 			
 			//The video player code.
 			function getPlayerHtmlNode(editor,p) {
-				var h = '', n, l = '';
 				// player configuration
 				var playerOffsetHeight = ed.getParam("olatmovieviewer_playerOffsetHeight");
 				var playerOffsetWidth = ed.getParam("olatmovieviewer_playerOffsetWidth");
@@ -461,7 +458,7 @@
 					"style":'display:block;border:solid 1px #000; width:' + playerWidth + 'px; height:' + playerHeight + 'px;'
 				},h);
 				return node;
-			};
+			}
 
 			ed.addButton('olatmovieviewer', {
 				title : translator().translate('olatmovieviewer.desc'),
@@ -487,11 +484,13 @@
 			});
 			
 			ed.addCommand('updateOOMovie', function (ui, value) {
+				if(typeof win === "undefined" || win == null) return;
+				
 				var link = value['link'];
 				var width = value['width'];
 				var height = value['height'];
-				var hasWidth = !(typeof width === "undefined");
-				var hasHeight = !(typeof height === "undefined");
+				var hasWidth = (typeof width !== "undefined");
+				var hasHeight = (typeof height !== "undefined");
 				if(hasWidth) {
 					win.find('#width')[0].value(width);
 				}
@@ -547,7 +546,7 @@
 			
 			//fallback for the old movies with settings in comments
 			ed.on('BeforeSetContent',function(e) {
-				if(e.content.indexOf('--omvs::') > 0) {
+				if(e.content.indexOf('--omvs::') >= 0) {
 					var imgUrl = ed.getParam("olatmovieviewer_transparentImage");
 					e.content = e.content.replace(/\n/gi, "");
 					var widthMatch = e.content.match(/(?:<!--omvs::.*?width:')([0-9]+)(?:'.*?<!--omve-->)/i);

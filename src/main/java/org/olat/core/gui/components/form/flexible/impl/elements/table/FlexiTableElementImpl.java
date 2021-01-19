@@ -40,7 +40,6 @@ import org.olat.core.gui.components.Component;
 import org.olat.core.gui.components.ComponentEventListener;
 import org.olat.core.gui.components.choice.Choice;
 import org.olat.core.gui.components.form.flexible.FormItem;
-import org.olat.core.gui.components.form.flexible.FormItemCollection;
 import org.olat.core.gui.components.form.flexible.elements.AutoCompleter;
 import org.olat.core.gui.components.form.flexible.elements.FlexiTableElement;
 import org.olat.core.gui.components.form.flexible.elements.FlexiTableFilter;
@@ -80,7 +79,7 @@ import org.olat.core.util.prefs.Preferences;
  * @author Christian Guretzki
  * @author srosse, stephane.rosse@frentix.com, http://www.frentix.com
  */
-public class FlexiTableElementImpl extends FormItemImpl implements FlexiTableElement, FormItemCollection,
+public class FlexiTableElementImpl extends FormItemImpl implements FlexiTableElement,
 	ControllerEventListener, ComponentEventListener, Disposable {
 	
 	//settings
@@ -430,6 +429,26 @@ public class FlexiTableElementImpl extends FormItemImpl implements FlexiTableEle
 			}
 		}
 	}
+	
+	@Override
+	public void setSelectedFilterKeys(Collection<String> keys) {
+		if(filters != null) {
+			for(FlexiTableFilter filter:filters) {
+				boolean selected = keys.contains(filter.getFilter());
+				filter.setSelected(selected);
+			}
+		}
+	}
+
+	@Override
+	public void setSelectedFilters(List<FlexiTableFilter> selectedFilters) {
+		if(filters != null) {
+			for(FlexiTableFilter filter:filters) {
+				boolean selected = selectedFilters.contains(filter);
+				filter.setSelected(selected);
+			}
+		}
+	}
 
 	@Override
 	public String getSelectedFilterValue() {
@@ -742,6 +761,7 @@ public class FlexiTableElementImpl extends FormItemImpl implements FlexiTableEle
 		return conditionalQueries;
 	}
 	
+	@Override
 	public SortKey[] getOrderBy() {
 		return orderBy;
 	}
@@ -1229,6 +1249,11 @@ public class FlexiTableElementImpl extends FormItemImpl implements FlexiTableEle
 			currentPage = 0;
 			doUnSelectAll();
 			((FilterableFlexiTableModel)dataModel).filter(getQuickSearchString(), selectedFilters);
+			if(dataModel instanceof SortableFlexiTableDataModel) {
+				if(orderBy != null && orderBy.length > 0) {
+					((SortableFlexiTableDataModel<?>)dataModel).sort(orderBy[0]);
+				}
+			}
 		} else if(dataSource != null) {
 			rowCount = -1;
 			currentPage = 0;

@@ -84,6 +84,8 @@ public class AssessmentEntryImpl implements Persistable, ModifiedInfo, CreateInf
 
 	@Column(name="a_attemtps", nullable=true, insertable=true, updatable=true)
 	private Integer attempts;
+	@Column(name="a_last_attempt", nullable=true, insertable=true, updatable=true)
+	private Date lastAttempt;
 	@Column(name="a_score", nullable=true, insertable=true, updatable=true)
 	private BigDecimal score;
 	private transient Overridable<Boolean> passedOverridable;
@@ -109,6 +111,8 @@ public class AssessmentEntryImpl implements Persistable, ModifiedInfo, CreateInf
 	private Double completion;
 	@Column(name="a_current_run_completion", nullable=true, insertable=true, updatable=true)
 	private Double currentRunCompletion;
+	@Column(name="a_current_run_start", nullable=true, insertable=true, updatable=true)
+	private Date currentRunStartDate;
 	@Column(name="a_current_run_status", nullable=true, insertable=true, updatable=true)
 	private String runStatus;
 
@@ -236,6 +240,16 @@ public class AssessmentEntryImpl implements Persistable, ModifiedInfo, CreateInf
 	@Override
 	public void setAttempts(Integer attempts) {
 		this.attempts = attempts;
+	}
+
+	@Override
+	public Date getLastAttempt() {
+		return lastAttempt;
+	}
+
+	@Override
+	public void setLastAttempt(Date lastAttempt) {
+		this.lastAttempt = lastAttempt;
 	}
 
 	@Override
@@ -493,7 +507,17 @@ public class AssessmentEntryImpl implements Persistable, ModifiedInfo, CreateInf
 	public void setCurrentRunCompletion(Double currentCompletion) {
 		this.currentRunCompletion = currentCompletion;
 	}
-	
+
+	@Override
+	public Date getCurrentRunStartDate() {
+		return currentRunStartDate;
+	}
+
+	@Override
+	public void setCurrentRunStartDate(Date currentRunStart) {
+		this.currentRunStartDate = currentRunStart;
+	}
+
 	public String getRunStatus() {
 		return runStatus;
 	}

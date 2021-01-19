@@ -29,6 +29,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Properties;
 
 import org.olat.core.commons.fullWebApp.LayoutMain3ColsBackController;
 import org.olat.core.commons.fullWebApp.LayoutMain3ColsController;
@@ -73,7 +74,7 @@ import org.springframework.beans.factory.annotation.Autowired;
  * the sco api calls to the scorm RTE backend. It provides also an navigation to
  * navigate in the tree with "pre" "next" buttons.
  */
-public class ScormAPIandDisplayController extends MainLayoutBasicController implements ConfigurationChangedListener {
+public class ScormAPIandDisplayController extends MainLayoutBasicController implements ConfigurationChangedListener, ScormAPICallback {
 
 	protected static final String LMS_INITIALIZE = "LMSInitialize";
 	protected static final String LMS_GETVALUE = "LMSGetValue";
@@ -136,6 +137,7 @@ public class ScormAPIandDisplayController extends MainLayoutBasicController impl
 		try {
 			scormAdapter = new OLATApiAdapter();	
 			scormAdapter.addAPIListener(apiCallback);
+			scormAdapter.addAPIListener(this);
 			String fullname = UserManager.getInstance().getUserDisplayName(getIdentity());
 			String scormResourceIdStr = scormResourceId == null ? null : scormResourceId.toString();
 			scormAdapter.init(cpRoot, scormResourceIdStr, courseIdNodeId, FolderConfig.getCanonicalRoot(), username, fullname, lesson_mode, credit_mode, hashCode());
@@ -298,13 +300,12 @@ public class ScormAPIandDisplayController extends MainLayoutBasicController impl
 	public void close() {
 		if(columnLayoutCtr instanceof LayoutMain3ColsBackController) {
 			((LayoutMain3ColsBackController)columnLayoutCtr).deactivate();
+		} else if(columnLayoutCtr instanceof LayoutMain3ColsPreviewController) {
+			((LayoutMain3ColsPreviewController)columnLayoutCtr).deactivate();
 		}
 	}
 	
-	/**
-	 * @see org.olat.core.gui.control.DefaultController#event(org.olat.core.gui.UserRequest,
-	 *      org.olat.core.gui.components.Component, org.olat.core.gui.control.Event)
-	 */
+	@Override
 	public void event(UserRequest ureq, Component source, Event event) {
 		if (source instanceof Link) {
 			switchToNextOrPreviousSco((Link)source);
@@ -312,15 +313,28 @@ public class ScormAPIandDisplayController extends MainLayoutBasicController impl
 			// user clicked a node in the tree navigation
 			TreeEvent te = (TreeEvent) event;
 			switchToPage(te);
-		} else if (source == myContent && event.getCommand().equals("abort")) {
+		} else if (source == myContent && "abort".equals(event.getCommand())) {
 			// user has wrong browser - abort
 			fireEvent(ureq, Event.FAILED_EVENT);
-		}
-		 
+		} else if (source == myContent && "ping".equals(event.getCommand())) {
+			// Nothing to do, just let the framework redraw itself if necessary
+			// This is used when LMS-Finished has been called and it is configured to 
+			// close the module automatically
+			myContent.setDirty(false);
+		}		 
 	}
 	
 	@Override
-	//fxdiff FXOLAT-116: SCORM improvements
+	public void lmsCommit(String olatSahsId, Properties scoScores, Properties scoLessonStatus) {
+		//
+	}
+
+	@Override
+	public void lmsFinish(String olatSahsId, Properties scoProps, Properties scoLessonStatus) {
+		myContent.setDirty(false);
+	}
+
+	@Override
 	protected void event(UserRequest ureq, Controller source, Event event) {
 		if(source == columnLayoutCtr) {
 			if(event == Event.BACK_EVENT) {

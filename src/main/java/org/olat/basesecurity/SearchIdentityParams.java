@@ -29,6 +29,7 @@ import java.util.Map;
 import org.olat.core.id.Identity;
 import org.olat.core.id.Organisation;
 import org.olat.core.id.OrganisationRef;
+import org.olat.core.util.StringHelper;
 import org.olat.modules.curriculum.CurriculumRoles;
 
 /**
@@ -37,7 +38,9 @@ import org.olat.modules.curriculum.CurriculumRoles;
  */
 public class SearchIdentityParams {
 	private String idAndExternalIds;
+	private String externalId;
 	private String login;
+	private String searchString;
 	private Map<String, String> userProperties;
 	private boolean userPropertiesAsIntersectionSearch;
 	
@@ -76,7 +79,7 @@ public class SearchIdentityParams {
 	public SearchIdentityParams(String login, Map<String, String> userproperties, boolean userPropertiesAsIntersectionSearch,
 			OrganisationRoles[] roles, String[] authProviders,
 			Date createdAfter, Date createdBefore, Date userLoginAfter, Date userLoginBefore, Integer status) {
-		this.login = login;
+		setLogin(login);
 		this.userProperties = userproperties;
 		this.userPropertiesAsIntersectionSearch = userPropertiesAsIntersectionSearch;
 		this.roles = roles;
@@ -159,9 +162,25 @@ public class SearchIdentityParams {
 	}
 	
 	public void setLogin(String login) {
-		this.login = login;
+		if(StringHelper.containsNonWhitespace(login)) {
+			this.login = login;
+		} else {
+			this.login = null;
+		}
 	}
 	
+	public String getSearchString() {
+		return searchString;
+	}
+
+	public void setSearchString(String searchString) {
+		if(StringHelper.containsNonWhitespace(searchString)) {
+			this.searchString = searchString;
+		} else {
+			this.searchString = null;
+		}
+	}
+
 	public boolean hasUserProperties() {
 		return userProperties != null && !userProperties.isEmpty();  
 	}
@@ -305,6 +324,14 @@ public class SearchIdentityParams {
 
 	public void setIdAndExternalIds(String idAndExternalIds) {
 		this.idAndExternalIds = idAndExternalIds;
+	}
+
+	public String getExternalId() {
+		return externalId;
+	}
+
+	public void setExternalId(String externalId) {
+		this.externalId = externalId;
 	}
 
 	public List<Integer> getExactStatusList() {

@@ -29,6 +29,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.Date;
 import java.util.Locale;
 
 import org.apache.logging.log4j.Logger;
@@ -39,7 +40,6 @@ import org.olat.core.gui.components.stack.TooledStackedPanel;
 import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.control.generic.layout.MainLayoutController;
-import org.olat.core.gui.control.generic.wizard.StepsMainRunController;
 import org.olat.core.gui.media.MediaResource;
 import org.olat.core.id.Identity;
 import org.olat.core.id.OLATResourceable;
@@ -48,6 +48,7 @@ import org.olat.core.id.Roles;
 import org.olat.core.logging.AssertException;
 import org.olat.core.logging.Tracing;
 import org.olat.core.util.FileUtils;
+import org.olat.core.util.Formatter;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.coordinate.LockResult;
 import org.olat.course.assessment.manager.UserCourseInformationsManager;
@@ -112,11 +113,6 @@ public class WebDocumentHandler extends FileHandler {
 	}
 	
 	@Override
-	public boolean isPostCreateWizardAvailable() {
-		return false;
-	}
-
-	@Override
 	public boolean supportImport() {
 		return true;
 	}
@@ -147,6 +143,10 @@ public class WebDocumentHandler extends FileHandler {
 			} else if (AnimationFileResource.TYPE_NAME.equals(supportedType) && AnimationFileResource.validate(filename)) {
 				eval.setValid(true);
 			}
+		}
+		if (eval.getDisplayname() == null) {
+			// use filename, better than nothing
+			eval.setDisplayname(filename + " - " + Formatter.formatShortDateFilesystem(new Date()));
 		}
 		return eval;
 	}
@@ -241,11 +241,6 @@ public class WebDocumentHandler extends FileHandler {
 	@Override
 	public boolean supportsAssessmentDetails() {
 		return false;
-	}
-
-	@Override
-	public StepsMainRunController createWizardController(OLATResourceable res, UserRequest ureq, WindowControl wControl) {
-		throw new AssertException("Trying to get wizard where no creation wizard is provided for this type.");
 	}
 
 	@Override

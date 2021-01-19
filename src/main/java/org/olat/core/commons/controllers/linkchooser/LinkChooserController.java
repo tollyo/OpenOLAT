@@ -29,7 +29,6 @@ package org.olat.core.commons.controllers.linkchooser;
 import org.olat.core.CoreSpringFactory;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
-import org.olat.core.gui.components.panel.StackedPanel;
 import org.olat.core.gui.components.tabbedpane.TabbedPane;
 import org.olat.core.gui.components.velocity.VelocityContainer;
 import org.olat.core.gui.control.Controller;
@@ -47,12 +46,10 @@ import org.olat.core.util.vfs.VFSContainer;
  */
 public class LinkChooserController extends BasicController {
 
-	private VelocityContainer tabbedPaneViewVC, closeVC;
-	private StackedPanel mainPanel;
-
 	private TabbedPane linkChooserTabbedPane;
 	private FileLinkChooserController fileLinkChooserController;
 	private CustomLinkChooserController courseLinkChooserController;
+	private CustomLinkChooserController courseToolLinkChooserController;
 	private CustomMediaChooserController customMediaChooserCtr;
 
 	/**
@@ -65,22 +62,24 @@ public class LinkChooserController extends BasicController {
 	 * @param suffixes Supported file suffixes for file-chooser.
 	 * @param uriValidation Set to true if the filename need to be a valid URI
 	 * @param fileName Base file-path for file-chooser.
-	 * @param userActivityLogger
+	 * @param customLinkTreeModel
+	 * @param toolLinkTreeModel
 	 * @param internalLinkTreeModel Model with internal links e.g. course-node
 	 *          tree model. The internal-link chooser tab won't be shown when the
 	 *          internalLinkTreeModel is null.
 	 */
 	public LinkChooserController(UserRequest ureq, WindowControl wControl, VFSContainer rootDir,
 			String uploadRelPath, String absolutPath, String[] suffixes, boolean uriValidation, String fileName,
-			CustomLinkTreeModel customLinkTreeModel, boolean allowCustomMediaChooserFactory) {
+			CustomLinkTreeModel customLinkTreeModel, CustomLinkTreeModel toolLinkTreeModel, boolean allowCustomMediaChooserFactory) {
 		super(ureq, wControl);
 		
-		tabbedPaneViewVC = createVelocityContainer("linkchooser");
+		VelocityContainer tabbedPaneViewVC = createVelocityContainer("linkchooser");
 
 		linkChooserTabbedPane = new TabbedPane("linkChooserTabbedPane", ureq.getLocale());
 		tabbedPaneViewVC.put("linkChooserTabbedPane", linkChooserTabbedPane);
 
-		fileLinkChooserController = new FileLinkChooserController(ureq, wControl, rootDir, uploadRelPath, absolutPath, suffixes, uriValidation, fileName);		
+		fileLinkChooserController = new FileLinkChooserController(ureq, wControl, rootDir, uploadRelPath, absolutPath, suffixes,
+				uriValidation, fileName);		
 		listenTo(fileLinkChooserController);
 		linkChooserTabbedPane.addTab(translate("linkchooser.tabbedpane.label.filechooser"), fileLinkChooserController.getInitialComponent());
 		
@@ -88,6 +87,11 @@ public class LinkChooserController extends BasicController {
 			courseLinkChooserController = new CustomLinkChooserController(ureq, wControl, customLinkTreeModel);
 			listenTo(courseLinkChooserController);
 			linkChooserTabbedPane.addTab(translate("linkchooser.tabbedpane.label.internallinkchooser"), courseLinkChooserController.getInitialComponent());
+		}
+		if (toolLinkTreeModel != null && toolLinkTreeModel.getRootNode().getChildCount() > 0) {
+			courseToolLinkChooserController = new CustomLinkChooserController(ureq, wControl, toolLinkTreeModel);
+			listenTo(courseToolLinkChooserController);
+			linkChooserTabbedPane.addTab(translate("linkchooser.tabbedpane.label.internaltoolchooser"), courseToolLinkChooserController.getInitialComponent());
 		}
 		
 		// try to add custom media chooser from spring configuration. 
@@ -100,55 +104,24 @@ public class LinkChooserController extends BasicController {
 				linkChooserTabbedPane.addTab(customMediaChooserCtr.getTabbedPaneTitle(), customMediaChooserCtr.getInitialComponent());				
 			}				
 		}
-		mainPanel = putInitialPanel(tabbedPaneViewVC);
+		putInitialPanel(tabbedPaneViewVC);
+	}
+	
+	public String getTitle() {
+		return translate("linkchooser.select.title");
 	}
 
-	/**
-	 * @see org.olat.core.gui.control.DefaultController#event(org.olat.core.gui.UserRequest,
-	 *      org.olat.core.gui.components.Component,
-	 *      org.olat.core.gui.control.Event)
-	 */
+	@Override
 	public void event(UserRequest ureq, Component source, Event event) {
+		//
 	}
 
-	/**
-	 * @see org.olat.core.gui.control.DefaultController#event(org.olat.core.gui.UserRequest,
-	 *      org.olat.core.gui.control.Controller, org.olat.core.gui.control.Event)
-	 */
+	@Override
 	public void event(UserRequest ureq, Controller source, Event event) {		
-		if (event instanceof URLChoosenEvent) {
-			// send choosen URL to parent window via JavaScript and close the window
-			URLChoosenEvent urlChoosenEvent = (URLChoosenEvent) event;		
-			closeVC = createVelocityContainer("close");
-			String url = urlChoosenEvent.getURL();
-			closeVC.contextPut("isJsUrl", Boolean.FALSE);
-			if (url.contains("gotonode")) {
-				closeVC.contextPut("isJsUrl", Boolean.TRUE);
-			}
-			closeVC.contextPut("imagepath", url);
-			if(urlChoosenEvent.getWidth() > 0) {
-				closeVC.contextPut("width", Integer.toString(urlChoosenEvent.getWidth()));
-			}
-			if(urlChoosenEvent.getHeight() > 0) {
-				closeVC.contextPut("height", Integer.toString(urlChoosenEvent.getHeight()));
-			}
-			mainPanel.setContent(closeVC);
-			
-		} else if (event == Event.CANCELLED_EVENT) {
-			removeAsListenerAndDispose(fileLinkChooserController);
-			removeAsListenerAndDispose(courseLinkChooserController);
-			removeAsListenerAndDispose(customMediaChooserCtr);
-			
-			// Close the window, no URL selected
-			closeVC = createVelocityContainer("close");
-			closeVC.contextPut("imagepath", "");
-			mainPanel.setContent(closeVC);
-		}
+		fireEvent(ureq, event);
 	}
-
-	/**
-	 * @see org.olat.core.gui.control.DefaultController#doDispose(boolean)
-	 */
+	
+	@Override
 	protected void doDispose() {
 		// controllers disposed by basic controller
 	}

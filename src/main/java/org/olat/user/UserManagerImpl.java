@@ -339,6 +339,7 @@ public class UserManagerImpl extends UserManager implements UserDataDeletable, U
 				.setMaxResults(batchSize);
 		
 		int count = 0;
+		long maxCount = userToNameCache.maxCount();
 		List<IdentityShort> identities;
 		do {
 			identities = query.setFirstResult(count).getResultList();
@@ -349,7 +350,7 @@ public class UserManagerImpl extends UserManager implements UserDataDeletable, U
 				}
 			}
 			count += identities.size();
-		} while(identities.size() >= batchSize);
+		} while(identities.size() >= batchSize && count < maxCount);
 		
 		return count;
 	}
@@ -442,18 +443,12 @@ public class UserManagerImpl extends UserManager implements UserDataDeletable, U
 		return fullName;
 	}
 
-	/**
-	 * @see org.olat.user.UserManager#getUserDisplayName(org.olat.core.id.User)
-	 */
 	@Override
 	public String getUserDisplayName(User user) {
 		if (userDisplayNameCreator == null || user == null) return "";
 		return userDisplayNameCreator.getUserDisplayName(user);
 	}
-	
-	/**
-	 * @see org.olat.user.UserManager#getUserDisplayName(org.olat.core.id.IdentityShort)
-	 */
+
 	@Override
 	public String getUserDisplayName(IdentityNames identity) {
 		if (userDisplayNameCreator == null || identity == null) return "";

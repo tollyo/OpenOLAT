@@ -108,7 +108,7 @@ import org.springframework.beans.factory.annotation.Autowired;
  * @author Florian Gnägi
  */
 public class FileUploadController extends FormBasicController {
-	
+
 	private static final String[] resizeKeys = new String[]{"resize"};
 	private int status = FolderCommandStatus.STATUS_SUCCESS;
 
@@ -252,7 +252,7 @@ public class FileUploadController extends FormBasicController {
 			}
 		}
 
-		fileEl = uifactory.addFileElement(getWindowControl(), "fileEl", "ul.file", fileUpload);
+		fileEl = uifactory.addFileElement(getWindowControl(), getIdentity(), "fileEl", "ul.file", fileUpload);
 		fileEl.addActionListener(FormEvent.ONCHANGE);
 		
 		setMaxUploadSizeKB((uploadLimitKB < remainingQuotKB ? uploadLimitKB : remainingQuotKB));
@@ -575,7 +575,7 @@ public class FileUploadController extends FormBasicController {
 		// check for available space
 		if (remainingQuotKB != -1 && (fileEl.getUploadFile().length() / 1024 > remainingQuotKB)) {
 			fileEl.setErrorKey("QuotaExceeded", null);
-			fileEl.getUploadFile().delete();
+			FileUtils.deleteFile(fileEl.getUploadFile());
 			return;			
 		}
 		
@@ -742,6 +742,7 @@ public class FileUploadController extends FormBasicController {
 			meta.setAuthor(getIdentity());
 			//clear write the meta
 			vfsRepositoryService.updateMetadata(meta);
+			vfsRepositoryService.itemSaved((VFSLeaf)item, getIdentity());
 			vfsRepositoryService.resetThumbnails((VFSLeaf)item);
 		}
 		

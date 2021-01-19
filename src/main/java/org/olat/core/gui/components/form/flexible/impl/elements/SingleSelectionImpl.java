@@ -26,12 +26,15 @@
 package org.olat.core.gui.components.form.flexible.impl.elements;
 
 import java.util.List;
+import java.util.Locale;
 
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.form.flexible.elements.SingleSelection;
 import org.olat.core.gui.components.form.flexible.impl.FormItemImpl;
 import org.olat.core.gui.components.form.flexible.impl.elements.SingleSelectionComponent.RadioElementComponent;
 import org.olat.core.logging.AssertException;
+import org.olat.core.util.StringHelper;
+import org.olat.core.util.Util;
 import org.olat.core.util.ValidationStatus;
 import org.olat.core.util.ValidationStatusImpl;
 
@@ -48,12 +51,14 @@ public class SingleSelectionImpl extends FormItemImpl implements SingleSelection
 	private boolean originalSelect = false;
 	private int selectedIndex = -1;
 	private boolean allowNoSelection = false;
+	private String translatedNoSelectionValue;
 
 	private final Layout layout;
 	private final SingleSelectionComponent component;
+	private final Locale locale;
 	
-	public SingleSelectionImpl(String name) {
-		this(null, name, Layout.horizontal);
+	public SingleSelectionImpl(String name, Locale locale) {
+		this(null, name, Layout.horizontal, locale);
 	}
 
 	/**
@@ -62,9 +67,10 @@ public class SingleSelectionImpl extends FormItemImpl implements SingleSelection
 	 * @param name
 	 * @param presentation
 	 */
-	public SingleSelectionImpl(String id, String name, Layout layout) {
+	public SingleSelectionImpl(String id, String name, Layout layout, Locale locale) {
 		super(id, name, false);
 		this.layout = layout;
+		this.locale = locale;
 		component = new SingleSelectionComponent(id, this);
 	}
 
@@ -80,7 +86,7 @@ public class SingleSelectionImpl extends FormItemImpl implements SingleSelection
 
 	@Override
 	public int getSelected() {
-		return selectedIndex;
+		return selectedIndex - getNoValueOffset();
 	}
 	
 	public Layout getLayout() {
@@ -95,7 +101,7 @@ public class SingleSelectionImpl extends FormItemImpl implements SingleSelection
 
 	@Override
 	public String getSelectedValue() {
-		if(selectedIndex >= 0 && selectedIndex < values.length) {
+		if(selectedIndex >= getNoValueOffset() && selectedIndex < values.length + getNoValueOffset()) {
 			return values[selectedIndex];
 		}
 		return null;
@@ -103,7 +109,7 @@ public class SingleSelectionImpl extends FormItemImpl implements SingleSelection
 
 	@Override
 	public boolean isOneSelected() {
-		return selectedIndex != -1;
+		return getSelected() != -1;
 	}
 
 	@Override
@@ -117,7 +123,9 @@ public class SingleSelectionImpl extends FormItemImpl implements SingleSelection
 		this.selectedIndex = -1;
 		this.original = null;
 		this.originalSelect = false;
-		// initialize everything
+		if (isAllowNoSelection()) {
+			addNoSelectionEntry();
+		}
 		initSelectionElements();
 	}
 	
@@ -127,18 +135,30 @@ public class SingleSelectionImpl extends FormItemImpl implements SingleSelection
 	}
 	
 	@Override
+	public boolean containsKey(String value) {
+		if(keys != null && keys.length > 0) {
+			for(String key:keys) {
+				if((key == null && value == null) || (key != null && key.equals(value))) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+	
+	@Override
 	public String getKey(int which) {
-		return keys[which];
+		return keys[which + getNoValueOffset()];
 	}
 
 	@Override
 	public int getSize() {
-		return keys.length;
+		return keys.length - getNoValueOffset();
 	}
 
 	@Override
 	public String getValue(int which) {
-		return values[which];
+		return values[which + getNoValueOffset()];
 	}
 
 	/**
@@ -154,13 +174,40 @@ public class SingleSelectionImpl extends FormItemImpl implements SingleSelection
 	}
 
 	@Override
+	public String[] getValues() {
+		return values;
+	}
+
+	@Override
 	public boolean isAllowNoSelection() {
 		return allowNoSelection;
 	}
 
 	@Override
-	public void setAllowNoSelection(boolean allowNoSelection) {
-		this.allowNoSelection = allowNoSelection;
+	public void enableNoneSelection() {
+		enableNoneSelection(null);
+	}
+
+	@Override
+	public void enableNoneSelection(String translatedValue) {
+		translatedNoSelectionValue = translatedValue;
+		if (!allowNoSelection) {
+			allowNoSelection = true;
+			addNoSelectionEntry();
+		}
+		if (keys != null) {
+			initSelectionElements();
+		}
+	}
+
+	@Override
+	public void disableNoneSelection() {
+		translatedNoSelectionValue = null;
+		if (allowNoSelection) {
+			removeNoSelectionEntry();
+			allowNoSelection = false;
+		}
+		initSelectionElements();
 	}
 
 	@Override
@@ -175,7 +222,7 @@ public class SingleSelectionImpl extends FormItemImpl implements SingleSelection
 
 	@Override
 	public boolean isSelected(int which) {
-		return which == selectedIndex;
+		return which == getSelected();
 	}
 
 	@Override
@@ -204,6 +251,7 @@ public class SingleSelectionImpl extends FormItemImpl implements SingleSelection
 		if (!found) {
 			throw new AssertException("could not set <" + key + "> to " + select + " because key was not found!");
 		}
+		initSelectionElements();
 	}
 
 	/**
@@ -297,7 +345,7 @@ public class SingleSelectionImpl extends FormItemImpl implements SingleSelection
 		// create and add radio elements
 		RadioElementComponent[] radios = new RadioElementComponent[keys.length];
 		for (int i = 0; i < keys.length; i++) {
-			radios[i] = new RadioElementComponent(this, i);
+			radios[i] = new RadioElementComponent(this, i, keys[i], values[i], selectedIndex == i);
 		}
 		component.setRadioComponents(radios);
 	}
@@ -306,4 +354,47 @@ public class SingleSelectionImpl extends FormItemImpl implements SingleSelection
 	protected SingleSelectionComponent getFormItemComponent() {
 		return component;
 	}
+
+	private int getNoValueOffset() {
+		return isAllowNoSelection()? 1: 0;
+	}
+	
+	private void addNoSelectionEntry() {
+		if (keys != null && values != null) {
+			String[] movedKeys = new String[keys.length + 1];
+			String[] movedValues = new String[values.length + 1];
+			movedKeys[0] = SingleSelection.NO_SELECTION_KEY;
+			movedValues[0] = getTranslatedNoSelectioValue();
+			for (int i=keys.length; i-->0;) {
+				movedKeys[i + 1] = keys[i];
+				movedValues[i + 1] = values[i];
+			}
+			keys = movedKeys;
+			values = movedValues;
+			selectedIndex = selectedIndex + getNoValueOffset();
+		}
+	}
+	
+	private String getTranslatedNoSelectioValue() {
+		if (!StringHelper.containsNonWhitespace(translatedNoSelectionValue)) {
+			translatedNoSelectionValue = Util.createPackageTranslator(SelectboxSelectionImpl.class, locale)
+					.translate("selection.no.value");
+		}
+		return translatedNoSelectionValue;
+	}
+	
+	private void removeNoSelectionEntry() {
+		if (keys != null && values != null) {
+			String[] movedKeys = new String[keys.length - 1];
+			String[] movedValues = new String[values.length - 1];
+			for (int i=keys.length; i-->1;) {
+				movedKeys[i - 1] = keys[i];
+				movedValues[i -1] = values[i];
+			}
+			keys = movedKeys;
+			values = movedValues;
+			selectedIndex = selectedIndex - getNoValueOffset();
+		}
+	}
+
 }

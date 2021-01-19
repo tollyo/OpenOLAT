@@ -60,6 +60,10 @@ public interface AssessmentTestSession extends CreateInfo, ModifiedInfo {
 	
 	public void setManualScore(BigDecimal manualScore);
 	
+	public BigDecimal getMaxScore();
+	
+	public void setMaxScore(BigDecimal maxScore);
+	
 	public Integer getNumOfQuestions();
 
 	public void setNumOfQuestions(Integer numOfQuestions);
@@ -73,6 +77,11 @@ public interface AssessmentTestSession extends CreateInfo, ModifiedInfo {
 	 * @return The additional time in seconds
 	 */
 	public Integer getExtraTime();
+	
+	/**
+	 * @return The additional time in seconds for compensation for disadvantage
+	 */
+	public Integer getCompensationExtraTime();
 	
 	/**
 	 * @return The score + manual score
@@ -104,6 +113,10 @@ public interface AssessmentTestSession extends CreateInfo, ModifiedInfo {
 	public boolean isExploded();
 	
 	public void setExploded(boolean exploded);
+	
+	public boolean isCancelled();
+	
+	public void setCancelled(boolean cancelled);
 	
 	public String getStorage();
 	

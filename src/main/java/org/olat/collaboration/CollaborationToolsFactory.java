@@ -26,6 +26,8 @@
 package org.olat.collaboration;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 import org.apache.logging.log4j.Logger;
 import org.olat.commons.calendar.CalendarModule;
@@ -39,10 +41,14 @@ import org.olat.core.util.coordinate.CoordinatorManager;
 import org.olat.group.BusinessGroup;
 import org.olat.instantMessaging.InstantMessagingModule;
 import org.olat.modules.adobeconnect.AdobeConnectModule;
+import org.olat.modules.bigbluebutton.BigBlueButtonManager;
+import org.olat.modules.bigbluebutton.BigBlueButtonMeetingTemplate;
+import org.olat.modules.bigbluebutton.BigBlueButtonModule;
+import org.olat.modules.bigbluebutton.BigBlueButtonTemplatePermissions;
 import org.olat.modules.openmeetings.OpenMeetingsModule;
 import org.olat.modules.portfolio.PortfolioV2Module;
+import org.olat.modules.teams.TeamsModule;
 import org.olat.modules.wiki.WikiModule;
-import org.olat.portfolio.PortfolioModule;
 
 /**
  * Description:<BR>
@@ -98,9 +104,8 @@ public class CollaborationToolsFactory {
 		if (wikiModule.isWikiEnabled()) {
 			toolArr.add(CollaborationTools.TOOL_WIKI);			
 		}
-		PortfolioModule portfolioModule = CoreSpringFactory.getImpl(PortfolioModule.class);
 		PortfolioV2Module portfolioV2Module = CoreSpringFactory.getImpl(PortfolioV2Module.class);
-		if (portfolioModule.isEnabled() || portfolioV2Module.isEnabled()) {
+		if (portfolioV2Module.isEnabled()) {
 			toolArr.add(CollaborationTools.TOOL_PORTFOLIO);
 		}	
 		OpenMeetingsModule openMeetingsModule = CoreSpringFactory.getImpl(OpenMeetingsModule.class);
@@ -111,7 +116,25 @@ public class CollaborationToolsFactory {
 		if(adobeConnectModule.isEnabled() && adobeConnectModule.isGroupsEnabled()) {
 			toolArr.add(CollaborationTools.TOOL_ADOBECONNECT);
 		}
+
+		BigBlueButtonModule bigBlueButtonModule = CoreSpringFactory.getImpl(BigBlueButtonModule.class);
+		if(bigBlueButtonModule.isEnabled() && bigBlueButtonModule.isGroupsEnabled() && hasBigBlueButtonTemplates()) {
+			toolArr.add(CollaborationTools.TOOL_BIGBLUEBUTTON);
+		}
+		TeamsModule teamsModule = CoreSpringFactory.getImpl(TeamsModule.class);
+		if(teamsModule.isEnabled() && teamsModule.isGroupsEnabled()) {
+			toolArr.add(CollaborationTools.TOOL_TEAMS);
+		}
+		
 		TOOLS = ArrayHelper.toArray(toolArr);				
+	}
+	
+	private boolean hasBigBlueButtonTemplates() {
+		BigBlueButtonManager bigBlueButtonManager = CoreSpringFactory.getImpl(BigBlueButtonManager.class);
+		List<BigBlueButtonTemplatePermissions> permissions = Arrays
+				.asList(BigBlueButtonTemplatePermissions.group, BigBlueButtonTemplatePermissions.coach);
+		List<BigBlueButtonMeetingTemplate> templates = bigBlueButtonManager.getTemplates(permissions);
+		return !templates.isEmpty();
 	}
 	
 	/**
@@ -144,21 +167,20 @@ public class CollaborationToolsFactory {
 		if (ores == null) throw new AssertException("Null is not allowed here, you have to provide an existing ores here!");
 		
 		final String cacheKey = Long.toString(ores.getResourceableId().longValue());
-		boolean debug = log.isDebugEnabled();
 		//sync operation cluster wide
 
 		CollaborationTools collabTools = cache.get(cacheKey);
 		if (collabTools != null) {		
-			if (debug) log .debug("loading collabTool from cache. Ores: " + ores.getResourceableId());		
+			log.debug("loading collabTool from cache. Ores: {}", ores.getResourceableId());		
 			if (collabTools.isDirty()) {
-				if (debug) log .debug("CollabTools were in cache but dirty. Creating new ones. Ores: " + ores.getResourceableId());
+				log.debug("CollabTools were in cache but dirty. Creating new ones. Ores: {}", ores.getResourceableId());
 				CollaborationTools tools = new CollaborationTools(coordinatorManager, ores);
 				//update forces clusterwide invalidation of this object
 				cache.update(cacheKey, tools);
 				collabTools = tools;
 			}	
 		} else {
-			if (debug) log .debug("collabTool not in cache. Creating new ones. Ores: " + ores.getResourceableId());
+			log.debug("collabTool not in cache. Creating new ones. Ores: {}", ores.getResourceableId());
 	
 			CollaborationTools tools = new CollaborationTools(coordinatorManager, ores);
 			CollaborationTools cachedTools = cache.putIfAbsent(cacheKey, tools);

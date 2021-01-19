@@ -21,7 +21,6 @@ package org.olat.course.member.wizard;
 
 import java.util.List;
 
-import org.olat.core.CoreSpringFactory;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.form.flexible.FormItemContainer;
 import org.olat.core.gui.components.form.flexible.impl.Form;
@@ -38,8 +37,12 @@ import org.olat.group.manager.BusinessGroupMailing.MailType;
 import org.olat.group.model.BusinessGroupMembershipChange;
 import org.olat.group.ui.main.MemberPermissionChangeEvent;
 import org.olat.group.ui.wizard.BGMailTemplateController;
+import org.olat.modules.curriculum.Curriculum;
+import org.olat.modules.curriculum.CurriculumElement;
+import org.olat.modules.curriculum.ui.CurriculumMailing;
 import org.olat.repository.RepositoryEntry;
 import org.olat.repository.RepositoryMailing;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * 
@@ -49,14 +52,17 @@ public class ImportMemberMailController extends StepFormBasicController {
 	
 	private MailTemplate mailTemplate;
 	private final BGMailTemplateController mailTemplateForm;
+	
+	@Autowired
+	private BusinessGroupModule businessGroupModule;
 
 	public ImportMemberMailController(UserRequest ureq, WindowControl wControl, RepositoryEntry repoEntry,
 			Form rootForm, StepsRunContext runContext) {
 		super(ureq, wControl, rootForm, runContext, LAYOUT_CUSTOM, "mail_template");
 		
 		MemberPermissionChangeEvent e = (MemberPermissionChangeEvent)runContext.get("permissions");
-		boolean mandatoryEmail = CoreSpringFactory.getImpl(BusinessGroupModule.class).isMandatoryEnrolmentEmail(ureq.getUserSession().getRoles());
-		if(mandatoryEmail) {
+		boolean mandatoryEmail = businessGroupModule.isMandatoryEnrolmentEmail(ureq.getUserSession().getRoles());
+		if(mandatoryEmail && e != null) {
 			boolean includeParticipantsOrTutorsRights = hasParticipantOrTutorsRightsChanges(e);
 			if(!includeParticipantsOrTutorsRights) {
 				mandatoryEmail = false;//only mandatory for participants and tutors
@@ -73,12 +79,20 @@ public class ImportMemberMailController extends StepFormBasicController {
 			mailTemplate = RepositoryMailing.getDefaultTemplate(defaultRepoType, repoEntry, getIdentity());
 		} else if(hasCourseRights(e)) {
 			mailTemplate = RepositoryMailing.createAddParticipantMailTemplate(repoEntry, getIdentity());
+		} else if(hasCurriculumRights(e)) {
+			CurriculumElement curriculumElement = e.getRootCurriculumElement();
+			Curriculum curriculum = curriculumElement.getCurriculum();
+			mailTemplate = CurriculumMailing.getDefaultMailTemplate(curriculum, curriculumElement, getIdentity());
 		} else {
 			mailTemplate = BusinessGroupMailing.getDefaultTemplate(MailType.addParticipant, null, getIdentity());
 		}
 		mailTemplateForm = new BGMailTemplateController(ureq, wControl, mailTemplate, false, true, false, mandatoryEmail, rootForm);
 		
 		initForm (ureq);
+	}
+	
+	private boolean hasCurriculumRights(MemberPermissionChangeEvent e) {
+		return e != null && e.getCurriculumChanges() != null && !e.getCurriculumChanges().isEmpty();
 	}
 	
 	private boolean hasCourseRights(MemberPermissionChangeEvent e) {

@@ -20,11 +20,13 @@
 package org.olat.group.test;
 
 import static org.junit.Assert.assertNotNull;
+import static org.olat.test.JunitTestHelper.random;
 
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.Date;
+import java.util.GregorianCalendar;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -38,6 +40,7 @@ import org.olat.core.commons.persistence.DB;
 import org.olat.core.commons.persistence.PersistenceHelper;
 import org.olat.core.commons.services.mark.MarkManager;
 import org.olat.core.id.Identity;
+import org.olat.core.util.DateUtils;
 import org.olat.group.BusinessGroup;
 import org.olat.group.BusinessGroupMembership;
 import org.olat.group.BusinessGroupRef;
@@ -186,7 +189,7 @@ public class BusinessGroupDAOTest extends OlatTestCase {
 	@Test
 	public void loadBusinessGroup_forUpdate_notFound() {
 		//load and lock an inexistent group
-		BusinessGroup groupForUpdate = businessGroupDao.loadForUpdate(new Long(0l));
+		BusinessGroup groupForUpdate = businessGroupDao.loadForUpdate(Long.valueOf(0l));
 		Assert.assertNull(groupForUpdate);
 		dbInstance.commit();//release lock
 	}
@@ -713,6 +716,75 @@ public class BusinessGroupDAOTest extends OlatTestCase {
 		Assert.assertTrue(retrievedGroupkey.contains(group1.getKey()));
 		Assert.assertTrue(retrievedGroupkey.contains(group3.getKey()));
 		Assert.assertFalse(retrievedGroupkey.contains(group2.getKey()));
+	}
+	
+	@Test
+	public void findBusinessGroupsManaged() {
+		Identity identity = JunitTestHelper.createAndPersistIdentityAsRndUser("bg-search-7");
+		String managedFlags = "all";
+		BusinessGroup groupManaged = businessGroupDao.createAndPersist(null, random(), random(), random(),
+				managedFlags, 0, 5, true, false, true, false, false);
+		// Groups with external ID should be treated as managed even if they have no managed flag.
+		BusinessGroup groupExternalId = businessGroupDao.createAndPersist(null, random(), random(), random(),
+				null, 0, 5, true, false, true, false, false);
+		BusinessGroup groupUnmanaged = businessGroupDao.createAndPersist(null, random(), random(), null,
+				null, 0, 5, true, false, true, false, false);
+		dbInstance.commitAndCloseSession();
+
+		// Check managed
+		BusinessGroupQueryParams params = new BusinessGroupQueryParams();
+		params.setManaged(Boolean.TRUE);
+		List<StatisticsBusinessGroupRow> groups = businessGroupDao.searchBusinessGroupsForSelection(params, identity);
+		Assert.assertNotNull(groups);
+
+		Set<Long> retrievedGroupkey = new HashSet<>();
+		for(StatisticsBusinessGroupRow group:groups) {
+			retrievedGroupkey.add(group.getKey());
+		}
+		Assert.assertTrue(retrievedGroupkey.contains(groupManaged.getKey()));
+		Assert.assertTrue(retrievedGroupkey.contains(groupExternalId.getKey()));
+		Assert.assertFalse(retrievedGroupkey.contains(groupUnmanaged.getKey()));
+		
+		// Check managed
+		params.setManaged(Boolean.FALSE);
+		groups = businessGroupDao.searchBusinessGroupsForSelection(params, identity);
+		Assert.assertNotNull(groups);
+
+		retrievedGroupkey = new HashSet<>();
+		for(StatisticsBusinessGroupRow group:groups) {
+			retrievedGroupkey.add(group.getKey());
+		}
+		Assert.assertFalse(retrievedGroupkey.contains(groupManaged.getKey()));
+		Assert.assertFalse(retrievedGroupkey.contains(groupExternalId.getKey()));
+		Assert.assertTrue(retrievedGroupkey.contains(groupUnmanaged.getKey()));
+	}
+	
+	@Test
+	public void findBusinessLastUsageBefore() {
+		Date lastUsageBefore = new GregorianCalendar(2020, 8, 9).getTime();
+		Identity identity = JunitTestHelper.createAndPersistIdentityAsRndUser(random());
+		BusinessGroup before = businessGroupDao.createAndPersist(null, random(), random(), random(),
+				null, 0, 5, true, false, true, false, false);
+		before.setLastUsage(DateUtils.addDays(lastUsageBefore, -2));
+		businessGroupDao.merge(before);
+		BusinessGroup after = businessGroupDao.createAndPersist(null, random(), random(), null,
+				null, 0, 5, true, false, true, false, false);
+		after.setLastUsage(DateUtils.addDays(lastUsageBefore, 3));
+		businessGroupDao.merge(after);
+		dbInstance.commitAndCloseSession();
+
+		// Check managed
+		BusinessGroupQueryParams params = new BusinessGroupQueryParams();
+		params.setLastUsageBefore(lastUsageBefore);
+		List<StatisticsBusinessGroupRow> groups = businessGroupDao.searchBusinessGroupsForSelection(params, identity);
+		Assert.assertNotNull(groups);
+
+		Set<Long> retrievedGroupkey = new HashSet<>();
+		for(StatisticsBusinessGroupRow group:groups) {
+			retrievedGroupkey.add(group.getKey());
+		}
+		Assert.assertTrue(retrievedGroupkey.contains(before.getKey()));
+		Assert.assertFalse(retrievedGroupkey.contains(after.getKey()));
 	}
 
 	@Test

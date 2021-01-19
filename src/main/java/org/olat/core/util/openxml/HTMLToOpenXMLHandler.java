@@ -116,11 +116,7 @@ public class HTMLToOpenXMLHandler extends DefaultHandler {
 				flushText();
 				addContent(currentParagraph);
 			}
-			
-			Indent indent = getCurrentIndent();
-			Border leftBorder = getCurrentLeftBorder();
-			PredefinedStyle predefinedStyle = getCurrentPredefinedStyle();
-			currentParagraph = factory.createParagraphEl(indent, leftBorder, startSpacing, predefinedStyle);
+			currentParagraph = createParagraphWithCurrentStyling(startSpacing);
 			startSpacing = null;//consumed
 		}
 		return currentParagraph;
@@ -132,11 +128,15 @@ public class HTMLToOpenXMLHandler extends DefaultHandler {
 			flushText();
 			addContent(currentParagraph);
 		}
+		currentParagraph = createParagraphWithCurrentStyling(spacing);
+		return currentParagraph;
+	}
+	
+	private Element createParagraphWithCurrentStyling(Spacing spacing) {
 		Indent indent = getCurrentIndent();
 		Border leftBorder = getCurrentLeftBorder();
 		PredefinedStyle predefinedStyle = getCurrentPredefinedStyle();
-		currentParagraph = factory.createParagraphEl(indent, leftBorder, spacing, predefinedStyle);
-		return currentParagraph;
+		return factory.createParagraphEl(indent, leftBorder, spacing, predefinedStyle);
 	}
 	
 	protected Element getCurrentListParagraph(boolean create) {
@@ -185,18 +185,15 @@ public class HTMLToOpenXMLHandler extends DefaultHandler {
 		}
 	}
 	
+	protected boolean hasTextToFlush() {
+		return textBuffer != null && textBuffer.length() > 0;
+	}
+	
 	protected void flushText() {
 		if(textBuffer == null) return;
 		
 		if(latex) {
-			//begin a new paragraph
-			if(currentParagraph != null) {
-				currentParagraph = addContent(currentParagraph);
-			}
-			List<Node> nodes = factory.convertLaTeX(textBuffer.toString());
-			for(Node node:nodes) {
-				addContent(node);
-			}
+			flushLaTeX();
 		} else {
 			Element currentRun = getCurrentRun();
 			String text = textBuffer.toString().replace("\n", "").replace("\r", "");
@@ -212,6 +209,21 @@ public class HTMLToOpenXMLHandler extends DefaultHandler {
 		textBuffer = null;
 	}
 	
+	private void flushLaTeX() {
+		Element paragraphEl;
+		if(currentParagraph == null) {
+			paragraphEl = currentParagraph = createParagraphWithCurrentStyling(startSpacing);
+			startSpacing = null;
+		} else {
+			paragraphEl = currentParagraph;
+		}
+		
+		List<Node> nodes = factory.convertLaTeX(textBuffer.toString(), false);
+		for(Node node:nodes) {
+			paragraphEl.appendChild(node);
+		}
+	}
+	
 	/**
 	 * Get or create a run on the current paragraph
 	 * @return
@@ -219,10 +231,7 @@ public class HTMLToOpenXMLHandler extends DefaultHandler {
 	protected Element getCurrentRun() {
 		Element paragraphEl;
 		if(currentParagraph == null) {
-			Indent indent = getCurrentIndent();
-			Border leftBorder = getCurrentLeftBorder();
-			PredefinedStyle predefinedStyle = getCurrentPredefinedStyle();
-			paragraphEl = currentParagraph = factory.createParagraphEl(indent, leftBorder, startSpacing, predefinedStyle);
+			paragraphEl = currentParagraph = createParagraphWithCurrentStyling(startSpacing);
 			startSpacing = null;
 		} else {
 			paragraphEl = currentParagraph;
@@ -399,7 +408,11 @@ public class HTMLToOpenXMLHandler extends DefaultHandler {
 	}
 	
 	public void startCurrentTableRow() {
-		getCurrentTable().addRowEl();
+		startCurrentTableRow(false);
+	}
+	
+	public void startCurrentTableRow(boolean cantSplit) {
+		getCurrentTable().addRowEl(cantSplit);
 	}
 	
 	public Node addCell(int colSpan, int rowSpan) {
@@ -465,7 +478,7 @@ public class HTMLToOpenXMLHandler extends DefaultHandler {
 		} else if("table".equals(tag)) {
 			startTable();
 		} else if("tr".equals(tag)) {
-			startCurrentTableRow();
+			startCurrentTableRow(false);
 		} else if("td".equals(tag) || "th".equals(tag)) {
 			int colspan = OpenXMLUtils.getSpanAttribute("colspan", attributes);
 			int rowspan = OpenXMLUtils.getSpanAttribute("rowspan", attributes);
@@ -503,6 +516,13 @@ public class HTMLToOpenXMLHandler extends DefaultHandler {
 			return relPath.concat(path);
 		}
 		return path;
+	}
+	
+	public void appendText(String text) {
+		if(textBuffer == null) {
+			textBuffer = new StringBuilder();
+		}
+		textBuffer.append(text);
 	}
 
 	@Override
@@ -619,6 +639,15 @@ public class HTMLToOpenXMLHandler extends DefaultHandler {
 		}
 		
 		public Node addRowEl() {
+			return addRowEl(false);
+		}
+		
+		/**
+		 * Add a new row in the table.
+		 * @param cantSplit true to prevent the cells to be splitted across 2 pages
+		 * @return The row element
+		 */
+		public Node addRowEl(boolean cantSplit) {
 			for(int i=rowSpans.length; i-->0; ) {
 				if(rowSpans[i] != null) {
 					rowSpans[i].unDone();
@@ -626,7 +655,7 @@ public class HTMLToOpenXMLHandler extends DefaultHandler {
 			}
 			
 			nextCol = 0;
-			currentRowEl = factory.createTableRow();
+			currentRowEl = factory.createTableRow(cantSplit);
 			return tableEl.appendChild(currentRowEl);
 		}
 		

@@ -92,7 +92,7 @@ class CoursefolderWebDAVMergeSource extends WebDAVMergeSource {
 		
 		NoTermContainer noTermContainer = new NoTermContainer(namingAndGrouping);
 		
-		List<RepositoryEntry> editorEntries = repositoryManager.queryByOwner(getIdentity(), true, "CourseModule");
+		List<RepositoryEntry> editorEntries = repositoryManager.queryByOwner(getIdentity(), true, null, "CourseModule");
 		appendCourses(editorEntries, containers, terms, noTermContainer, namingAndGrouping, true);
 		
 		//add courses as participant and coaches
@@ -103,7 +103,7 @@ class CoursefolderWebDAVMergeSource extends WebDAVMergeSource {
 		
 		//add bookmarked courses
 		if(webDAVModule.isEnableLearnersBookmarksCourse()) {
-			List<RepositoryEntry> bookmarkedEntries = repositoryManager.getLearningResourcesAsBookmark(getIdentity(), identityEnv.getRoles(), "CourseModule", 0, -1);
+			List<RepositoryEntry> bookmarkedEntries = repositoryManager.getLearningResourcesAsBookmarkedMember(getIdentity(), identityEnv.getRoles(), "CourseModule", 0, -1);
 			appendCourses(bookmarkedEntries, containers, terms, noTermContainer, namingAndGrouping, false);
 		}
 

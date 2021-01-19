@@ -24,8 +24,6 @@ import java.util.List;
 
 import org.olat.core.gui.components.table.TableDataModel;
 import org.olat.modules.coach.model.GroupStatEntry;
-import org.olat.modules.coach.ui.ProgressValue;
-
 import org.olat.modules.coach.ui.LightedValue.Light;
 
 /**
@@ -60,15 +58,9 @@ public class GroupsTableDataModel implements TableDataModel<GroupStatEntry> {
 		GroupStatEntry g = groups.get(row);
 		int numOfStudents = g.getCountStudents();
 		switch(Columns.getValueAt(col)) {
-			case name: {
-				return g.getGroupName();
-			}
-			case countCourses: {
-				return new Integer(g.getCountCourses());
-			}
-			case countStudents: {
-				return new Integer(numOfStudents);
-			}
+			case name: return g.getGroupName();
+			case countCourses: return Integer.valueOf(g.getCountCourses());
+			case countStudents: return Integer.valueOf(numOfStudents);
 			case initialLaunch: {
 				int count = g.getCountCourses() * g.getCountStudents();
 				if(count == 0) {
@@ -131,7 +123,7 @@ public class GroupsTableDataModel implements TableDataModel<GroupStatEntry> {
 		return new GroupsTableDataModel(new ArrayList<GroupStatEntry>());
 	}
 	
-	public static enum Columns {
+	public enum Columns {
 		name,
 		countCourses,
 		countStudents,

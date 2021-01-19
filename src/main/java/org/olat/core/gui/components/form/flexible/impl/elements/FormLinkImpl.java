@@ -60,11 +60,14 @@ public class FormLinkImpl extends FormItemImpl implements FormLink {
 	private int presentation = Link.LINK;
 	private String i18n;
 	private String cmd;
+	private String url;
 	private boolean hasCustomEnabledCss = false;
 	private boolean hasCustomDisabledCss = false;
 	private boolean domReplacementWrapperRequired = false;
 	private boolean ownDirtyFormWarning = false;
 	private boolean newWindow;
+	private boolean newWindowAfterDispatchUrl;
+	private boolean newWindowWithSubmit;
 	private LinkPopupSettings popup;
 	private String iconLeftCSS;
 	private String iconRightCSS;
@@ -73,6 +76,7 @@ public class FormLinkImpl extends FormItemImpl implements FormLink {
 	private String title;
 	private String ariaLabel;
 	private String textReasonForDisabling;
+	private String target;
 
 	/**
 	 * creates a form link with the given name which acts also as command, i18n
@@ -139,12 +143,24 @@ public class FormLinkImpl extends FormItemImpl implements FormLink {
 	public boolean isNewWindow() {
 		return newWindow;
 	}
+	
+	@Override
+	public boolean isNewWindowAfterDispatchUrl() {
+		return newWindowAfterDispatchUrl;
+	}
 
 	@Override
-	public void setNewWindow(boolean openInNewWindow) {
+	public boolean isNewWindowWithSubmit() {
+		return newWindowWithSubmit;
+	}
+
+	@Override
+	public void setNewWindow(boolean openInNewWindow, boolean afterDispatchUrl, boolean withSubmit) {
 		newWindow = openInNewWindow;
+		newWindowWithSubmit = withSubmit;
+		newWindowAfterDispatchUrl = afterDispatchUrl;
 		if(component != null) {
-			component.setNewWindow(openInNewWindow);
+			component.setNewWindow(openInNewWindow, afterDispatchUrl);
 		}
 	}
 
@@ -163,6 +179,18 @@ public class FormLinkImpl extends FormItemImpl implements FormLink {
 		this.popup = popup;
 		if(component != null) {
 			component.setPopup(popup);
+		}
+	}
+
+	public String getTarget() {
+		return target;
+	}
+
+	@Override
+	public void setTarget(String target) {
+		this.target = target;
+		if(component != null) {
+			component.setTarget(target);
 		}
 	}
 
@@ -225,7 +253,8 @@ public class FormLinkImpl extends FormItemImpl implements FormLink {
 		component.setAriaLabel(ariaLabel);
 		component.setForceFlexiDirtyFormWarning(ownDirtyFormWarning);
 		component.setPopup(popup);
-		component.setNewWindow(newWindow);
+		component.setNewWindow(newWindow, newWindowAfterDispatchUrl);
+		component.setUrl(url);
 		if(textReasonForDisabling != null) {
 			component.setTextReasonForDisabling(textReasonForDisabling);
 		}
@@ -264,6 +293,14 @@ public class FormLinkImpl extends FormItemImpl implements FormLink {
 	@Override
 	public String getCmd() {
 		return cmd;
+	}
+	
+	@Override
+	public void setUrl(String url) {
+		this.url = url;
+		if(component != null) {
+			component.setUrl(url);
+		}
 	}
 
 	@Override

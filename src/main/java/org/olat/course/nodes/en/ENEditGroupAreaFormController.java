@@ -187,12 +187,13 @@ class ENEditGroupAreaFormController extends FormBasicController implements Gener
 		List<EnrollmentRow> enrollmentRows = enrollmentManager.getEnrollments(getIdentity(), groupKeys, null, 256);
 		Map<Long,EnrollmentRow> enrollmentMap = enrollmentRows.stream().collect(Collectors.toMap(EnrollmentRow::getKey, g -> g, (u, v) -> u));
 
-		easyGroupTableRows = new ArrayList<ENEditGroupTableContentRow>();
+		easyGroupTableRows = new ArrayList<>();
 		for (Long groupKey : groupKeys) {
 			BusinessGroup group = groupMap.get(groupKey);
-			EnrollmentRow enrollment = enrollmentMap.get(groupKey);
-			
-			easyGroupTableRows.add(new ENEditGroupTableContentRow(group, enrollment));
+			if(group != null) {
+				EnrollmentRow enrollment = enrollmentMap.get(groupKey);
+				easyGroupTableRows.add(new ENEditGroupTableContentRow(group, enrollment));
+			}
 		}
 
 		easyGroupTableModel.setObjects(easyGroupTableRows);
@@ -797,23 +798,6 @@ class ENEditGroupAreaFormController extends FormBasicController implements Gener
 			}
 		}
 		return keyList;
-	}
-
-	private KeysAndNames getGroupKeysAndNames(List<Long> keys) {
-		StringBuilder sb = new StringBuilder();
-		KeysAndNames keysAndNames = new KeysAndNames();
-		keysAndNames.getKeys().addAll(keys);
-
-		List<BusinessGroupShort> groups = businessGroupService.loadShortBusinessGroups(keys);
-		for(BusinessGroupShort group:groups) {
-			if(sb.length() > 0) sb.append("&nbsp;&nbsp;");
-			sb.append("<i class='o_icon o_icon-fw o_icon_group'>&nbsp;</i> ");
-			sb.append(StringHelper.escapeHtml(group.getName()));
-			keysAndNames.getNames().add(group.getName());
-
-		}
-		keysAndNames.setDecoratedNames(sb.toString());
-		return keysAndNames;
 	}
 
 	private KeysAndNames getAreaKeysAndNames(List<Long> keys) {

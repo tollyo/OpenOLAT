@@ -104,7 +104,7 @@ public class EditSolutionController extends FormBasicController {
 		titleEl.setElementCssClass("o_sel_course_gta_upload_solution_title");
 		titleEl.setMandatory(true);
 
-		fileEl = uifactory.addFileElement(getWindowControl(), "file", "solution.file", formLayout);
+		fileEl = uifactory.addFileElement(getWindowControl(), getIdentity(), "file", "solution.file", formLayout);
 		fileEl.setMandatory(true);
 		fileEl.addActionListener(FormEvent.ONCHANGE);
 		if(StringHelper.containsNonWhitespace(solution.getFilename())) {
@@ -156,7 +156,7 @@ public class EditSolutionController extends FormBasicController {
 			if(replaceFile && StringHelper.containsNonWhitespace(solution.getFilename())) {
 				File currentFile = new File(solutionDir, solution.getFilename());
 				if(currentFile.exists()) {
-					currentFile.delete();
+					FileUtils.deleteFile(currentFile);
 				}
 			}
 

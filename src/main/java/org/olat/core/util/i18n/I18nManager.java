@@ -34,6 +34,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.Files;
 import java.text.DecimalFormat;
 import java.text.MessageFormat;
 import java.text.NumberFormat;
@@ -1039,7 +1040,7 @@ public class I18nManager {
 	 */
 	public void deleteProperties(Locale locale, String bundleName) {
 		String key = calcPropertiesFileKey(locale, bundleName);
-		if (log.isDebugEnabled()) log.debug("deleteProperties for key::" + key);
+		if (log.isDebugEnabled()) log.debug("deleteProperties for key::{}", key);
 
 		if (locale != null) { // metadata files are not in cache
 			// 1) Remove from cache first
@@ -1053,11 +1054,14 @@ public class I18nManager {
 		// 2) Remove from filesystem
 		File baseDir = i18nModule.getPropertyFilesBaseDir(locale, bundleName);
 		if (baseDir == null) {
-			if (baseDir == null) { throw new AssertException("Can not delete properties file for bundle::" + bundleName + " and language::"
-					+ locale.toString() + " - no base directory found, probably loaded from jar!"); }
+			return;// nothing to do
 		}
 		File f = getPropertiesFile(locale, bundleName, baseDir);
-		if (f.exists()) f.delete();
+		try {
+			Files.deleteIfExists(f.toPath());
+		} catch (IOException e) {
+			log.error("Cannot delete: {}", f);
+		}
 		// 3) Check if for this bundle any other language file exists, if
 		// not remove
 		// the bundle from the list of translatable bundles
@@ -1214,6 +1218,55 @@ public class I18nManager {
 		}
 		Locale loc = i18nModule.getAllLocales().get(localeKey);
 		return loc;
+	}
+	
+	/**
+	 * Most of the locales doesn't have a country specified. This method
+	 * returns a locale with a country. The country is choosed
+	 * arbitrarily. English use US (for compatibility reason). For Japan,
+	 * the locale changed the language and the country as jp doesn't exists.
+	 * 
+	 * @param locale The locale
+	 * @return A locale with a country
+	 */
+	public Locale getRegionalizedLocale(Locale locale) {
+		if(StringHelper.containsNonWhitespace(locale.getCountry())) {
+			return locale;
+		}
+		
+		String lang = locale.getLanguage();
+		String country = null;
+		switch(lang) {
+			case "de": country = "DE"; break;
+			case "fr": country = "FR"; break;
+			case "en": country = "GB"; break;
+			case "ar": country = "EG"; break;
+			case "el": country = "GR"; break;
+			case "cs": country = "CZ"; break;
+			case "fa": country = "AF"; break;
+			case "sq": country = "AL"; break;
+			case "da": country = "DK"; break;
+			case "jp": lang = "ja"; country = "JP"; break;
+			default: country = lang.toUpperCase(); break;
+		}
+		
+		boolean found = false;
+		for(Locale alocale:Locale.getAvailableLocales()) {
+			if(alocale.getLanguage().equals(lang) && country.equals(alocale.getCountry())) {
+				found = true;
+			}
+		}
+		
+		if(!found) {
+			System.out.println("Not found:" +  lang + " " + country);
+			for(Locale alocale:Locale.getAvailableLocales()) {
+				if(alocale.getLanguage().equals(lang)) {
+					System.out.println("Alt:" +  alocale.getLanguage() + " " + alocale.getCountry() + " " + alocale.getDisplayCountry());
+				}
+			}
+		}
+
+		return country == null ? locale: new Locale(lang, country);
 	}
 
 	/**
@@ -1706,9 +1759,7 @@ public class I18nManager {
 		if (!i18nModule.isTransToolEnabled()) {
 			throw new AssertException("Programming error - can only copy i18n files from a language pack to the source when in translation mode");
 		}
-		JarFile jar = null;
-		try {
-			jar = new JarFile(jarFile);
+		try(JarFile jar = new JarFile(jarFile)) {
 			Enumeration<JarEntry> jarEntries = jar.entries();
 			while (jarEntries.hasMoreElements()) {
 				JarEntry jarEntry = jarEntries.nextElement();
@@ -1730,11 +1781,11 @@ public class I18nManager {
 						Properties props = new Properties();
 						props.load(new FileInputStream(targetFile));
 						if (props.size() == 0) {
-							targetFile.delete();
+							Files.deleteIfExists(targetFile.toPath());
 							// Delete empty parent dirs recursively
 							File parent = targetFile.getParentFile();
 							while (parent != null && parent.list() != null && parent.list().length == 0) {
-								parent.delete();
+								Files.deleteIfExists(parent.toPath());
 								parent = parent.getParentFile();
 							}
 						}
@@ -1745,8 +1796,6 @@ public class I18nManager {
 			}
 		} catch (IOException e) {
 			throw new OLATRuntimeException("Error when copying up i18n files from a jar::" + jarFile.getAbsolutePath(), e);
-		} finally {
-			IOUtils.closeQuietly(jar);
 		}
 	}
 

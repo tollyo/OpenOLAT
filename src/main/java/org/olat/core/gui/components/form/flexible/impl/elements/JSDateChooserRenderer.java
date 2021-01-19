@@ -66,10 +66,13 @@ class JSDateChooserRenderer extends DefaultComponentRenderer {
 	
 	private void renderDateElement(StringOutput sb, JSDateChooserComponent jsdcc, int maxlength, Translator translator) {
 		String receiverId = jsdcc.getTextElementComponent().getFormDispatchId();
-		renderDateChooser(sb, jsdcc, receiverId, jsdcc.getValue(), "o_first_date", maxlength, translator);
+		if (!jsdcc.isTimeOnlyEnabled()) {
+			renderDateChooser(sb, jsdcc, receiverId, jsdcc.getValue(), "o_first_date", maxlength, translator);
+		}
 		//input fields for hour and minute
-		if (jsdcc.isDateChooserTimeEnabled()) {
-			renderTime(sb, jsdcc.getDate(), jsdcc.isDefaultTimeAtEndOfDay(), receiverId, "o_first_ms");
+		if (jsdcc.isDateChooserTimeEnabled() || jsdcc.isTimeOnlyEnabled()) {
+			String timeOnlyCss = jsdcc.isTimeOnlyEnabled() ? " o_time_only" : "";
+			renderTime(sb, jsdcc.getDate(), jsdcc.isDefaultTimeAtEndOfDay(), receiverId, jsdcc.getTextElementComponent(), "o_first_ms".concat(timeOnlyCss));
 			if(jsdcc.isSecondDate() && jsdcc.isSameDay()) {
 				String separator;
 				if(jsdcc.getSeparator() != null) {
@@ -78,16 +81,18 @@ class JSDateChooserRenderer extends DefaultComponentRenderer {
 					separator = " - ";
 				}
 				renderSeparator(sb, separator);
-				renderTime(sb, jsdcc.getSecondDate(), jsdcc.isDefaultTimeAtEndOfDay(), receiverId.concat("_snd"), "o_second_ms");
+				renderTime(sb, jsdcc.getSecondDate(), jsdcc.isDefaultTimeAtEndOfDay(), receiverId.concat("_snd"), jsdcc.getTextElementComponent(), "o_second_ms".concat(timeOnlyCss));
 			}
 		}
 		if(jsdcc.isSecondDate() && !jsdcc.isSameDay()) {
 			if(jsdcc.getSeparator() != null) {
 				renderSeparator(sb, translator.translate(jsdcc.getSeparator()));
 			}
-			renderDateChooser(sb, jsdcc, receiverId.concat("_snd"), jsdcc.getSecondValue(), "o_second_date", maxlength, translator);
+			if(!jsdcc.isTimeOnlyEnabled() || jsdcc.isTimeOnlyEnabled()) {
+				renderDateChooser(sb, jsdcc, receiverId.concat("_snd"), jsdcc.getSecondValue(), "o_second_date", maxlength, translator);
+			}
 			if (jsdcc.isDateChooserTimeEnabled()) {
-				renderTime(sb, jsdcc.getSecondDate(), jsdcc.isDefaultTimeAtEndOfDay(), receiverId.concat("_snd"), "o_second_ms");
+				renderTime(sb, jsdcc.getSecondDate(), jsdcc.isDefaultTimeAtEndOfDay(), receiverId.concat("_snd"), jsdcc.getTextElementComponent(), "o_second_ms");
 			}
 		}
 	}
@@ -181,7 +186,7 @@ class JSDateChooserRenderer extends DefaultComponentRenderer {
 		  .append("\" value=\"").append(value).append("\" /></span></div></div>");
 	}
 	
-	private void renderTime(StringOutput sb, Date date, boolean defaultEndOfDay, String receiverId, String cssClass) {
+	private void renderTime(StringOutput sb, Date date, boolean defaultEndOfDay, String receiverId, TextElementComponent teC, String cssClass) {
 		int hour;
 		int minute;
 		if(date == null) {
@@ -198,9 +203,9 @@ class JSDateChooserRenderer extends DefaultComponentRenderer {
 			minute = cal.get(Calendar.MINUTE);
 		}
 		sb.append("<div class='form-group o_date_ms ").append(cssClass).append("'>");
-		renderMS(sb, "o_dch_" + receiverId, hour);
+		renderMS(sb, "o_dch_" + receiverId, receiverId, teC, hour);
 		sb.append(" : ");
-		renderMS(sb, "o_dcm_" + receiverId, minute);
+		renderMS(sb, "o_dcm_" + receiverId, receiverId, teC, minute);
 		sb.append("</div>");
 	}
 	
@@ -224,10 +229,13 @@ class JSDateChooserRenderer extends DefaultComponentRenderer {
 
 	private void renderTextElementReadonly(StringOutput sb, JSDateChooserComponent jsdcc, int maxlength, Translator translator) {
 		String receiverId = jsdcc.getTextElementComponent().getFormDispatchId();
-		renderDateChooserDisabled(sb, jsdcc, jsdcc.getValue(), "o_first_date", maxlength);
+		if (!jsdcc.isTimeOnlyEnabled()) {
+			renderDateChooserDisabled(sb, jsdcc, jsdcc.getValue(), "o_first_date", maxlength);
+		}
 		//input fields for hour and minute
-		if (jsdcc.isDateChooserTimeEnabled()) {
-			renderTimeDisabled(sb, jsdcc.getDate(), receiverId, "o_first_ms");
+		if (jsdcc.isDateChooserTimeEnabled() || jsdcc.isTimeOnlyEnabled()) {
+			String timeOnlyCss = jsdcc.isTimeOnlyEnabled() ? " o_time_only" : "";
+			renderTimeDisabled(sb, jsdcc.getDate(), receiverId, "o_first_ms".concat(timeOnlyCss));
 			if(jsdcc.isSecondDate() && jsdcc.isSameDay()) {
 				String separator;
 				if(jsdcc.getSeparator() != null) {
@@ -250,10 +258,13 @@ class JSDateChooserRenderer extends DefaultComponentRenderer {
 		}
 	}
 	
-	private StringOutput renderMS(StringOutput dc, String id, int time) {
+	private StringOutput renderMS(StringOutput dc, String id, String receiverId, TextElementComponent teC, int time) {
+		TextElementImpl te = teC.getTextElementImpl();
+		
 		dc.append("<input class='form-control o_date_ms' type='text' id='").append(id).append("'")
 	      .append(" name=\"").append(id).append("\" size='2'")
 		  .append(" maxlength='2' value='").append(time > 9 ? "" + time : "0" + time).append("'")
+		  .append(FormJSHelper.getRawJSFor(te.getRootForm(), receiverId, te.getAction()))
 		  .append(" />");
 		return dc;
 	}

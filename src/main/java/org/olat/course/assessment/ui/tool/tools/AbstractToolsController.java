@@ -126,8 +126,8 @@ public abstract class AbstractToolsController extends BasicController {
 			}
 			lastLink = link;	
 		}
-		if(links.size() > 0 && "-".equals(links.get(links.size() - 1))) {
-			links.remove(links.size() -1);//no trialing separator
+		if(!links.isEmpty() && "-".equals(links.get(links.size() - 1))) {
+			links.remove(links.size() -1);//no trailing separator
 		}
 
 		mainVC.contextPut("links", links);
@@ -238,7 +238,8 @@ public abstract class AbstractToolsController extends BasicController {
 	
 	protected void reopenEvaluation() {
 		ScoreEvaluation reopenedEval = new ScoreEvaluation(scoreEval.getScore(), scoreEval.getPassed(),
-				AssessmentEntryStatus.inReview, scoreEval.getUserVisible(), scoreEval.getCurrentRunCompletion(),
+				AssessmentEntryStatus.inReview, scoreEval.getUserVisible(),
+				scoreEval.getCurrentRunStartDate(), scoreEval.getCurrentRunCompletion(),
 				AssessmentRunStatus.running, scoreEval.getAssessmentID());
 		courseAssessmentService.updateScoreEvaluation(courseNode, reopenedEval, assessedUserCourseEnv,
 				getIdentity(), false, Role.coach);
@@ -253,7 +254,8 @@ public abstract class AbstractToolsController extends BasicController {
 	
 	protected void doneEvalution() {
 		ScoreEvaluation doneEval = new ScoreEvaluation(scoreEval.getScore(), scoreEval.getPassed(),
-				AssessmentEntryStatus.done, scoreEval.getUserVisible(), scoreEval.getCurrentRunCompletion(),
+				AssessmentEntryStatus.done, scoreEval.getUserVisible(),
+				scoreEval.getCurrentRunStartDate(), scoreEval.getCurrentRunCompletion(),
 				scoreEval.getCurrentRunStatus(), scoreEval.getAssessmentID());
 		courseAssessmentService.updateScoreEvaluation(courseNode, doneEval, assessedUserCourseEnv, getIdentity(),
 				false, Role.coach);
@@ -262,7 +264,8 @@ public abstract class AbstractToolsController extends BasicController {
 	private void doSetVisibility(UserRequest ureq, boolean visible) {
 		if (scoreEval != null) {
 			ScoreEvaluation doneEval = new ScoreEvaluation(scoreEval.getScore(), scoreEval.getPassed(),
-					AssessmentEntryStatus.done, visible, scoreEval.getCurrentRunCompletion(),
+					AssessmentEntryStatus.done, visible,
+					scoreEval.getCurrentRunStartDate(), scoreEval.getCurrentRunCompletion(),
 					scoreEval.getCurrentRunStatus(), scoreEval.getAssessmentID());
 			courseAssessmentService.updateScoreEvaluation(courseNode, doneEval, assessedUserCourseEnv,
 					getIdentity(), false, Role.coach);

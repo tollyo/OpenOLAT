@@ -30,6 +30,8 @@ import org.olat.commons.info.manager.MailFormatter;
 import org.olat.commons.info.ui.InfoDisplayController;
 import org.olat.commons.info.ui.InfoSecurityCallback;
 import org.olat.commons.info.ui.SendInfoMailFormatter;
+import org.olat.commons.info.ui.SendMailCurriculumOption;
+import org.olat.commons.info.ui.SendMailGroupOption;
 import org.olat.commons.info.ui.SendSubscriberMailOption;
 import org.olat.core.commons.services.notifications.PublisherData;
 import org.olat.core.commons.services.notifications.SubscriptionContext;
@@ -51,7 +53,11 @@ import org.olat.course.groupsandrights.CourseGroupManager;
 import org.olat.course.nodes.InfoCourseNode;
 import org.olat.course.run.userview.NodeEvaluation;
 import org.olat.course.run.userview.UserCourseEnvironment;
+import org.olat.group.BusinessGroup;
 import org.olat.modules.ModuleConfiguration;
+import org.olat.modules.curriculum.CurriculumElement;
+import org.olat.modules.curriculum.CurriculumRoles;
+import org.olat.modules.curriculum.CurriculumService;
 import org.olat.repository.RepositoryEntry;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -66,14 +72,12 @@ import org.springframework.beans.factory.annotation.Autowired;
  */
 public class InfoRunController extends BasicController {
 	
-	private VelocityContainer runVc;
-	private InfoDisplayController infoDisplayController;
 	private ContextualSubscriptionController subscriptionController;
-	
-	private String businessPath;
 	
 	@Autowired
 	private InfoSubscriptionManager subscriptionManager;
+	@Autowired
+	private CurriculumService curriculumService;
 
 	public InfoRunController(UserRequest ureq, WindowControl wControl, UserCourseEnvironment userCourseEnv,
 			NodeEvaluation ne, InfoCourseNode courseNode) {
@@ -144,7 +148,7 @@ public class InfoRunController extends BasicController {
 			String resSubPath, InfoSecurityCallback secCallback, boolean autoSubscribe, int maxResults, int duration) {
 		Long resId = userCourseEnv.getCourseEnvironment().getCourseResourceableId();
 		OLATResourceable infoResourceable = new InfoOLATResourceable(resId);
-		businessPath = normalizeBusinessPath(getWindowControl().getBusinessControl().getAsString());
+		String businessPath = normalizeBusinessPath(getWindowControl().getBusinessControl().getAsString());
 		ICourse course = CourseFactory.loadCourse(resId);
 		
 		CourseGroupManager cgm = userCourseEnv.getCourseEnvironment().getCourseGroupManager();
@@ -160,17 +164,35 @@ public class InfoRunController extends BasicController {
 			listenTo(subscriptionController);
 		}	
 		
-		infoDisplayController = new InfoDisplayController(ureq, getWindowControl(), maxResults, duration, secCallback, infoResourceable, resSubPath, businessPath);
+		InfoDisplayController infoDisplayController = new InfoDisplayController(ureq, getWindowControl(), maxResults, duration, secCallback, infoResourceable, resSubPath, businessPath);
 		infoDisplayController.addSendMailOptions(new SendSubscriberMailOption(infoResourceable, resSubPath, getLocale()));
 		infoDisplayController.addSendMailOptions(new SendMembersMailOption(courseEntry, GroupRoles.owner, translate("wizard.step1.send_option.owner")));
 		infoDisplayController.addSendMailOptions(new SendMembersMailOption(courseEntry, GroupRoles.coach, translate("wizard.step1.send_option.coach")));
 		infoDisplayController.addSendMailOptions(new SendMembersMailOption(courseEntry, GroupRoles.participant, translate("wizard.step1.send_option.participant")));
+		
+		List<GroupRoles> groupRolesToSend = new ArrayList<>();
+		groupRolesToSend.add(GroupRoles.participant);
+		groupRolesToSend.add(GroupRoles.coach);
+		groupRolesToSend.add(GroupRoles.owner);
+		
+		for (BusinessGroup group : cgm.getAllBusinessGroups()) {
+			infoDisplayController.addGroupMailOption(new SendMailGroupOption(group, groupRolesToSend));
+		}
+		
+		List<CurriculumRoles> curriculumRolesToSend = new ArrayList<>();
+		curriculumRolesToSend.add(CurriculumRoles.participant);
+		curriculumRolesToSend.add(CurriculumRoles.coach);
+		curriculumRolesToSend.add(CurriculumRoles.owner);
+		
+		for (CurriculumElement curriculumElement : curriculumService.getCurriculumElements(courseEntry)) {
+			infoDisplayController.addCurriuclaMailOptions(new SendMailCurriculumOption(curriculumElement, curriculumRolesToSend));
+		}
 
 		MailFormatter mailFormatter = new SendInfoMailFormatter(infoMailTitle, businessPath, getTranslator());
 		infoDisplayController.setSendMailFormatter(mailFormatter);
 		listenTo(infoDisplayController);
 
-		runVc = createVelocityContainer("run");
+		VelocityContainer runVc = createVelocityContainer("run");
 		if(subscriptionController != null) {
 			runVc.put("infoSubscription", subscriptionController.getInitialComponent());
 		}

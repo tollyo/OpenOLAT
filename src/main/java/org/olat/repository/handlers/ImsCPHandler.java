@@ -38,7 +38,6 @@ import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.control.generic.iframe.DeliveryOptions;
 import org.olat.core.gui.control.generic.layout.MainLayoutController;
-import org.olat.core.gui.control.generic.wizard.StepsMainRunController;
 import org.olat.core.gui.media.MediaResource;
 import org.olat.core.gui.media.ZippedDirectoryMediaResource;
 import org.olat.core.gui.translator.Translator;
@@ -46,7 +45,6 @@ import org.olat.core.id.Identity;
 import org.olat.core.id.OLATResourceable;
 import org.olat.core.id.Organisation;
 import org.olat.core.id.Roles;
-import org.olat.core.logging.AssertException;
 import org.olat.core.util.FileUtils;
 import org.olat.core.util.Util;
 import org.olat.core.util.coordinate.LockResult;
@@ -68,7 +66,6 @@ import org.olat.ims.cp.ui.CPPackageConfig;
 import org.olat.ims.cp.ui.CPRuntimeController;
 import org.olat.modules.cp.CPAssessmentProvider;
 import org.olat.modules.cp.CPDisplayController;
-import org.olat.modules.cp.CPOfflineReadableManager;
 import org.olat.modules.cp.PersistingAssessmentProvider;
 import org.olat.repository.RepositoryEntry;
 import org.olat.repository.RepositoryEntrySecurity;
@@ -114,11 +111,6 @@ public class ImsCPHandler extends FileHandler {
 	}
 	
 	@Override
-	public boolean isPostCreateWizardAvailable() {
-		return false;
-	}
-	
-	@Override
 	public boolean supportImport() {
 		return true;
 	}
@@ -150,8 +142,6 @@ public class ImsCPHandler extends FileHandler {
 		File fResourceFileroot = FileResourceManager.getInstance().getFileResourceRoot(resource);
 		File zipRoot = new File(fResourceFileroot, FileResourceManager.ZIPDIR);
 		FileResource.copyResource(file, filename, zipRoot);
-		CPOfflineReadableManager.getInstance().makeCPOfflineReadable(cpResource, displayname);
-
 		DBFactory.getInstance().commit();
 		return re;
 	}
@@ -180,8 +170,6 @@ public class ImsCPHandler extends FileHandler {
 		if(cpConfig != null) {
 			cpManager.setCPPackageConfig(targetResource, cpConfig);
 		}
-
-		CPOfflineReadableManager.getInstance().makeCPOfflineReadable(targetResource, target.getDisplayname() + ".zip");
 		return target;
 	}
 
@@ -214,11 +202,6 @@ public class ImsCPHandler extends FileHandler {
 	}
 
 	@Override
-	public StepsMainRunController createWizardController(OLATResourceable res, UserRequest ureq, WindowControl wControl) {
-		throw new AssertException("Trying to get wizard where no creation wizard is provided for this type.");
-	}
-
-	@Override
 	public MainLayoutController createLaunchController(RepositoryEntry re, RepositoryEntrySecurity reSecurity, UserRequest ureq, WindowControl wControl) {
 		OLATResource res = re.getOlatResource();
 		File cpRoot = FileResourceManager.getInstance().unzipFileResource(res);
@@ -235,7 +218,7 @@ public class ImsCPHandler extends FileHandler {
 			CoreSpringFactory.getImpl(UserCourseInformationsManager.class)
 				.updateUserCourseInformations(entry.getOlatResource(), uureq.getIdentity());
 			
-			CPAssessmentProvider cpAssessmentProvider = PersistingAssessmentProvider.create(re, uureq.getIdentity());
+			CPAssessmentProvider cpAssessmentProvider = PersistingAssessmentProvider.create(re, uureq.getIdentity(), false);
 			CPDisplayController cpCtr = new CPDisplayController(uureq, wwControl, vfsWrapper, true, true, activateFirstPage, true, deliveryOptions,
 					initialUri, entry.getOlatResource(), "", false, cpAssessmentProvider);
 			LayoutMain3ColsController ctr = new LayoutMain3ColsController(uureq, wwControl, cpCtr.getMenuComponent(), cpCtr.getInitialComponent(), vfsWrapper.getName());

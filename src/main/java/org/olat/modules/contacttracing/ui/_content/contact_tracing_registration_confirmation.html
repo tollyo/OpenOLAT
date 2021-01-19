@@ -1,0 +1,84 @@
+<div class="o_ct_confirmation_wrapper">
+
+    #if($r.isNotEmpty($confirmationIcon))
+    <div class="o_ct_confirmation_icon">$confirmationIcon</div>
+    #end
+    
+    #if($r.isNotEmpty($registrationSuccessful))
+    <p>$registrationSuccessful</p>
+    #end
+    
+    <div class="o_ct_confirmation_location_details">
+	    #if($r.isNotEmpty($name))
+	    <h2>$name</h2>
+	    #end
+	    
+	    #if($r.isNotEmpty($nickName))
+	    <h3>$nickName</h3>
+	    #end
+	
+	    #if($r.isNotEmpty($reference))
+	    <h1>$reference</h1>
+	    #end
+	
+	    #if($r.isNotEmpty($title))
+	    <h3>$title</h3>
+	    #end
+	
+	    <p>
+	    #if($r.isNotEmpty($building) || $r.isNotEmpty($room))
+	        #if($r.isNotEmpty($building))
+	        $building
+	        #end
+	
+	        #if($r.isNotEmpty($building) && $r.isNotEmpty($room))
+	        <span> - </span>
+	        #end
+	
+	        #if($r.isNotEmpty($room))
+	        $room
+	        #end
+	    #end
+	
+	    #if($r.isNotEmpty($sector) || $r.isNotEmpty($table))
+	    	#if($r.isNotEmpty($building) || $r.isNotEmpty($room))
+	    	<br>
+	    	#end
+	    	
+		    #if($r.isNotEmpty($sector))
+		    $sector
+		    #end
+		
+		    #if($r.isNotEmpty($sector) && $r.isNotEmpty($table))
+		    <span> - </span>
+		    #end
+		
+		    #if($r.isNotEmpty($table))
+		    $table
+		    #end
+	    #end
+	    
+	    #if($r.isNotEmpty($seatNumber))
+	    	#if($r.isNotEmpty($building) || $r.isNotEmpty($room) || $r.isNotEmpty($sector) || $r.isNotEmpty($table))
+	    	<br>
+	    	#end
+		    $r.translate("contact.tracing.cols.seat.number") $seatNumber
+	    #end
+	    </p>
+	
+	    #if($r.isTrue($sameDay))
+	    <h2>$startDate</h2>
+	    <p>$startTime - $endTime</p>
+	    #else
+	    <p>$startDate $startTime<br>$endDate $endTime</p>
+	    #end
+    </div>
+    
+    #if($r.isNotEmpty($registrationMessage))
+     <p class="o_ct_confirmation_message">$registrationMessage</p>
+    #end
+    
+    #if($r.available("closeButton"))
+    $r.render("closeButton")
+    #end
+</div>

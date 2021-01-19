@@ -19,10 +19,10 @@
  */
 package org.olat.course.reminder.ui;
 
+import static org.olat.core.gui.components.util.KeyValues.entry;
+
 import java.util.ArrayList;
 import java.util.Calendar;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 
 import org.olat.core.gui.UserRequest;
@@ -36,18 +36,21 @@ import org.olat.core.gui.components.form.flexible.impl.FormBasicController;
 import org.olat.core.gui.components.form.flexible.impl.FormEvent;
 import org.olat.core.gui.components.form.flexible.impl.FormLayoutContainer;
 import org.olat.core.gui.components.link.Link;
+import org.olat.core.gui.components.util.KeyValues;
 import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.Event;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.util.Formatter;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.Util;
+import org.olat.core.util.mail.MailHelper;
 import org.olat.modules.reminder.Reminder;
 import org.olat.modules.reminder.ReminderModule;
 import org.olat.modules.reminder.ReminderRule;
 import org.olat.modules.reminder.ReminderService;
 import org.olat.modules.reminder.RuleEditorFragment;
 import org.olat.modules.reminder.RuleSPI;
+import org.olat.modules.reminder.manager.CourseReminderTemplate;
 import org.olat.modules.reminder.model.ReminderRules;
 import org.olat.modules.reminder.model.SendTime;
 import org.olat.modules.reminder.rule.DateRuleSPI;
@@ -62,9 +65,6 @@ import org.springframework.beans.factory.annotation.Autowired;
  *
  */
 public class CourseReminderEditController extends FormBasicController {
-	
-	private final String[] typeKeys;
-	private final String[] typeValues;
 	
 	private TextElement subjectEl;
 	private RichTextElement emailEl;
@@ -87,17 +87,6 @@ public class CourseReminderEditController extends FormBasicController {
 		
 		this.reminder = reminder;
 		this.entry = reminder.getEntry();
-		
-		List<RuleSPI> orderedRuleSpies = new ArrayList<>(reminderModule.getRuleSPIList());
-		Collections.sort(orderedRuleSpies, new RuleSpiComparator());
-		
-		typeKeys = new String[orderedRuleSpies.size()];
-		typeValues = new String[orderedRuleSpies.size()];
-		int count = 0;
-		for(RuleSPI ruleSpy: orderedRuleSpies) {
-			typeKeys[count] = ruleSpy.getClass().getSimpleName();
-			typeValues[count++] = translate(ruleSpy.getLabelI18nKey());
-		}
 		
 		initForm(ureq);
 	}
@@ -162,6 +151,7 @@ public class CourseReminderEditController extends FormBasicController {
 		}
 		emailEl = uifactory.addRichTextElementForStringDataMinimalistic("email.content", "email.content", emailContent, 10, 60, contentCont, getWindowControl());
 		emailEl.setMandatory(true);
+		MailHelper.setVariableNamesAsHelp(emailEl, CourseReminderTemplate.variableNames(), getLocale());
 		
 		String buttonPage = velocity_root + "/edit_rules_buttons.html";
 		FormLayoutContainer buttonLayout = FormLayoutContainer.createCustomFormLayout("buttons", getTranslator(), buttonPage);
@@ -197,11 +187,17 @@ public class CourseReminderEditController extends FormBasicController {
 	}
 	
 	protected RuleElement initRuleForm(UserRequest ureq, RuleSPI ruleSpi, ReminderRule rule) {
+		KeyValues typeKV = new KeyValues();
+		reminderModule.getRuleSPIList().stream()
+				.filter(spi -> spi.isEnabled(entry))
+				.forEach(spi -> typeKV.add(entry(spi.getClass().getSimpleName(), translate(spi.getLabelI18nKey()))));
+		typeKV.sort(KeyValues.VALUE_ASC);
+		
 		String id = Integer.toString(counter++);
-		String type = ruleSpi.getClass().getSimpleName();
-		SingleSelection typeEl = uifactory.addDropdownSingleselect("rule.type.".concat(id), null, rulesCont, typeKeys, typeValues, null);
+		SingleSelection typeEl = uifactory.addDropdownSingleselect("rule.type.".concat(id), null, rulesCont, typeKV.keys(), typeKV.values(), null);
 		typeEl.addActionListener(FormEvent.ONCHANGE);
-		for(String typeKey : typeKeys) {
+		String type = ruleSpi.getClass().getSimpleName();
+		for(String typeKey : typeEl.getKeys()) {
 			if(type.equals(typeKey)) {
 				typeEl.select(typeKey, true);
 			}
@@ -357,21 +353,6 @@ public class CourseReminderEditController extends FormBasicController {
 	@Override
 	protected void formCancelled(UserRequest ureq) {
 		fireEvent(ureq, Event.CANCELLED_EVENT);
-	}
-	
-	private static class RuleSpiComparator implements Comparator<RuleSPI> {
-		@Override
-		public int compare(RuleSPI r1, RuleSPI r2) {
-			String c1 = r1.getCategory();
-			String c2 = r2.getCategory();
-			int c = c1.compareTo(c2);
-			if(c == 0) {
-				String n1 = r1.getLabelI18nKey();
-				String n2 = r2.getLabelI18nKey();
-				c = n1.compareTo(n2);
-			}
-			return c;
-		}
 	}
 	
 	public static class RuleElement {

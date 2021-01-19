@@ -47,6 +47,7 @@ public class StudentsTableDataModel extends DefaultFlexiTableDataModel<StudentSt
 	implements SortableFlexiTableDataModel<StudentStatEntry> {
 	
 	private static final Logger log = Tracing.createLoggerFor(StudentsTableDataModel.class);
+	private static final Columns[] COLS = Columns.values();
 
 	private List<StudentStatEntry> backupList;
 	
@@ -92,10 +93,9 @@ public class StudentsTableDataModel extends DefaultFlexiTableDataModel<StudentSt
 	
 	@Override
 	public Object getValueAt(StudentStatEntry student, int col) {
-		if(col >= 0 && col < Columns.values().length) {
+		if(col >= 0 && col < COLS.length) {
 			int countRepo = student.getCountRepo();
-			switch(Columns.getValueAt(col)) {
-				case name: return student.getIdentityName();
+			switch(COLS[col]) {
 				case countCourse: return Integer.valueOf(countRepo);
 				case initialLaunch: {
 					if(countRepo == 0) {
@@ -135,6 +135,7 @@ public class StudentsTableDataModel extends DefaultFlexiTableDataModel<StudentSt
 					}
 					return new LightedValue(passed, light);
 				}
+				default: return "ERROR";
 			}
 		}
 
@@ -153,8 +154,7 @@ public class StudentsTableDataModel extends DefaultFlexiTableDataModel<StudentSt
 		return new StudentsTableDataModel(getTableColumnModel());
 	}
 	
-	public static enum Columns implements FlexiSortableColumnDef {
-		name("student.name"),
+	public enum Columns implements FlexiSortableColumnDef {
 		countCourse("table.header.countCourses"),
 		initialLaunch("table.header.login"),
 		completion("table.header.completion"),
@@ -186,7 +186,7 @@ public class StudentsTableDataModel extends DefaultFlexiTableDataModel<StudentSt
 			if(ordinal >= 0 && ordinal < values().length) {
 				return values()[ordinal];
 			}
-			return name;
+			return null;
 		}
 	}
 }

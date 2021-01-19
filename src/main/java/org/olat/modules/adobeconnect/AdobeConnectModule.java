@@ -23,6 +23,8 @@ import java.net.URI;
 
 import javax.ws.rs.core.UriBuilder;
 
+import org.apache.http.client.config.RequestConfig;
+import org.apache.http.impl.client.HttpClientBuilder;
 import org.olat.core.configuration.AbstractSpringModule;
 import org.olat.core.configuration.ConfigOnOff;
 import org.olat.core.util.StringHelper;
@@ -93,6 +95,13 @@ public class AdobeConnectModule extends AbstractSpringModule implements ConfigOn
 	private String createMeetingImmediately;
 	@Value("${vc.adobe.login.compatibility.mode:false}")
 	private String loginCompatibilityMode;
+
+	@Value("${vc.http.connect.timeout:30000}")
+	private int httpConnectTimeout;
+	@Value("${vc.http.connect.request.timeout:30000}")
+	private int httpConnectRequestTimeout;
+	@Value("${vc.http.connect.socket.timeout:30000}")
+	private int httpSocketTimeout;
 	
 	@Autowired
 	public AdobeConnectModule(CoordinatorManager coordinatorManager) {
@@ -342,5 +351,26 @@ public class AdobeConnectModule extends AbstractSpringModule implements ConfigOn
 	 */
 	public boolean isLoginCompatibilityMode() {
 		return "true".equals(loginCompatibilityMode);
+	}
+
+	public int getHttpConnectTimeout() {
+		return httpConnectTimeout;
+	}
+
+	public int getHttpConnectRequestTimeout() {
+		return httpConnectRequestTimeout;
+	}
+
+	public int getHttpSocketTimeout() {
+		return httpSocketTimeout;
+	}
+	
+	public HttpClientBuilder httpClientBuilder() {
+		RequestConfig requestConfig = RequestConfig.copy(RequestConfig.DEFAULT)
+				.setConnectTimeout(getHttpConnectTimeout())
+				.setConnectionRequestTimeout(getHttpConnectRequestTimeout())
+				.setSocketTimeout(getHttpSocketTimeout())
+				.build();
+		return HttpClientBuilder.create().setDefaultRequestConfig(requestConfig);
 	}
 }

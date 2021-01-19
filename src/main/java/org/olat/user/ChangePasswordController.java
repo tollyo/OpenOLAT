@@ -49,6 +49,7 @@ import org.olat.ldap.ui.LDAPAuthenticationController;
 import org.olat.login.LoginModule;
 import org.olat.login.SupportsAfterLoginInterceptor;
 import org.olat.login.auth.AuthenticationProvider;
+import org.olat.login.auth.AuthenticationStatus;
 import org.olat.login.auth.OLATAuthManager;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -144,7 +145,7 @@ public class ChangePasswordController extends BasicController implements Support
 					String userName = ldapAuthentication.getAuthusername();
 					provenIdent = ldapLoginManager.authenticate(userName, oldPwd, ldapError);
 				} else if(securityManager.findAuthentication(ureq.getIdentity(), BaseSecurityModule.getDefaultAuthProviderIdentifier()) != null) {
-					provenIdent = olatAuthenticationSpi.authenticate(ureq.getIdentity(), ureq.getIdentity().getName(), oldPwd);
+					provenIdent = olatAuthenticationSpi.authenticate(ureq.getIdentity(), ureq.getIdentity().getName(), oldPwd, new AuthenticationStatus());
 				}
 
 				if (provenIdent == null) {
@@ -153,7 +154,7 @@ public class ChangePasswordController extends BasicController implements Support
 					String newPwd = chPwdForm.getNewPasswordValue();
 					if(olatAuthenticationSpi.changePassword(ureq.getIdentity(), provenIdent, newPwd)) {			
 						fireEvent(ureq, Event.DONE_EVENT);
-						getLogger().info(Tracing.M_AUDIT, "Changed password for identity:" + provenIdent.getKey());
+						getLogger().info(Tracing.M_AUDIT, "Changed password for identity: {}", provenIdent.getKey());
 						showInfo("password.successful");
 					} else {
 						showError("password.failed");

@@ -386,7 +386,6 @@ public class RegistrationController extends BasicController implements Activatea
 			if(!htmlBody) {
 				body += SEPARATOR + translate("reg.wherefrom", whereFromAttrs);
 			}
-			System.out.println(body);
 			
 			if(sendMessage(email, translate("reg.subject"), body)) {
 				showInfo("email.sent");
@@ -487,7 +486,7 @@ public class RegistrationController extends BasicController implements Activatea
 	 * displays the final step of the registration process. (step5)<br />
 	 * see also _content/finish.html
 	 * 
-	 * @param user
+	 * @param User
 	 *            The newly created User from which to display information
 	 * 
 	 */
@@ -599,8 +598,10 @@ public class RegistrationController extends BasicController implements Activatea
 		int loginStatus = AuthHelper.doLogin(persistedIdentity, BaseSecurityModule.getDefaultAuthProviderIdentifier(), ureq);
 		if (loginStatus == AuthHelper.LOGIN_OK) {
 			//youppi
-		} else if (loginStatus == AuthHelper.LOGIN_NOTAVAILABLE){
+		} else if (loginStatus == AuthHelper.LOGIN_NOTAVAILABLE) {
 			DispatcherModule.redirectToDefaultDispatcher(ureq.getHttpResp());
+		} else if (loginStatus == AuthHelper.LOGIN_INACTIVE) {
+			getWindowControl().setError(translate("login.error.inactive", WebappHelper.getMailConfig("mailSupport")));
 		} else {
 			getWindowControl().setError(translate("login.error", WebappHelper.getMailConfig("mailReplyTo")));
 		}

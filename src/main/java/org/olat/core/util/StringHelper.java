@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.io.Writer;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.text.DateFormat;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
@@ -46,14 +47,15 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.apache.logging.log4j.Logger;
 import org.olat.core.id.Identity;
 import org.olat.core.logging.AssertException;
-import org.apache.logging.log4j.Logger;
 import org.olat.core.logging.Tracing;
-import org.olat.core.util.filter.impl.HtmlScanner;
 import org.olat.core.util.filter.FilterFactory;
+import org.olat.core.util.filter.impl.HtmlScanner;
 import org.olat.core.util.filter.impl.OWASPAntiSamyXSSFilter;
 import org.olat.user.UserManager;
+import org.springframework.web.util.UriUtils;
 
 import com.thoughtworks.xstream.core.util.Base64Encoder;
 
@@ -456,6 +458,10 @@ public class StringHelper {
 			log.error("Error escaping JavaScript", e);
 		}
 	}
+	
+	public static final String encodeUrlPathSegment(String path) {
+		return UriUtils.encodePathSegment(path, StandardCharsets.UTF_8);
+	}
 
 	/**
 	 * @param cellValue
@@ -475,6 +481,8 @@ public class StringHelper {
 	 * @return transformed string
 	 */
 	public static String transformDisplayNameToFileSystemName(String s){
+		if(s == null) return "";
+		
 		//replace some separator with an underscore
 		s = s.replace('?', '_').replace('\\', '_').replace('/', '_').replace(' ', '_');
 		//remove all non-ascii characters
@@ -637,6 +645,28 @@ public class StringHelper {
 		Collections.sort(rv);
 		
 		return formatAsCSVString(rv);
+	}
+	
+	public static String lenientInteger(String value) {
+		if(value == null) return null;
+		value = value.replace(" ", "");
+		if(StringHelper.containsNonWhitespace(value)) {
+			value = removeFraction(value, '.');
+			value = removeFraction(value, ',');
+		}
+		return value.replace(".", "").replace(",", "").replace("'", "")
+				.replace("\u2019", "").replace("\u2032", "");
+	}
+	
+	private static String removeFraction(String value, char separator) {
+		int lastIndex = value.lastIndexOf(separator);
+		if(lastIndex > 0) {
+			int backIndex = value.length() - lastIndex - 1;
+			if(backIndex == 1 || backIndex == 2) {
+				return value.substring(0, lastIndex);
+			}
+		}
+		return value;
 	}
 
 	public static String truncateText(String text) {

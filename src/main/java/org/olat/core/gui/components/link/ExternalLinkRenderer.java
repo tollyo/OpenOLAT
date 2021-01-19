@@ -49,18 +49,27 @@ public class ExternalLinkRenderer extends DefaultComponentRenderer {
 		if(StringHelper.containsNonWhitespace(link.getElementCssClass())) {
 			sb.append(" ").append(link.getElementCssClass());
 		}
-		sb.append("\" href=\"").append(link.getUrl()).append("\"");
+		sb.append("\" ");
+		if(link.isEnabled())  {
+			sb.append(" href=\"").append(link.getUrl()).append("\"");
+		}
 		if(StringHelper.containsNonWhitespace(link.getTarget())) {
 			sb.append(" target=\"").append(link.getTarget()).append("\"");
 		}
 		if(StringHelper.containsNonWhitespace(link.getTooltip())) {
 			sb.append(" title=\"").append(link.getTooltip()).append("\"");
 		}
+		if(StringHelper.containsNonWhitespace(link.getTooltip())) {
+			sb.append(" rel=\"noopener noreferrer\"");
+		}
 		sb.append(">");
 		
 		if(StringHelper.containsNonWhitespace(link.getIconLeftCSS())) {
 			sb.append("<i class=\"").append(link.getIconLeftCSS()).append("\"> </i> ");
 		}
-		sb.append("<span>").append(link.getName()).append("</span></a>");
+		if(StringHelper.containsNonWhitespace(link.getName())) {
+			sb.append("<span>").append(link.getName()).append("</span>");
+		}
+		sb.append("</a>");
 	}
 }

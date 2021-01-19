@@ -20,28 +20,27 @@
 package org.olat.group.ui.main;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.olat.basesecurity.GroupRoles;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.EscapeMode;
 import org.olat.core.gui.components.form.flexible.FormItem;
 import org.olat.core.gui.components.form.flexible.FormItemContainer;
+import org.olat.core.gui.components.form.flexible.elements.AddRemoveElement;
 import org.olat.core.gui.components.form.flexible.elements.FlexiTableElement;
-import org.olat.core.gui.components.form.flexible.elements.FormLink;
-import org.olat.core.gui.components.form.flexible.elements.MultipleSelectionElement;
-import org.olat.core.gui.components.form.flexible.elements.MultipleSelectionElement.Layout;
 import org.olat.core.gui.components.form.flexible.impl.Form;
 import org.olat.core.gui.components.form.flexible.impl.FormBasicController;
 import org.olat.core.gui.components.form.flexible.impl.FormEvent;
 import org.olat.core.gui.components.form.flexible.impl.FormLayoutContainer;
-import org.olat.core.gui.components.form.flexible.impl.elements.MultipleSelectionElementImpl;
+import org.olat.core.gui.components.form.flexible.impl.elements.AddRemoveElementImpl;
+import org.olat.core.gui.components.form.flexible.impl.elements.AddRemoveElementImpl.AddRemoveMode;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.DefaultFlexiColumnModel;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.DefaultFlexiTableDataModel;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiCellRenderer;
@@ -66,6 +65,7 @@ import org.olat.core.util.StringHelper;
 import org.olat.course.member.PermissionHelper;
 import org.olat.course.member.PermissionHelper.BGPermission;
 import org.olat.course.member.PermissionHelper.RepoPermission;
+import org.olat.course.member.wizard.MembersContext;
 import org.olat.group.BusinessGroup;
 import org.olat.group.BusinessGroupManagedFlag;
 import org.olat.group.BusinessGroupMembership;
@@ -80,6 +80,7 @@ import org.olat.modules.curriculum.CurriculumElement;
 import org.olat.modules.curriculum.CurriculumElementManagedFlag;
 import org.olat.modules.curriculum.CurriculumElementMembership;
 import org.olat.modules.curriculum.CurriculumElementStatus;
+import org.olat.modules.curriculum.CurriculumRoles;
 import org.olat.modules.curriculum.CurriculumService;
 import org.olat.modules.curriculum.model.CurriculumElementMembershipChange;
 import org.olat.modules.curriculum.site.CurriculumElementTreeRowComparator;
@@ -88,6 +89,7 @@ import org.olat.repository.RepositoryEntry;
 import org.olat.repository.RepositoryEntryManagedFlag;
 import org.olat.repository.RepositoryManager;
 import org.olat.repository.model.RepositoryEntryMembership;
+import org.olat.repository.model.RepositoryEntryPermissionChangeEvent;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
@@ -98,14 +100,21 @@ public class EditMembershipController extends FormBasicController {
 	
 	private FlexiTableElement groupTableEl;
 	private FlexiTableElement curriculumTableEl;
-	private MultipleSelectionElement repoRightsEl;
-	private FormLink selectAllCurriculumOwnersButton;
-	private FormLink selectAllCurriculumCoachesButton;
-	private FormLink selectAllCurriculumParticipantsButton;
+	private FlexiTableElement groupBatchTableEl;
+	private FlexiTableElement curriculumBatchTableEl;
+	private AddRemoveElement repoOwnerRoleEl;
+	private AddRemoveElement repoCoachRoleEl;
+	private AddRemoveElement repoParticipantRoleEl;
+	private AddRemoveElement selectAllGroupCoachEl;
+	private AddRemoveElement selectAllGroupParticipantEl;
+	private AddRemoveElement selectAllGroupWaitingListEl;
+	private AddRemoveElement selectAllCurriculumOwnerEl;
+	private AddRemoveElement selectAllCurriculumCoachEl;
+	private AddRemoveElement selectAllCurriculumParticipantEl;
+	private FormLayoutContainer groupContainer;
+	private FormLayoutContainer curriculumContainer;
 	private EditGroupMembershipTableDataModel groupTableDataModel;
 	private EditCurriculumMembershipTableDataModel curriculumTableDataModel;
-	
-	private static final String[] repoRightsKeys = {"owner", "tutor", "participant"};
 	
 	private final Identity member;
 	private final List<Identity> members;
@@ -115,9 +124,13 @@ public class EditMembershipController extends FormBasicController {
 	
 	private boolean withButtons;
 	private final boolean overrideManaged;
+	private final boolean extendedCurriculumRoles;
+	private final boolean curriculumVisible;
 	private final BusinessGroup businessGroup;
 	private final RepositoryEntry repoEntry;
 	private final Curriculum curriculum;
+	private final CurriculumElement rootCurriculumElement;
+	private final AddRemoveMode addRemoveMode;
 	
 	@Autowired
 	private RepositoryManager repositoryManager;
@@ -126,19 +139,20 @@ public class EditMembershipController extends FormBasicController {
 	@Autowired
 	private BusinessGroupService businessGroupService;
 	
-	private static final String[] keys = new String[] { "ison" };
-	private static final String[] values = new String[] {""};
-	
 	public EditMembershipController(UserRequest ureq, WindowControl wControl, Identity member,
 			RepositoryEntry repoEntry, BusinessGroup businessGroup, boolean overrideManaged) {
-		super(ureq, wControl, "edit_member");
+		super(ureq, wControl, "edit_multi_member");
 		this.member = member;
 		this.members = null;
 		this.repoEntry = repoEntry;
 		this.businessGroup = businessGroup;
-		this.curriculum = null;
+		curriculum = null;
+		rootCurriculumElement = null;
 		this.withButtons = true;
 		this.overrideManaged = overrideManaged;
+		this.curriculumVisible = false;
+		extendedCurriculumRoles = false;
+		this.addRemoveMode = AddRemoveMode.TWO_STATE;
 		
 		memberships = repositoryManager.getRepositoryEntryMembership(repoEntry, member);
 		initForm(ureq);
@@ -166,15 +180,19 @@ public class EditMembershipController extends FormBasicController {
 	
 	public EditMembershipController(UserRequest ureq, WindowControl wControl, List<Identity> members,
 			RepositoryEntry repoEntry, BusinessGroup businessGroup, boolean overrideManaged) {
-		super(ureq, wControl, "edit_member");
+		super(ureq, wControl, "edit_multi_member");
 		
 		this.member = null;
 		this.members = (members == null ? null : new ArrayList<>(members));
 		this.repoEntry = repoEntry;
 		this.businessGroup = businessGroup;
-		this.curriculum = null;
+		curriculum = null;
+		rootCurriculumElement = null;
 		this.withButtons = true;
 		this.overrideManaged = overrideManaged;
+		extendedCurriculumRoles = false;
+		this.addRemoveMode = AddRemoveMode.THREE_STATE;
+		this.curriculumVisible = false;
 		
 		memberships = Collections.emptyList();
 
@@ -183,16 +201,66 @@ public class EditMembershipController extends FormBasicController {
 	}
 	
 	public EditMembershipController(UserRequest ureq, WindowControl wControl, List<Identity> members,
-			RepositoryEntry repoEntry, BusinessGroup businessGroup, Curriculum curriculum, boolean overrideManaged, Form rootForm) {
-		super(ureq, wControl, LAYOUT_CUSTOM, "edit_member", rootForm);
+			Curriculum curriculum, CurriculumElement curriculumElement, boolean overrideManaged) {
+		super(ureq, wControl, "edit_multi_member");
 		
-		this.member = null;
+		member = null;
 		this.members = (members == null ? null : new ArrayList<>(members));
-		this.repoEntry = repoEntry;
-		this.businessGroup = businessGroup;
+		repoEntry = null;
+		businessGroup = null;
 		this.curriculum = curriculum;
-		this.withButtons = false;
+		this.rootCurriculumElement = curriculumElement;
+		this.withButtons = true;
 		this.overrideManaged = overrideManaged;
+		extendedCurriculumRoles = true;
+		this.addRemoveMode = AddRemoveMode.THREE_STATE;
+		this.curriculumVisible = true;
+		
+		memberships = Collections.emptyList();
+
+		initForm(ureq);
+		loadModel(ureq, member);
+	}
+	
+	public EditMembershipController(UserRequest ureq, WindowControl wControl, Identity member,
+			Curriculum curriculum, CurriculumElement curriculumElement, boolean overrideManaged) {
+		super(ureq, wControl, "edit_multi_member");
+		
+		this.member = member;
+		this.members = null;
+		repoEntry = null;
+		businessGroup = null;
+		this.curriculum = curriculum;
+		this.rootCurriculumElement = curriculumElement;
+		this.withButtons = true;
+		this.overrideManaged = overrideManaged;
+		extendedCurriculumRoles = true;
+		this.addRemoveMode = AddRemoveMode.TWO_STATE;
+		this.curriculumVisible = true;
+		
+		memberships = Collections.emptyList();
+		curriculumElementMemberships =  curriculumService
+				.getCurriculumElementMemberships(Collections.singletonList(curriculumElement), member);
+
+		initForm(ureq);
+		loadModel(ureq, member);
+	}
+	
+	public EditMembershipController(UserRequest ureq, WindowControl wControl, List<Identity> members,
+			MembersContext membersContext, Form rootForm) {
+		super(ureq, wControl, LAYOUT_CUSTOM, "edit_multi_member", rootForm);
+		
+		member = null;
+		this.members = (members == null ? null : new ArrayList<>(members));
+		repoEntry = membersContext.getRepoEntry();
+		businessGroup = membersContext.getGroup();
+		curriculum = membersContext.getCurriculum();
+		rootCurriculumElement = membersContext.getRootCurriculumElement();
+		this.withButtons = false;
+		overrideManaged = membersContext.isOverrideManaged();
+		extendedCurriculumRoles = membersContext.isExtendedCurriculumRoles();
+		this.addRemoveMode = AddRemoveMode.THREE_STATE;
+		this.curriculumVisible = false;
 		
 		memberships = Collections.emptyList();
 
@@ -226,7 +294,7 @@ public class EditMembershipController extends FormBasicController {
 			if(repoEntry != null && groups.isEmpty()) {
 				boolean managed = RepositoryEntryManagedFlag.isManaged(repoEntry, RepositoryEntryManagedFlag.membersmanagement) && !overrideManaged;
 				if(!managed) {
-					repoRightsEl.select("participant", true);
+					repoParticipantRoleEl.setSelection(true);
 				}
 			} else if(repoEntry == null && groups.size() == 1) {
 				boolean managed = BusinessGroupManagedFlag.isManaged(groups.get(0).getManagedFlags(), BusinessGroupManagedFlag.membersmanagement) && !overrideManaged;
@@ -243,30 +311,25 @@ public class EditMembershipController extends FormBasicController {
 				Collections.<BusinessGroupMembership>emptyList() : businessGroupService.getBusinessGroupMembership(businessGroupKeys, memberToLoad);
 		
 		List<MemberGroupOption> options = new ArrayList<>();
+		boolean anyGroupWithWaitingList = false;
 		for(StatisticsBusinessGroupRow group:groups) {
 			boolean managed = BusinessGroupManagedFlag.isManaged(group.getManagedFlags(), BusinessGroupManagedFlag.membersmanagement) && !overrideManaged;
 			MemberGroupOption option = new MemberGroupOption(group);
 			BGPermission bgPermission = PermissionHelper.getPermission(group.getKey(), memberToLoad, groupMemberships);
-			option.setTutor(createSelection(bgPermission.isTutor(), !managed, GroupRoles.coach.name()));
-			option.setParticipant(createSelection(bgPermission.isParticipant() || defaultMembership, !managed, GroupRoles.participant.name()));
+			option.setTutor(createAddRemove(member == null ? null : bgPermission.isTutor(), !managed, GroupRoles.coach.name()));
+			option.setParticipant(createAddRemove(member == null ? null : bgPermission.isParticipant() || defaultMembership, !managed, GroupRoles.participant.name()));
 			boolean waitingListEnable = !managed && group.isWaitingListEnabled();
-			option.setWaiting(createSelection(bgPermission.isWaitingList(), waitingListEnable, GroupRoles.waiting.name()));
+			anyGroupWithWaitingList |= waitingListEnable;
+			option.setWaiting(createAddRemove(member == null ? null : bgPermission.isWaitingList(), waitingListEnable, GroupRoles.waiting.name()));
 			options.add(option);
 		}
 		
+		selectAllGroupWaitingListEl.setEnabled(anyGroupWithWaitingList);
 		groupTableDataModel.setObjects(options);
-		groupTableEl.setVisible(!options.isEmpty());
+		groupBatchTableEl.setVisible(options.size() > 1);
+		groupContainer.setVisible(!options.isEmpty());
 		
-		List<CurriculumElement> curriculumElements;
-		if(curriculum != null) {
-			curriculumElements = curriculumService.getCurriculumElements(curriculum, CurriculumElementStatus.notDeleted());
-			curriculumElements = orderCurriculumElements(curriculumElements);
-		} else if (repoEntry != null) {
-			curriculumElements = curriculumService.getCurriculumElements(repoEntry);
-		} else {
-			curriculumElements = Collections.emptyList();
-		}
-	
+		List<CurriculumElement> curriculumElements = loadCurriculumElements();
 		List<CurriculumElement> editableElements = curriculumService.filterElementsWithoutManagerRole(curriculumElements, roles);
 		curriculumElementMemberships = memberToLoad == null ? Collections.emptyList() :
 				 curriculumService.getCurriculumElementMemberships(curriculumElements, memberToLoad);
@@ -279,15 +342,35 @@ public class EditMembershipController extends FormBasicController {
 			}
 			MemberCurriculumOption option = new MemberCurriculumOption(element);
 			RepoPermission rePermission = PermissionHelper.getPermission(element, memberToLoad, curriculumElementMemberships);
-			option.setOwner(createSelection(rePermission.isOwner(), !managed, GroupRoles.owner.name()));
-			option.setCoach(createSelection(rePermission.isTutor(), !managed, GroupRoles.coach.name()));
-			option.setParticipant(createSelection(rePermission.isParticipant() || defaultMembership, !managed, GroupRoles.participant.name()));
+			option.setOwner(createAddRemove(member == null ? null : rePermission.isOwner(), !managed, CurriculumRoles.owner.name()));
+			option.setCoach(createAddRemove(member == null ? null : rePermission.isTutor(), !managed, CurriculumRoles.coach.name()));
+			option.setParticipant(createAddRemove(member == null ? null : rePermission.isParticipant() || defaultMembership, !managed, CurriculumRoles.participant.name()));
+			if(extendedCurriculumRoles) {
+				option.setMasterCoach(createAddRemove(member == null ? null : rePermission.isMasterCoach(), !managed, CurriculumRoles.mastercoach.name()));
+				option.setElementOwner(createAddRemove(member == null ? null : rePermission.isCurriculumElementOwner(), !managed, CurriculumRoles.curriculumelementowner.name()));
+			}
 			curriculumOptions.add(option);
 		}
 		
 		curriculumTableDataModel.setObjects(curriculumOptions);
-		curriculumTableEl.setVisible(!curriculumOptions.isEmpty());
+		curriculumBatchTableEl.setVisible(curriculumVisible && curriculumOptions.size() > 1);
+		curriculumContainer.setVisible(curriculumVisible && !curriculumOptions.isEmpty());
 	}
+	
+	private List<CurriculumElement> loadCurriculumElements() {
+		List<CurriculumElement> curriculumElements;
+		if(curriculum != null) {
+			curriculumElements = curriculumService.getCurriculumElements(curriculum, CurriculumElementStatus.notDeleted());
+			curriculumElements = orderCurriculumElements(curriculumElements);
+		} else if (repoEntry != null) {
+			curriculumElements = curriculumService.getCurriculumElements(repoEntry);
+		} else {
+			curriculumElements = Collections.emptyList();
+		}
+		return curriculumElements;
+	}
+
+
 	
 	private List<CurriculumElement> orderCurriculumElements(List<CurriculumElement> curriculumElements) {
 		try {
@@ -305,6 +388,9 @@ public class EditMembershipController extends FormBasicController {
 				}
 			}
 			
+			if(rootCurriculumElement != null) {
+				rows = filterCurriculumElements(rows);
+			}
 			Collections.sort(rows, new CurriculumElementTreeRowComparator(getLocale()));
 			
 			List<CurriculumElement> orderedElements = new ArrayList<>(rows.size());
@@ -318,54 +404,131 @@ public class EditMembershipController extends FormBasicController {
 		}
 	}
 	
-	private MultipleSelectionElement createSelection(boolean selected, boolean enabled, String role) {
+	private List<CurriculumElementRow> filterCurriculumElements(List<CurriculumElementRow> rows) {
+		for(CurriculumElementRow row:rows) {
+			if(row != null) {
+				boolean hasRoot = hasRootCurriculumElementInParentLine(row);
+				row.setAcceptedByFilter(hasRoot);
+			}
+		}
+		
+		for(CurriculumElementRow row:rows) {
+			if(row.isAcceptedByFilter()) {
+				for(CurriculumElementRow parent=row.getParent(); parent != null; parent=parent.getParent()) {
+					parent.setAcceptedByFilter(true);
+				}
+			}
+		}
+		
+		return rows.stream()
+				.filter(CurriculumElementRow::isAcceptedByFilter)
+				.collect(Collectors.toList());
+	}
+	
+	private boolean hasRootCurriculumElementInParentLine(CurriculumElementRow curriculumElement) {
+		for(CurriculumElementRow parentElement=curriculumElement; parentElement != null; parentElement = parentElement.getParent()) {
+			if(parentElement.getCurriculumElement().equals(rootCurriculumElement)) {
+				return true;
+			}	
+		}
+		return false;
+	}
+	
+	private AddRemoveElement createAddRemove(Boolean selected, boolean enabled, String role) {
 		String name = "cb" + UUID.randomUUID().toString().replace("-", "");
-		MultipleSelectionElement selection = new MultipleSelectionElementImpl(name, Layout.horizontal);
-		selection.setElementCssClass("o_sel_role");
-		selection.addActionListener(FormEvent.ONCHANGE);
-		selection.setKeysAndValues(keys, values, new String[]{ "o_sel_role_".concat(role) }, null);
-		flc.add(name, selection);
-		selection.select(keys[0], selected);
-		selection.setEnabled(enabled);
-		return selection;
+		AddRemoveElement addRemove = new AddRemoveElementImpl(name, Link.BUTTON_XSMALL);
+		addRemove.setShowText(false);
+		addRemove.setElementCssClass("o_sel_role_".concat(role));
+		flc.add(name, addRemove);
+		addRemove.setSelection(selected);
+		addRemove.setEnabled(enabled);
+		return addRemove;
 	}
 
 	@Override
 	protected void initForm(FormItemContainer formLayout, Controller listener, UserRequest ureq) {
-		
-		if(formLayout instanceof FormLayoutContainer) {
-			FormLayoutContainer layoutCont = (FormLayoutContainer)formLayout;
-			String name;
-			if(repoEntry != null) {
-				name = repoEntry.getDisplayname();
-			} else if(businessGroup != null) {
-				name = businessGroup.getName();
-			} else if(curriculum != null) {
-				name = curriculum.getDisplayName();
-			} else {
-				name = "";
-			}
-			name = StringHelper.escapeHtml(name);
-			String title = translate("edit.member.title", new String[]{ name });
-			layoutCont.contextPut("editTitle", title);
-		}
-		//repository entry rights
+		String name;
 		if(repoEntry != null) {
-			String[] repoValues = new String[] {
-					translate("role.repo.owner"), translate("role.repo.tutor"), translate("role.repo.participant")
-			};
+			name = repoEntry.getDisplayname();
+		} else if(businessGroup != null) {
+			name = businessGroup.getName();
+		} else if(curriculum != null) {
+			name = curriculum.getDisplayName();
+		} else {
+			name = "";
+		}
+		name = StringHelper.escapeHtml(name);
+		String title = translate("edit.member.title", new String[]{ name });
+			
+		//repository entry rights
+		if (repoEntry != null) {
+			FormLayoutContainer repoRights = FormLayoutContainer.createDefaultFormLayout("repoRights", getTranslator());
+			repoRights.setRootForm(mainForm);
+			repoRights.setFormTitle(title);
+			formLayout.add(repoRights);
+			
 			boolean managed = RepositoryEntryManagedFlag.isManaged(repoEntry, RepositoryEntryManagedFlag.membersmanagement) && !overrideManaged;
-			repoRightsEl = uifactory.addCheckboxesVertical("repoRights", null, formLayout, repoRightsKeys, repoValues, 1);
-			repoRightsEl.setEnabled(!managed);
-			if(member != null) {
+			String grantText = translate("edit.members.grant");
+			String denyText = translate("edit.members.deny");
+			
+			repoOwnerRoleEl = uifactory.addAddRemoveElement("repoOwnerRight", "role.repo.owner", Link.BUTTON, true, addRemoveMode, repoRights);
+			repoOwnerRoleEl.setAddText(grantText);
+			repoOwnerRoleEl.setRemoveText(denyText);
+			repoOwnerRoleEl.setElementCssClass("o_sel_role_owner");
+			repoOwnerRoleEl.setEnabled(!managed);
+			repoCoachRoleEl = uifactory.addAddRemoveElement("repoCoachRight", "role.repo.tutor", Link.BUTTON, true, addRemoveMode, repoRights);
+			repoCoachRoleEl.setAddText(grantText);
+			repoCoachRoleEl.setRemoveText(denyText);
+			repoCoachRoleEl.setElementCssClass("o_sel_role_coach");
+			repoCoachRoleEl.setEnabled(!managed);
+			repoParticipantRoleEl = uifactory.addAddRemoveElement("repoParticipantRight", "role.repo.participant", Link.BUTTON, true, addRemoveMode, repoRights);
+			repoParticipantRoleEl.setAddText(grantText);
+			repoParticipantRoleEl.setRemoveText(denyText);
+			repoParticipantRoleEl.setElementCssClass("o_sel_role_participant");
+			repoParticipantRoleEl.setEnabled(!managed);
+			
+			if (member != null) {
 				RepoPermission repoPermission = PermissionHelper.getPermission(repoEntry, member, memberships);
-				repoRightsEl.select("owner", repoPermission.isOwner());
-				repoRightsEl.select("tutor", repoPermission.isTutor());
-				repoRightsEl.select("participant", repoPermission.isParticipant());
+				repoOwnerRoleEl.setSelection(repoPermission.isOwner());
+				repoCoachRoleEl.setSelection(repoPermission.isTutor());
+				repoParticipantRoleEl.setSelection(repoPermission.isParticipant());
 			}
 		}
 
 		//group rights
+		groupContainer = FormLayoutContainer.createVerticalFormLayout("groupRights", getTranslator());
+		groupContainer.setRootForm(mainForm);
+		groupContainer.setFormTitle(translate("edit.member.groups"));
+		formLayout.add(groupContainer);
+		
+		FormLayoutContainer groupRightActions = FormLayoutContainer.createHorizontalFormLayout("groupRightActions", getTranslator());
+		groupRightActions.setRootForm(mainForm);
+		groupRightActions.setElementCssClass("pull-right");
+		groupContainer.add(groupRightActions);
+		
+		selectAllGroupCoachEl = uifactory.addAddRemoveElement("edit.members.group.select.all.coach", Link.BUTTON_XSMALL, true, null);
+		selectAllGroupCoachEl.setElementCssClass("o_spacer_left");
+		selectAllGroupParticipantEl = uifactory.addAddRemoveElement("edit.members.group.select.all.participant", Link.BUTTON_XSMALL, true, null);
+		selectAllGroupParticipantEl.setElementCssClass("o_spacer_left");
+		selectAllGroupWaitingListEl = uifactory.addAddRemoveElement("edit.members.group.select.all.waiting.list", Link.BUTTON_XSMALL, true, null);
+		selectAllGroupWaitingListEl.setElementCssClass("o_spacer_left");	
+		
+		FlexiTableColumnModel groupBatchActionsColumns = FlexiTableDataModelFactory.createFlexiTableColumnModel();
+		groupBatchActionsColumns.addFlexiColumnModel(new DefaultFlexiColumnModel(BatchActionCols.empty));
+		groupBatchActionsColumns.addFlexiColumnModel(new DefaultFlexiColumnModel(BatchActionCols.empty));
+		groupBatchActionsColumns.addFlexiColumnModel(new DefaultFlexiColumnModel(BatchActionCols.empty));
+		groupBatchActionsColumns.addFlexiColumnModel(new DefaultFlexiColumnModel(BatchActionCols.empty));
+		groupBatchActionsColumns.addFlexiColumnModel(new DefaultFlexiColumnModel(BatchActionCols.groupCoach));
+		groupBatchActionsColumns.addFlexiColumnModel(new DefaultFlexiColumnModel(BatchActionCols.groupParticipant));
+		groupBatchActionsColumns.addFlexiColumnModel(new DefaultFlexiColumnModel(BatchActionCols.groupWaiting));
+		
+		BatchActionsRow groupBatchActionsRow = new BatchActionsRow(selectAllGroupCoachEl, selectAllGroupParticipantEl, selectAllGroupWaitingListEl, null);
+		BatchActionsTableDataModel groupBatchActionsTableModel = new BatchActionsTableDataModel(groupBatchActionsColumns, Collections.singletonList(groupBatchActionsRow));
+		groupBatchTableEl = uifactory.addTableElement(getWindowControl(), "group_batch_actions", groupBatchActionsTableModel, getTranslator(), groupRightActions);
+		groupBatchTableEl.setCustomizeColumns(false);
+		groupBatchTableEl.setNumOfRowsEnabled(false);
+		groupBatchTableEl.setVisible(members != null && members.size() > 1);
+		
 		FlexiTableColumnModel groupTableColumnModel = FlexiTableDataModelFactory.createFlexiTableColumnModel();
 		groupTableColumnModel.addFlexiColumnModel(new DefaultFlexiColumnModel(GroupCols.groupName));
 		groupTableColumnModel.addFlexiColumnModel(new DefaultFlexiColumnModel(GroupCols.tutorCount));
@@ -377,11 +540,42 @@ public class EditMembershipController extends FormBasicController {
 		groupTableColumnModel.addFlexiColumnModel(new DefaultFlexiColumnModel(GroupCols.waitingList));
 		
 		groupTableDataModel = new EditGroupMembershipTableDataModel(Collections.<MemberGroupOption>emptyList(), groupTableColumnModel);
-		groupTableEl = uifactory.addTableElement(getWindowControl(), "groupList", groupTableDataModel, getTranslator(), formLayout);
+		groupTableEl = uifactory.addTableElement(getWindowControl(), "groupList", groupTableDataModel, getTranslator(), groupContainer);
 		groupTableEl.setCustomizeColumns(false);
 		groupTableEl.setNumOfRowsEnabled(false);
 		
 		// curriculum rights
+		curriculumContainer = FormLayoutContainer.createVerticalFormLayout("curriculumRights", getTranslator());
+		curriculumContainer.setRootForm(mainForm);
+		curriculumContainer.setFormTitle(translate("edit.member.curriculums"));
+		formLayout.add(curriculumContainer);
+		
+		FormLayoutContainer curriculumRightActions = FormLayoutContainer.createHorizontalFormLayout("curriculumRightActions", getTranslator());
+		curriculumRightActions.setRootForm(mainForm);
+		curriculumRightActions.setElementCssClass("pull-right");
+		curriculumContainer.add(curriculumRightActions);
+		
+		selectAllCurriculumOwnerEl = uifactory.addAddRemoveElement("edit.members.curriculum.select.all.owner", Link.BUTTON_XSMALL, true, null);
+		selectAllCurriculumOwnerEl.setElementCssClass("o_spacer_left");
+		selectAllCurriculumCoachEl = uifactory.addAddRemoveElement("edit.members.curriculum.select.all.coach", Link.BUTTON_XSMALL, true, null);
+		selectAllCurriculumCoachEl.setElementCssClass("o_spacer_left");
+		selectAllCurriculumParticipantEl = uifactory.addAddRemoveElement("edit.members.curriculum.select.all.participant", Link.BUTTON_XSMALL, true, null);
+		selectAllCurriculumParticipantEl.setElementCssClass("o_spacer_left");
+		
+		FlexiTableColumnModel curriculumBatchActionsColumns = FlexiTableDataModelFactory.createFlexiTableColumnModel();
+		curriculumBatchActionsColumns.addFlexiColumnModel(new DefaultFlexiColumnModel(BatchActionCols.empty));
+		curriculumBatchActionsColumns.addFlexiColumnModel(new DefaultFlexiColumnModel(BatchActionCols.empty));
+		curriculumBatchActionsColumns.addFlexiColumnModel(new DefaultFlexiColumnModel(BatchActionCols.empty));
+		curriculumBatchActionsColumns.addFlexiColumnModel(new DefaultFlexiColumnModel(BatchActionCols.curriculumOwner));
+		curriculumBatchActionsColumns.addFlexiColumnModel(new DefaultFlexiColumnModel(BatchActionCols.curriculumCoach));
+		curriculumBatchActionsColumns.addFlexiColumnModel(new DefaultFlexiColumnModel(BatchActionCols.curriculumParticipant));
+		
+		BatchActionsRow curriculumBatchActionsRow = new BatchActionsRow(selectAllCurriculumCoachEl, selectAllCurriculumParticipantEl, null, selectAllCurriculumOwnerEl);
+		BatchActionsTableDataModel curriculumBatchActionsTableModel = new BatchActionsTableDataModel(curriculumBatchActionsColumns, Collections.singletonList(curriculumBatchActionsRow));
+		curriculumBatchTableEl = uifactory.addTableElement(getWindowControl(), "curriculum_batch_actions", curriculumBatchActionsTableModel, getTranslator(), curriculumRightActions);
+		curriculumBatchTableEl.setCustomizeColumns(false);
+		curriculumBatchTableEl.setNumOfRowsEnabled(false);
+		
 		FlexiTableColumnModel curriculumTableColumnModel = FlexiTableDataModelFactory.createFlexiTableColumnModel();
 		if(curriculum == null) {
 			curriculumTableColumnModel.addFlexiColumnModel(new DefaultFlexiColumnModel(CurriculumCols.curriculum));
@@ -391,25 +585,19 @@ public class EditMembershipController extends FormBasicController {
 		}
 
 		curriculumTableColumnModel.addFlexiColumnModel(new DefaultFlexiColumnModel(CurriculumCols.curriculumElementIdentifier));
+		if(extendedCurriculumRoles) {
+			curriculumTableColumnModel.addFlexiColumnModel(new DefaultFlexiColumnModel(CurriculumCols.elementOwner));
+			curriculumTableColumnModel.addFlexiColumnModel(new DefaultFlexiColumnModel(CurriculumCols.masterCoach));
+		}
 		curriculumTableColumnModel.addFlexiColumnModel(new DefaultFlexiColumnModel(CurriculumCols.owner));
 		curriculumTableColumnModel.addFlexiColumnModel(new DefaultFlexiColumnModel(CurriculumCols.coach));
 		curriculumTableColumnModel.addFlexiColumnModel(new DefaultFlexiColumnModel(CurriculumCols.participant));
 		
 		curriculumTableDataModel = new EditCurriculumMembershipTableDataModel(Collections.<MemberCurriculumOption>emptyList(), curriculumTableColumnModel);
-		curriculumTableEl = uifactory.addTableElement(getWindowControl(), "curriculumList", curriculumTableDataModel, getTranslator(), formLayout);
+		curriculumTableEl = uifactory.addTableElement(getWindowControl(), "curriculumList", curriculumTableDataModel, getTranslator(), curriculumContainer);
 		curriculumTableEl.setCustomizeColumns(false);
 		curriculumTableEl.setNumOfRowsEnabled(false);
 		
-		selectAllCurriculumOwnersButton = uifactory.addFormLink("select.all.curriculum.owners", formLayout, Link.BUTTON_SMALL);
-		selectAllCurriculumOwnersButton.setIconLeftCSS("o_icon o_icon_check_on");
-		selectAllCurriculumOwnersButton.setUserObject(Boolean.TRUE);
-		selectAllCurriculumCoachesButton = uifactory.addFormLink("select.all.curriculum.coaches", formLayout, Link.BUTTON_SMALL);
-		selectAllCurriculumCoachesButton.setIconLeftCSS("o_icon o_icon_check_on");
-		selectAllCurriculumCoachesButton.setUserObject(Boolean.TRUE);
-		selectAllCurriculumParticipantsButton = uifactory.addFormLink("select.all.curriculum.participants", formLayout, Link.BUTTON_SMALL);
-		selectAllCurriculumParticipantsButton.setIconLeftCSS("o_icon o_icon_check_on");
-		selectAllCurriculumParticipantsButton.setUserObject(Boolean.TRUE);
-
 		if(withButtons) {
 			FormLayoutContainer buttonLayout = FormLayoutContainer.createButtonLayout("buttonLayout", getTranslator());
 			formLayout.add(buttonLayout);
@@ -448,88 +636,138 @@ public class EditMembershipController extends FormBasicController {
 
 	@Override
 	protected void formInnerEvent(UserRequest ureq, FormItem source, FormEvent event) {
-		if(source instanceof MultipleSelectionElement) {
-			MultipleSelectionElement selectEl = (MultipleSelectionElement)source;
-			if(selectEl.isSelected(0)) {
-				for(MemberGroupOption option:groupTableDataModel.getObjects()) {
-					if(option.getWaiting() == selectEl) {
-						if(option.getParticipant().isSelected(0)) {
-							option.getParticipant().select(keys[0], false);
-						}
-						if(option.getTutor().isSelected(0)) {
-							option.getTutor().select(keys[0], false);
-						}
-					} else if(option.getParticipant() == selectEl || option.getTutor() == selectEl) {
-						if(option.getWaiting() != null && option.getWaiting().isSelected(0)) {
-							option.getWaiting().select(keys[0], false);
-						}
+		if(selectAllCurriculumOwnerEl == source) {
+			List<MemberCurriculumOption> memberOptions = curriculumTableDataModel.getObjects();
+			for (MemberCurriculumOption memberOption : memberOptions) {
+				memberOption.getOwner().setSelection(selectAllCurriculumOwnerEl.getSelection());
+			}
+		} else if(selectAllCurriculumCoachEl == source) {
+			List<MemberCurriculumOption> memberOptions = curriculumTableDataModel.getObjects();
+			for (MemberCurriculumOption memberOption : memberOptions) {
+				memberOption.getCoach().setSelection(selectAllCurriculumCoachEl.getSelection());
+			}
+		} else if(selectAllCurriculumParticipantEl == source) {
+			List<MemberCurriculumOption> memberOptions = curriculumTableDataModel.getObjects();
+			for (MemberCurriculumOption memberOption : memberOptions) {
+				memberOption.getParticipant().setSelection(selectAllCurriculumParticipantEl.getSelection());
+			}
+		} else if (selectAllGroupWaitingListEl == source) {
+			List<MemberGroupOption> memberOptions = groupTableDataModel.getObjects();
+			for(MemberGroupOption memberOption:memberOptions) {
+				if (memberOption.getWaiting().isEnabled()) {
+					memberOption.getWaiting().setSelection(selectAllGroupWaitingListEl.getSelection());
+				}
+			}
+		} else if (selectAllGroupCoachEl == source) {
+			List<MemberGroupOption> memberOptions = groupTableDataModel.getObjects();
+			for(MemberGroupOption memberOption:memberOptions) {
+				memberOption.getTutor().setSelection(selectAllGroupCoachEl.getSelection());
+			}
+		} else if (selectAllGroupParticipantEl == source) {
+			List<MemberGroupOption> memberOptions = groupTableDataModel.getObjects();
+			for(MemberGroupOption memberOption:memberOptions) {
+				memberOption.getParticipant().setSelection(selectAllGroupParticipantEl.getSelection());
+			}
+		} else if(source instanceof AddRemoveElement) {
+			AddRemoveElement addRemoveEl = (AddRemoveElement)source;
+			for(MemberGroupOption option:groupTableDataModel.getObjects()) {
+				// If set on waiting list, remove as participant and tutor
+				if(option.getWaiting() == addRemoveEl) {
+					if (addRemoveEl.isAddSelected()) {
+						option.getParticipant().selectRemove();
+						option.getTutor().selectRemove();
+					} 
+				// If set as participant or tutor, remove from waiting list
+				} else if((option.getParticipant() == addRemoveEl || option.getTutor() == addRemoveEl) && option.getWaiting().isEnabled()) {
+					if (addRemoveEl.isAddSelected()) {
+						option.getWaiting().selectRemove();
+					} else if (!option.getParticipant().isAddSelected() && !option.getTutor().isAddSelected()) {
+						option.getWaiting().reset();
 					}
 				}
 			}
-		} else if(selectAllCurriculumOwnersButton == source) {
-			toogleCurriculumMembership(selectAllCurriculumOwnersButton, GroupRoles.owner,
-					"select.all.curriculum.owners", "deselect.all.curriculum.owners");
-		} else if(selectAllCurriculumCoachesButton == source) {
-			toogleCurriculumMembership(selectAllCurriculumCoachesButton, GroupRoles.coach,
-					"select.all.curriculum.coaches", "deselect.all.curriculum.coaches");
-		} else if(selectAllCurriculumParticipantsButton == source) {
-			toogleCurriculumMembership(selectAllCurriculumParticipantsButton, GroupRoles.participant,
-					"select.all.curriculum.participants", "deselect.all.curriculum.participants");
-		}
+		} 
 		super.formInnerEvent(ureq, source, event);
-	}
-	
-	private void toogleCurriculumMembership(FormLink link, GroupRoles role, String selectI18nKey, String deselectI18nKey) {
-		Boolean enabled = (Boolean)link.getUserObject();
-		
-		List<MemberCurriculumOption> memberOptions = curriculumTableDataModel.getObjects();
-		for(MemberCurriculumOption memberOption:memberOptions) {
-			MultipleSelectionElement element = memberOption.getSelection(role);
-			if(element.isEnabled()) {
-				element.select(keys[0], enabled.booleanValue());
-			}
-		}
-		
-		boolean newValue = !enabled.booleanValue();
-		link.setUserObject(Boolean.valueOf(newValue));
-		if(newValue) {
-			link.setIconLeftCSS("o_icon o_icon_check_on");
-			link.setI18nKey(selectI18nKey);
-		} else {
-			link.setIconLeftCSS("o_icon o_icon_check_off");
-			link.setI18nKey(deselectI18nKey);
-		}
 	}
 
 	public void collectRepoChanges(MemberPermissionChangeEvent e) {
 		if(repoEntry == null) return;
 		
-		RepoPermission repoPermission = PermissionHelper.getPermission(repoEntry, member, memberships);
+		List<RepositoryEntryPermissionChangeEvent> repoChanges = new ArrayList<>();
 
-		Collection<String> selectRepoRights = repoRightsEl.getSelectedKeys();
-		boolean repoOwner = selectRepoRights.contains("owner");
-		e.setRepoOwner(repoOwner == repoPermission.isOwner() ? null : Boolean.valueOf(repoOwner));
-		boolean repoTutor = selectRepoRights.contains("tutor");
-		e.setRepoTutor(repoTutor == repoPermission.isTutor() ? null : Boolean.valueOf(repoTutor));
-		boolean repoParticipant = selectRepoRights.contains("participant");
-		e.setRepoParticipant(repoParticipant == repoPermission.isParticipant() ? null : Boolean.valueOf(repoParticipant));
+		if (member != null) {
+			RepoPermission repoPermission = PermissionHelper.getPermission(repoEntry, member, memberships);
+			
+			e.setRepoOwner(getChange(repoOwnerRoleEl.getSelection(), repoPermission.isOwner()));
+			e.setRepoTutor(getChange(repoCoachRoleEl.getSelection(), repoPermission.isTutor()));
+			e.setRepoParticipant(getChange(repoParticipantRoleEl.getSelection(), repoPermission.isParticipant()));
+			
+			return;			
+		} else if (members != null){
+			for (Identity member : members) {
+				List<RepositoryEntryMembership> memberships = repositoryManager.getRepositoryEntryMembership(repoEntry, member);
+				RepoPermission repoPermission = PermissionHelper.getPermission(repoEntry, member, memberships);
+				RepositoryEntryPermissionChangeEvent change = new RepositoryEntryPermissionChangeEvent(member);
+				
+				change.setRepoOwner(getChange(repoOwnerRoleEl.getSelection(), repoPermission.isOwner()));
+				change.setRepoTutor(getChange(repoCoachRoleEl.getSelection(), repoPermission.isTutor()));
+				change.setRepoParticipant(getChange(repoParticipantRoleEl.getSelection(), repoPermission.isParticipant()));
+				
+				if (change.getRepoOwner() != null || change.getRepoParticipant() != null || change.getRepoTutor() != null) {
+					repoChanges.add(change);
+				}
+			}
+		} else {
+			e.setRepoOwner(repoOwnerRoleEl.getSelection());
+			e.setRepoTutor(repoCoachRoleEl.getSelection());
+			e.setRepoParticipant(repoParticipantRoleEl.getSelection());
+		}
+	
+		e.setRepoChanges(repoChanges);
 	}
 	
 	public void collectGroupChanges(MemberPermissionChangeEvent e) {
 		List<BusinessGroupMembershipChange> changes = new ArrayList<>();
+		List<MemberGroupOption> changedGroups = groupTableDataModel.getObjects().stream().filter(group -> group.containsChanges()).collect(Collectors.toList());
+		List<Long> groupKeys = changedGroups.stream().map(change -> change.getGroupKey()).collect(Collectors.toList());
 		
-		for(MemberGroupOption option:groupTableDataModel.getObjects()) {
-			BGPermission bgPermission = PermissionHelper.getPermission(option.getGroupKey(), member, groupMemberships);
-			BusinessGroupMembershipChange change = new BusinessGroupMembershipChange(member, option.getGroup());
-			boolean bgTutor = option.getTutor().isAtLeastSelected(1);
-			change.setTutor(bgPermission.isTutor() == bgTutor ? null : Boolean.valueOf(bgTutor));
-			boolean bgParticipant = option.getParticipant().isAtLeastSelected(1);
-			change.setParticipant(bgPermission.isParticipant() == bgParticipant ? null : Boolean.valueOf(bgParticipant));
-			boolean bgWaitingList = option.getWaiting().isEnabled() && option.getWaiting().isAtLeastSelected(1);
-			change.setWaitingList(bgPermission.isWaitingList() == bgWaitingList ? null : Boolean.valueOf(bgWaitingList));
-
-			if(change.getTutor() != null || change.getParticipant() != null || change.getWaitingList() != null) {
-				changes.add(change);
+		Identity[] membersArray;
+		List<BusinessGroupMembership> allMemberships = new ArrayList<>();
+		
+		if (members != null) {
+			membersArray = new Identity[members.size()];
+			members.toArray(membersArray);
+			allMemberships = businessGroupService.getBusinessGroupMembership(groupKeys, membersArray);
+		}
+		
+		for(MemberGroupOption option:changedGroups) {
+			if (members != null) {
+				for (Identity member : members) {	
+					List<BusinessGroupMembership> memberships = allMemberships.stream().filter(ms -> ms.getIdentityKey().equals(member.getKey())).collect(Collectors.toList());
+					BGPermission bgPermission = PermissionHelper.getPermission(option.getGroupKey(), member, memberships);
+					BusinessGroupMembershipChange change = new BusinessGroupMembershipChange(member, option.getGroup());
+					
+					
+					change.setTutor(getChange(option.getTutor().getSelection(), bgPermission.isTutor()));
+					change.setParticipant(getChange(option.getParticipant().getSelection(), bgPermission.isParticipant()));
+					change.setWaitingList(getChange(option.getWaiting().getSelection(), bgPermission.isWaitingList()));
+		
+					if(change.getTutor() != null || change.getParticipant() != null || change.getWaitingList() != null) {
+						changes.add(change);
+					}
+				}
+			} else {
+				BGPermission bgPermission = PermissionHelper.getPermission(option.getGroupKey(), member, groupMemberships);
+				BusinessGroupMembershipChange change = new BusinessGroupMembershipChange(member, option.getGroup());
+				
+				
+				change.setTutor(getChange(option.getTutor().getSelection(), bgPermission.isTutor()));
+				change.setParticipant(getChange(option.getParticipant().getSelection(), bgPermission.isParticipant()));
+				change.setWaitingList(getChange(option.getWaiting().getSelection(), bgPermission.isWaitingList()));
+	
+				if(change.getTutor() != null || change.getParticipant() != null || change.getWaitingList() != null) {
+					changes.add(change);
+				}
 			}
 		}
 		e.setGroupChanges(changes);
@@ -537,30 +775,96 @@ public class EditMembershipController extends FormBasicController {
 	
 	public void collectCurriculumElementChanges(MemberPermissionChangeEvent e) {
 		List<CurriculumElementMembershipChange> changes = new ArrayList<>();
+		List<MemberCurriculumOption> changedCurriculaOptions = curriculumTableDataModel.getObjects().stream().filter(curriculum -> curriculum.containsChanges()).collect(Collectors.toList());
+		List<CurriculumElement> changedCurricula = changedCurriculaOptions.stream().map(option -> option.getElement()).collect(Collectors.toList());
 		
-		for(MemberCurriculumOption option:curriculumTableDataModel.getObjects()) {
-			RepoPermission rePermission = PermissionHelper.getPermission(option.getElement(), member, curriculumElementMemberships);
-			CurriculumElementMembershipChange change = new CurriculumElementMembershipChange(member, option.getElement());
-			boolean cOwner = option.getOwner().isAtLeastSelected(1);
-			change.setRepositoryEntryOwner(rePermission.isOwner() == cOwner ? null : Boolean.valueOf(cOwner));
-			boolean cCoach = option.getCoach().isAtLeastSelected(1);
-			change.setCoach(rePermission.isTutor() == cCoach ? null : Boolean.valueOf(cCoach));
-			boolean cParticipant = option.getParticipant().isAtLeastSelected(1);
-			change.setParticipant(rePermission.isParticipant() == cParticipant ? null : Boolean.valueOf(cParticipant));
-			if(change.getCurriculumElementOwner() != null || change.getRepositoryEntryOwner() != null || change.getCoach() != null || change.getParticipant() != null) {
-				changes.add(change);
+		Identity[] membersArray;
+		List<CurriculumElementMembership> allMemberships = new ArrayList<>();
+		
+		if (members != null) {
+			membersArray = new Identity[members.size()];
+			members.toArray(membersArray);
+			allMemberships = curriculumService.getCurriculumElementMemberships(changedCurricula, membersArray);
+		}
+		
+		for(MemberCurriculumOption option : changedCurriculaOptions) {
+			if (members != null) {
+				for (Identity member : members) {
+					List<CurriculumElementMembership> curriculumElementMemberships = allMemberships.stream().filter(membership -> membership.getIdentityKey().equals(member.getKey())).collect(Collectors.toList());
+					RepoPermission rePermission = PermissionHelper.getPermission(option.getElement(), member, curriculumElementMemberships);
+					CurriculumElementMembershipChange change = new CurriculumElementMembershipChange(member, option.getElement());
+		
+					change.setRepositoryEntryOwner(getChange(option.getOwner().getSelection(), rePermission.isOwner()));
+					change.setCoach(getChange(option.getCoach().getSelection(), rePermission.isTutor()));
+					change.setParticipant(getChange(option.getParticipant().getSelection(), rePermission.isParticipant()));
+					
+					if(option.getMasterCoach() != null) {
+						change.setMasterCoach(getChange(option.getMasterCoach().getSelection(), rePermission.isMasterCoach()));
+					}
+					if(option.getElementOwner() != null) {
+						change.setCurriculumElementOwner(getChange(option.getElementOwner().getSelection(), rePermission.isCurriculumElementOwner()));
+					}
+					
+					if(change.getCurriculumElementOwner() != null || change.getRepositoryEntryOwner() != null
+							|| change.getCoach() != null || change.getParticipant() != null
+							|| change.getCurriculumElementOwner() != null || change.getMasterCoach() != null) {
+						changes.add(change);
+					}
+				}
+			} else {
+				RepoPermission rePermission = PermissionHelper.getPermission(option.getElement(), member, curriculumElementMemberships);
+				CurriculumElementMembershipChange change = new CurriculumElementMembershipChange(member, option.getElement());
+	
+				change.setRepositoryEntryOwner(getChange(option.getOwner().getSelection(), rePermission.isOwner()));
+				change.setCoach(getChange(option.getCoach().getSelection(), rePermission.isTutor()));
+				change.setParticipant(getChange(option.getParticipant().getSelection(), rePermission.isParticipant()));
+				
+				if(option.getMasterCoach() != null) {
+					change.setMasterCoach(getChange(option.getMasterCoach().getSelection(), rePermission.isMasterCoach()));
+				}
+				if(option.getElementOwner() != null) {
+					change.setCurriculumElementOwner(getChange(option.getElementOwner().getSelection(), rePermission.isCurriculumElementOwner()));
+				}
+				
+				if(change.getCurriculumElementOwner() != null || change.getRepositoryEntryOwner() != null
+						|| change.getCoach() != null || change.getParticipant() != null
+						|| change.getCurriculumElementOwner() != null || change.getMasterCoach() != null) {
+					changes.add(change);
+				}
 			}
 		}
 		
 		e.setCurriculumChanges(changes);
 	}
 	
+	private Boolean getChange(Boolean selection, boolean permissionState) {
+		if (selection == null || selection == permissionState) {
+			return null;
+		} else {
+			return selection;
+		}
+	}
+	
+	private static boolean containsChange(AddRemoveElement addRemove) {
+		if (addRemove == null) {
+			return false;
+		}
+		
+		if (addRemove.getSelection() != null) {
+			return true;
+		}
+		
+		return false;
+	}
+	
 	private static class MemberCurriculumOption {
 
 		private final CurriculumElement curriculumElement;
-		private MultipleSelectionElement owner;
-		private MultipleSelectionElement coach;
-		private MultipleSelectionElement participant;
+		private AddRemoveElement owner;
+		private AddRemoveElement coach;
+		private AddRemoveElement participant;
+		private AddRemoveElement masterCoach;
+		private AddRemoveElement elementOwner;
 		
 		public MemberCurriculumOption(CurriculumElement curriculumElement) {
 			this.curriculumElement = curriculumElement;
@@ -570,45 +874,56 @@ public class EditMembershipController extends FormBasicController {
 			return curriculumElement;
 		}
 
-		public MultipleSelectionElement getOwner() {
+		public AddRemoveElement getOwner() {
 			return owner;
 		}
 
-		public void setOwner(MultipleSelectionElement owner) {
+		public void setOwner(AddRemoveElement owner) {
 			this.owner = owner;
 		}
 
-		public MultipleSelectionElement getCoach() {
+		public AddRemoveElement getCoach() {
 			return coach;
 		}
 
-		public void setCoach(MultipleSelectionElement coach) {
+		public void setCoach(AddRemoveElement coach) {
 			this.coach = coach;
 		}
 
-		public MultipleSelectionElement getParticipant() {
+		public AddRemoveElement getParticipant() {
 			return participant;
 		}
 
-		public void setParticipant(MultipleSelectionElement participant) {
+		public void setParticipant(AddRemoveElement participant) {
 			this.participant = participant;
 		}
 		
-		public MultipleSelectionElement getSelection(GroupRoles role) {
-			switch(role) {
-				case owner: return owner;
-				case coach: return coach;
-				case participant: return participant;
-				default: return null;
-			}
+		public AddRemoveElement getMasterCoach() {
+			return masterCoach;
+		}
+
+		public void setMasterCoach(AddRemoveElement masterCoach) {
+			this.masterCoach = masterCoach;
+		}
+
+		public AddRemoveElement getElementOwner() {
+			return elementOwner;
+		}
+
+		public void setElementOwner(AddRemoveElement elementOwner) {
+			this.elementOwner = elementOwner;
+		}
+		
+		public boolean containsChanges() {
+			return containsChange(owner) || containsChange(coach) || containsChange(participant) || containsChange(masterCoach) || containsChange(elementOwner);
 		}
 	}
 
 	private static class MemberGroupOption {
 		private final StatisticsBusinessGroupRow group;
-		private MultipleSelectionElement tutor;
-		private MultipleSelectionElement participant;
-		private MultipleSelectionElement waiting;
+		private AddRemoveElement tutor;
+		private AddRemoveElement participant;
+		private AddRemoveElement waiting;
 		
 		public MemberGroupOption(StatisticsBusinessGroupRow group) {
 			this.group = group;
@@ -642,28 +957,96 @@ public class EditMembershipController extends FormBasicController {
 			return group.getMaxParticipants();
 		}
 		
-		public MultipleSelectionElement getTutor() {
+		public AddRemoveElement getTutor() {
 			return tutor;
 		}
 		
-		public void setTutor(MultipleSelectionElement tutor) {
+		public void setTutor(AddRemoveElement tutor) {
 			this.tutor = tutor;
 		}
 		
-		public MultipleSelectionElement getParticipant() {
+		public AddRemoveElement getParticipant() {
 			return participant;
 		}
 		
-		public void setParticipant(MultipleSelectionElement participant) {
+		public void setParticipant(AddRemoveElement participant) {
 			this.participant = participant;
 		}
 		
-		public MultipleSelectionElement getWaiting() {
+		public AddRemoveElement getWaiting() {
 			return waiting;
 		}
 		
-		public void setWaiting(MultipleSelectionElement waiting) {
+		public void setWaiting(AddRemoveElement waiting) {
 			this.waiting = waiting;
+		}
+		
+		public boolean containsChanges() {
+			return  containsChange(tutor) || containsChange(participant) || containsChange(waiting);
+		}
+	}
+	
+	private static class BatchActionsTableDataModel extends DefaultFlexiTableDataModel<BatchActionsRow> {
+
+		public BatchActionsTableDataModel(FlexiTableColumnModel columnModel, List<BatchActionsRow> objects) {
+			super(objects, columnModel);
+		}
+
+		@Override
+		public Object getValueAt(int row, int col) {
+			BatchActionsRow actions = getObject(row);
+			
+			switch (BatchActionCols.values()[col]) {
+				case curriculumCoach: 
+				case groupCoach:
+					return actions.getCoach();
+				case curriculumParticipant:
+				case groupParticipant:
+					return actions.getParticipant();
+				case groupWaiting: 
+					return actions.getWating();
+				case curriculumOwner:
+					return actions.getOwner();
+				case empty:
+				default:
+					return null;
+			}
+		}
+
+		@Override
+		public DefaultFlexiTableDataModel<BatchActionsRow> createCopyWithEmptyList() {
+			return null;
+		}
+		
+	}
+	
+	private static class BatchActionsRow {
+		private AddRemoveElement coach;
+		private AddRemoveElement participant;
+		private AddRemoveElement wating;
+		private AddRemoveElement owner;
+		
+		public BatchActionsRow(AddRemoveElement coach, AddRemoveElement participant, AddRemoveElement waiting, AddRemoveElement owner) {
+			this.coach = coach;
+			this.participant = participant; 
+			this.wating = waiting;
+			this.owner = owner;
+		}
+		
+		public AddRemoveElement getCoach() {
+			return coach;
+		}
+		
+		public AddRemoveElement getParticipant() {
+			return participant;
+		}
+		
+		public AddRemoveElement getWating() {
+			return wating;
+		}
+		
+		public AddRemoveElement getOwner() {
+			return owner;
 		}
 	}
 	
@@ -684,6 +1067,8 @@ public class EditMembershipController extends FormBasicController {
 				case owner: return option.getOwner();
 				case coach: return option.getCoach();
 				case participant: return option.getParticipant();
+				case masterCoach: return option.getMasterCoach();
+				case elementOwner: return option.getElementOwner();
 				default: return "ERROR";
 			}
 		}
@@ -754,11 +1139,34 @@ public class EditMembershipController extends FormBasicController {
 		}
 	}
 	
+	public enum BatchActionCols implements FlexiColumnDef {
+		empty("table.header.empty"),
+		groupCoach("edit.members.group.select.all.coach"),
+		groupParticipant("edit.members.group.select.all.participant"),
+		groupWaiting("edit.members.group.select.all.waiting.list"),
+		curriculumCoach("edit.members.curriculum.select.all.coach"),
+		curriculumParticipant("edit.members.curriculum.select.all.participant"),
+		curriculumOwner("edit.members.curriculum.select.all.owner");
+
+		private final String i18n;
+		
+		private BatchActionCols(String i18n) {
+			this.i18n = i18n;
+		}
+		
+		@Override
+		public String i18nHeaderKey() {
+			return i18n;
+		}
+	}
+	
 	
 	public enum CurriculumCols implements FlexiSortableColumnDef {
 		curriculum("table.header.curriculum"),
 		curriculumElement("table.header.curriculum.element"),
 		curriculumElementIdentifier("table.header.identifier"),
+		masterCoach("table.header.mastercoachs"),
+		elementOwner("table.header.elementowners"),
 		owner("table.header.owners"),
 		coach("table.header.tutors"),
 		participant("table.header.participants");

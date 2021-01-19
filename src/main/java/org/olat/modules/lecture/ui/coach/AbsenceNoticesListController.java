@@ -42,7 +42,6 @@ import org.olat.core.gui.components.form.flexible.elements.FormLink;
 import org.olat.core.gui.components.form.flexible.elements.SingleSelection;
 import org.olat.core.gui.components.form.flexible.impl.FormBasicController;
 import org.olat.core.gui.components.form.flexible.impl.FormEvent;
-import org.olat.core.gui.components.form.flexible.impl.elements.table.DateTimeFlexiCellRenderer;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.DefaultFlexiColumnModel;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiTableColumnModel;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiTableDataModelFactory;
@@ -58,6 +57,7 @@ import org.olat.core.gui.control.controller.BasicController;
 import org.olat.core.gui.control.generic.closablewrapper.CloseableCalloutWindowController;
 import org.olat.core.gui.control.generic.closablewrapper.CloseableModalController;
 import org.olat.core.id.Identity;
+import org.olat.core.util.StringHelper;
 import org.olat.core.util.Util;
 import org.olat.modules.coach.ui.UserListController;
 import org.olat.modules.lecture.AbsenceNotice;
@@ -75,8 +75,10 @@ import org.olat.modules.lecture.ui.LecturesSecurityCallback;
 import org.olat.modules.lecture.ui.coach.AbsenceNoticeHelper.AbsenceNoticeCSS;
 import org.olat.modules.lecture.ui.coach.AbsenceNoticesListTableModel.NoticeCols;
 import org.olat.modules.lecture.ui.component.DailyDateCellRenderer;
+import org.olat.modules.lecture.ui.component.StartEndDateCellRenderer;
 import org.olat.modules.lecture.ui.event.OpenRepositoryEntryEvent;
 import org.olat.modules.lecture.ui.event.SelectLectureIdentityEvent;
+import org.olat.modules.lecture.ui.filter.AbsenceNoticeFilter;
 import org.olat.modules.lecture.ui.profile.IdentityProfileController;
 import org.olat.repository.RepositoryEntry;
 import org.olat.user.UserManager;
@@ -111,7 +113,6 @@ public class AbsenceNoticesListController extends FormBasicController {
 	 */
 	private final boolean wholeDateDefault;
 	private final boolean withUserProperties;
-	private final boolean isAdministrativeUser;
 	private final List<UserPropertyHandler> userPropertyHandlers;
 	private final LecturesSecurityCallback secCallback;
 	private AbsenceNoticeSearchParameters lastSearchParams;
@@ -146,7 +147,7 @@ public class AbsenceNoticesListController extends FormBasicController {
 		this.authorizedEnabled = authorizedEnabled;
 		this.withUserProperties = withUserProperties;
 
-		isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
+		boolean isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
 		userPropertyHandlers = userManager.getUserPropertyHandlersFor(USER_USAGE_IDENTIFIER, isAdministrativeUser);
 		
 		initForm(ureq);
@@ -184,7 +185,7 @@ public class AbsenceNoticesListController extends FormBasicController {
 		tableEl.setCustomizeColumns(true);
 		tableEl.setNumOfRowsEnabled(true);
 		tableEl.setEmtpyTableMessageKey("empty.absences.list");
-		tableEl.setAndLoadPersistedPreferences(ureq, "absences-list-" + tableId + "-" + secCallback.viewAs());
+		tableEl.setAndLoadPersistedPreferences(ureq, "absences-list-v3-" + tableId + "-" + secCallback.viewAs());
 		
 		if(authorizedEnabled && secCallback.canAuthorizeAbsence()) {
 			tableEl.setMultiSelect(true);
@@ -194,10 +195,6 @@ public class AbsenceNoticesListController extends FormBasicController {
 	}
 	
 	protected void initUserColumns(FlexiTableColumnModel columnsModel) {
-		if(isAdministrativeUser) {
-			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(NoticeCols.username, "select"));
-		}
-		
 		int colIndex = USER_PROPS_OFFSET;
 		for (int i = 0; i < userPropertyHandlers.size(); i++) {
 			UserPropertyHandler userPropertyHandler	= userPropertyHandlers.get(i);
@@ -217,9 +214,9 @@ public class AbsenceNoticesListController extends FormBasicController {
 		dailyDateRenderer = new DailyDateCellRenderer(currentDate, getLocale(), getTranslator());
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(NoticeCols.date, dailyDateRenderer));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(wholeDateDefault, NoticeCols.start,
-				new DateTimeFlexiCellRenderer(getLocale())));
+				new StartEndDateCellRenderer(true, getLocale())));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(wholeDateDefault, NoticeCols.end,
-				new DateTimeFlexiCellRenderer(getLocale())));
+				new StartEndDateCellRenderer(false, getLocale())));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(false, NoticeCols.reason));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(NoticeCols.details));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(NoticeCols.type));
@@ -289,6 +286,14 @@ public class AbsenceNoticesListController extends FormBasicController {
 				row.addEntries(entrySet);
 				forgeEntryLink(row, blockList);
 			}
+		}
+		
+		if(StringHelper.containsNonWhitespace(searchParams.getSearchString())) {
+			final AbsenceNoticeFilter filter = new AbsenceNoticeFilter(searchParams.getSearchString(),
+					userPropertyHandlers, getLocale());
+			rows = rows.stream()
+					.filter(filter)
+					.collect(Collectors.toList());
 		}
 		
 		tableModel.setObjects(rows);
@@ -538,6 +543,8 @@ public class AbsenceNoticesListController extends FormBasicController {
 	}
 	
 	private void doOpenProfile(UserRequest ureq, AbsenceNoticeRow row) {
+		if(guardModalController(profileCtrl)) return;
+		
 		profileCtrl = new IdentityProfileController(ureq, getWindowControl(), row.getAbsentIdentity(), secCallback, false);
 		listenTo(profileCtrl);
 

@@ -49,6 +49,7 @@ import org.olat.core.util.Formatter;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.Util;
 import org.olat.core.util.ZipUtil;
+import org.olat.core.util.filter.FilterFactory;
 import org.olat.core.util.io.ShieldOutputStream;
 import org.olat.core.util.openxml.OpenXMLWorkbook;
 import org.olat.core.util.openxml.OpenXMLWorkbookResource;
@@ -70,9 +71,9 @@ import org.olat.ims.qti21.AssessmentItemSession;
 import org.olat.ims.qti21.AssessmentResponse;
 import org.olat.ims.qti21.AssessmentTestSession;
 import org.olat.ims.qti21.QTI21Service;
+import org.olat.ims.qti21.manager.AssessmentItemSessionDAO;
 import org.olat.ims.qti21.manager.AssessmentResponseDAO;
 import org.olat.ims.qti21.manager.AssessmentTestSessionDAO;
-import org.olat.ims.qti21.manager.QTI21ServiceImpl;
 import org.olat.ims.qti21.manager.archive.interactions.AssociateInteractionArchive;
 import org.olat.ims.qti21.manager.archive.interactions.ChoiceInteractionArchive;
 import org.olat.ims.qti21.manager.archive.interactions.DefaultInteractionArchive;
@@ -99,6 +100,7 @@ import org.olat.modules.assessment.AssessmentEntry;
 import org.olat.repository.RepositoryEntry;
 import org.olat.user.UserManager;
 import org.olat.user.propertyhandlers.UserPropertyHandler;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import uk.ac.ed.ph.jqtiplus.node.item.AssessmentItem;
 import uk.ac.ed.ph.jqtiplus.node.item.interaction.AssociateInteraction;
@@ -156,25 +158,28 @@ public class QTI21ArchiveFormat {
 	private List<AbstractInfos> elementInfos;
 	private final Map<String, InteractionArchive> interactionArchiveMap = new HashMap<>();
 	
-	private final QTI21Service qtiService;
-	private final UserManager userManager;
-	private final AssessmentResponseDAO responseDao;
-	private final AssessmentTestSessionDAO testSessionDao;
-	private final CourseAssessmentService courseAssessmentService;
+	@Autowired
+	private QTI21Service qtiService;
+	@Autowired
+	private UserManager userManager;
+	@Autowired
+	private AssessmentResponseDAO responseDao;
+	@Autowired
+	private AssessmentTestSessionDAO testSessionDao;
+	@Autowired
+	private AssessmentItemSessionDAO itemSessionDao;
+	@Autowired
+	private CourseAssessmentService courseAssessmentService;
 	
 	public QTI21ArchiveFormat(Locale locale, QTI21StatisticSearchParams searchParams) {
+		CoreSpringFactory.autowireObject(this);
+		
 		this.searchParams = searchParams;
 		if(searchParams.getArchiveOptions() == null || searchParams.getArchiveOptions().getExportFormat() == null) {
 			exportConfig = new ExportFormat(true, true, true, true, true);
 		} else {
 			exportConfig = searchParams.getArchiveOptions().getExportFormat();
 		}
-		
-		userManager = CoreSpringFactory.getImpl(UserManager.class);
-		qtiService = CoreSpringFactory.getImpl(QTI21ServiceImpl.class);
-		responseDao = CoreSpringFactory.getImpl(AssessmentResponseDAO.class);
-		testSessionDao = CoreSpringFactory.getImpl(AssessmentTestSessionDAO.class);
-		courseAssessmentService = CoreSpringFactory.getImpl(CourseAssessmentService.class);
 		
 		userPropertyHandlers = userManager.getUserPropertyHandlersFor(QTIArchiver.TEST_USER_PROPERTIES, true);
 		
@@ -471,16 +476,18 @@ public class QTI21ArchiveFormat {
 			AssessmentTestSession testSession = sessions.get(i);
 			SessionResponses sessionResponses = new SessionResponses(testSession);
 			List<AssessmentResponse> responses = responseDao.getResponses(testSession);
-			
 			for(AssessmentResponse response:responses) {
 				AssessmentItemSession itemSession = response.getAssessmentItemSession();
 				sessionResponses.addResponse(itemSession, response);
 			}
-			writeDataRow(i + 1, sessionResponses, exportSheet, workbook);
 			
-			if(i % 25 == 0) {
-				DBFactory.getInstance().commitAndCloseSession();
+			List<AssessmentItemSession> itemSessions = itemSessionDao.getAssessmentItemSessions(testSession);
+			for(AssessmentItemSession itemSession:itemSessions) {
+				sessionResponses.addItemSession(itemSession);
 			}
+			
+			writeDataRow(i + 1, sessionResponses, exportSheet, workbook);	
+			DBFactory.getInstance().commitAndCloseSession();
 		}
 	}
 	
@@ -494,7 +501,15 @@ public class QTI21ArchiveFormat {
 		Identity assessedIdentity = entry.getIdentity();
 		
 		//user properties
-		if(assessedIdentity == null) {
+		if(anonymizerCallback != null) {
+			String anonymizedName;
+			if(assessedIdentity == null) {
+				anonymizedName = translator.translate("anonym.user");
+			} else {
+				anonymizedName = anonymizerCallback.getAnonymizedUserName(assessedIdentity);
+			}
+			dataRow.addCell(col++, anonymizedName, null);
+		} else if(assessedIdentity == null) {
 			for (UserPropertyHandler userPropertyHandler:userPropertyHandlers) {
 				if (userPropertyHandler != null) {
 					if(userPropertyHandlers.get(0) == userPropertyHandler) {
@@ -504,9 +519,6 @@ public class QTI21ArchiveFormat {
 					}	
 				}	
 			}
-		} else if(anonymizerCallback != null) {
-			String anonymizedName = anonymizerCallback.getAnonymizedUserName(assessedIdentity);
-			dataRow.addCell(col++, anonymizedName, null);
 		} else {
 			User assessedUser = assessedIdentity.getUser();
 			for (UserPropertyHandler userPropertyHandler : userPropertyHandlers) {
@@ -612,7 +624,7 @@ public class QTI21ArchiveFormat {
 						}
 					}
 					if (exportConfig.isCommentCol()) {
-						dataRow.addCell(col++, itemSession.getCoachComment(), null);	
+						dataRow.addCell(col++, getCoachComment(itemSession), null);	
 					}
 					if (exportConfig.isTimeCols()) {
 						if (anonymizerCallback == null){
@@ -633,6 +645,16 @@ public class QTI21ArchiveFormat {
 				}
 			}
 		}
+	}
+	
+	private String getCoachComment(AssessmentItemSession itemSession) {
+		if(itemSession == null || !StringHelper.containsNonWhitespace(itemSession.getCoachComment())) return null;
+		
+		String comment = itemSession.getCoachComment();
+		if(StringHelper.isHtml(comment)) {
+			comment = FilterFactory.getHtmlTagAndDescapingFilter().filter(comment);
+		}
+		return comment;
 	}
 	
 	private BigDecimal calculateSectionScore(SessionResponses responses, SectionInfos section) {
@@ -729,11 +751,13 @@ public class QTI21ArchiveFormat {
 		
 		public void addResponse(AssessmentItemSession itemSession, AssessmentResponse response) {
 			String itemIdentifier = itemSession.getAssessmentItemIdentifier();
-			if(!itemSessionsMap.containsKey(itemIdentifier)) {
-				itemSessionsMap.put(itemIdentifier, itemSession);
-				responsesMap.put(itemIdentifier, new ArrayList<>(5));
-			}
-			responsesMap.get(itemIdentifier).add(response);	
+			itemSessionsMap.putIfAbsent(itemIdentifier, itemSession);
+			responsesMap.computeIfAbsent(itemIdentifier, id -> new ArrayList<>(5))
+				.add(response);	
+		}
+		
+		public void addItemSession(AssessmentItemSession itemSession) {
+			itemSessionsMap.put(itemSession.getAssessmentItemIdentifier(), itemSession);
 		}
 		
 		public AssessmentItemSession getItemSession(String itemIdentifier) {

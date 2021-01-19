@@ -21,6 +21,7 @@ package org.olat.course.assessment.ui.tool;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,9 +33,11 @@ import org.olat.basesecurity.BaseSecurityModule;
 import org.olat.basesecurity.Group;
 import org.olat.basesecurity.IdentityRef;
 import org.olat.basesecurity.model.IdentityRefImpl;
+import org.olat.core.commons.persistence.DB;
 import org.olat.core.commons.persistence.SortKey;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
+import org.olat.core.gui.components.date.TimeElement;
 import org.olat.core.gui.components.form.flexible.FormItem;
 import org.olat.core.gui.components.form.flexible.FormItemContainer;
 import org.olat.core.gui.components.form.flexible.elements.FlexiTableElement;
@@ -59,6 +62,7 @@ import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.control.generic.closablewrapper.CloseableCalloutWindowController;
 import org.olat.core.gui.control.generic.closablewrapper.CloseableModalController;
 import org.olat.core.gui.control.generic.dtabs.Activateable2;
+import org.olat.core.gui.control.generic.modal.DialogBoxUIFactory;
 import org.olat.core.id.Identity;
 import org.olat.core.id.IdentityEnvironment;
 import org.olat.core.id.OLATResourceable;
@@ -68,6 +72,7 @@ import org.olat.core.id.context.StateEntry;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.Util;
 import org.olat.core.util.coordinate.CoordinatorManager;
+import org.olat.core.util.coordinate.LockEntry;
 import org.olat.core.util.event.GenericEventListener;
 import org.olat.core.util.mail.ContactList;
 import org.olat.core.util.mail.ContactMessage;
@@ -78,6 +83,7 @@ import org.olat.course.assessment.AssessmentModule;
 import org.olat.course.assessment.AssessmentToolManager;
 import org.olat.course.assessment.CourseAssessmentService;
 import org.olat.course.assessment.bulk.PassedCellRenderer;
+import org.olat.course.assessment.bulk.PassedOverridenCellRenderer;
 import org.olat.course.assessment.handler.AssessmentConfig;
 import org.olat.course.assessment.handler.AssessmentConfig.Mode;
 import org.olat.course.assessment.model.SearchAssessedIdentityParams;
@@ -132,7 +138,6 @@ public class IdentityListCourseNodeController extends FormBasicController
 	protected final RepositoryEntry courseEntry;
 	private final RepositoryEntry referenceEntry;
 	private final CourseEnvironment courseEnv;
-	private final boolean isAdministrativeUser;
 	protected final UserCourseEnvironment coachCourseEnv;
 	private final List<UserPropertyHandler> userPropertyHandlers;
 	protected final AssessmentToolSecurityCallback assessmentCallback;
@@ -156,9 +161,11 @@ public class IdentityListCourseNodeController extends FormBasicController
 	private ContactFormController contactCtrl;
 	
 	@Autowired
+	protected DB dbInstance;
+	@Autowired
 	private UserManager userManager;
 	@Autowired
-	private BaseSecurity securityManager;
+	protected BaseSecurity securityManager;
 	@Autowired
 	private GradingService gradingService;
 	@Autowired
@@ -196,7 +203,7 @@ public class IdentityListCourseNodeController extends FormBasicController
 			referenceEntry = null;
 		}
 		
-		isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
+		boolean isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
 		userPropertyHandlers = userManager.getUserPropertyHandlersFor(AssessmentToolConstants.usageIdentifyer, isAdministrativeUser);
 		
 		initForm(ureq);
@@ -271,11 +278,7 @@ public class IdentityListCourseNodeController extends FormBasicController
 		//add the table
 		FlexiTableSortOptions options = new FlexiTableSortOptions();
 		FlexiTableColumnModel columnsModel = FlexiTableDataModelFactory.createFlexiTableColumnModel();
-		if(isAdministrativeUser) {
-			options.setDefaultOrderBy(new SortKey(IdentityCourseElementCols.username.sortKey(), true));
-			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(IdentityCourseElementCols.username, select));
-		}
-		
+
 		int colIndex = AssessmentToolConstants.USER_PROPS_OFFSET;
 		for (int i = 0; i < userPropertyHandlers.size(); i++) {
 			UserPropertyHandler userPropertyHandler	= userPropertyHandlers.get(i);
@@ -364,7 +367,7 @@ public class IdentityListCourseNodeController extends FormBasicController
 	}
 	
 	protected String getTableId() {
-		return "assessment-tool-identity-list";
+		return "assessment-tool-identity-list-v2";
 	}
 	
 	protected void initAssessmentColumns(FlexiTableColumnModel columnsModel, AssessmentConfig assessmentConfig) {
@@ -384,11 +387,14 @@ public class IdentityListCourseNodeController extends FormBasicController
 					if(assessmentConfig.getMaxScore() != null) {
 						columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(IdentityCourseElementCols.max, new ScoreCellRenderer()));
 					}
-					if(assessmentConfig.getCutValue() != null) {
+					if(Mode.none != assessmentConfig.getPassedMode() && assessmentConfig.getCutValue() != null) {
 						columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(false, IdentityCourseElementCols.cut, new ScoreCellRenderer()));
 					}
 				}
 				initScoreColumns(columnsModel);
+			}
+			if(assessmentConfig.isPassedOverridable()) {
+				columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(false, IdentityCourseElementCols.passedOverriden, new PassedOverridenCellRenderer()));
 			}
 			if(Mode.none != assessmentConfig.getPassedMode()) {
 				columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(IdentityCourseElementCols.passed, new PassedCellRenderer()));
@@ -470,7 +476,7 @@ public class IdentityListCourseNodeController extends FormBasicController
 			List<GradingAssignment> assignments = assessmentToolManager.getGradingAssignments(getIdentity(), params, null);
 			assessmentEntriesKeysToGraders = assignments.stream()
 					.collect(Collectors.toMap(assignment -> assignment.getAssessmentEntry().getKey(),
-							assignment -> userManager.getUserDisplayName(assignment.getGrader().getIdentity())));
+							assignment -> userManager.getUserDisplayName(assignment.getGrader().getIdentity()), (u, v) -> u));
 		}
 
 		List<AssessedIdentityElementRow> rows = new ArrayList<>(assessedIdentities.size());
@@ -478,8 +484,10 @@ public class IdentityListCourseNodeController extends FormBasicController
 			AssessmentEntry entry = entryMap.get(assessedIdentity.getKey());
 			
 			String grader = null;
+			TimeElement currentStart = new TimeElement("current-start-" + (++counter), getLocale());
 			CompletionItem currentCompletion = new CompletionItem("current-completion-" + (++counter), getLocale());
 			if(entry != null) {
+				currentStart.setDate(entry.getCurrentRunStartDate());
 				currentCompletion.setCompletion(entry.getCurrentRunCompletion());
 				AssessmentRunStatus status = entry.getCurrentRunStatus();
 				currentCompletion.setEnded(status != null && AssessmentRunStatus.done.equals(status));
@@ -490,7 +498,7 @@ public class IdentityListCourseNodeController extends FormBasicController
 			toolsLink.setIconLeftCSS("o_icon o_icon_actions o_icon-lg");
 		
 			AssessedIdentityElementRow row = new AssessedIdentityElementRow(assessedIdentity, entry, grader,
-					currentCompletion, toolsLink, userPropertyHandlers, getLocale());
+					currentStart, currentCompletion, toolsLink, userPropertyHandlers, getLocale());
 			toolsLink.setUserObject(row);
 			rows.add(row);
 		}
@@ -593,6 +601,9 @@ public class IdentityListCourseNodeController extends FormBasicController
 
 	@Override
 	protected void doDispose() {
+		if(stackPanel != null) {
+			stackPanel.removeListener(this);
+		}
 		coordinatorManager.getCoordinator().getEventBus()
 			.deregisterFor(this, courseEntry.getOlatResource());
 	}
@@ -602,7 +613,7 @@ public class IdentityListCourseNodeController extends FormBasicController
 		if(event instanceof CompletionEvent) {
 			CompletionEvent ce = (CompletionEvent)event;
 			if(courseNode.getIdent().equals(ce.getSubIdent())) {
-				doUpdateCompletion(ce.getCompletion(), ce.getStatus(), ce.getIdentityKey());
+				doUpdateCompletion(ce.getStart(), ce.getCompletion(), ce.getStatus(), ce.getIdentityKey());
 			}
 		}
 	}
@@ -625,7 +636,7 @@ public class IdentityListCourseNodeController extends FormBasicController
 		}
 		loadModel(ureq);
 		
-		if(entries != null && entries.size() > 0) {
+		if(entries != null && !entries.isEmpty()) {
 			ContextEntry entry = entries.get(0);
 			String resourceType = entry.getOLATResourceable().getResourceableTypeName();
 			if("Identity".equals(resourceType)) {
@@ -816,12 +827,42 @@ public class IdentityListCourseNodeController extends FormBasicController
 	
 	private void doSelect(UserRequest ureq, Identity assessedIdentity) {
 		List<AssessedIdentityElementRow> rows = usersTableModel.getObjects();
+		AssessedIdentityElementRow selectedRow = null;
 		for(AssessedIdentityElementRow row:rows) {
 			if(assessedIdentity.getKey().equals(row.getIdentityKey())) {
-				doSelect(ureq, row);
+				selectedRow = row;
 				break;
 			}
 		}
+		
+		if(selectedRow != null && !isAssessedIdentityLocked(ureq, assessedIdentity)) {
+			doSelect(ureq, selectedRow);
+		}
+	}
+	
+	/**
+	 * Preventive check if the identity is already locked by an other
+	 * user and show a warning message if needed.
+	 *  
+	 * @param ureq The user request
+	 * @param assessedIdentity The identity to assess
+	 * @return
+	 */
+	private boolean isAssessedIdentityLocked(UserRequest ureq, Identity assessedIdentity) {
+		if(courseNode.getParent() == null) return false;
+
+		ICourse course = CourseFactory.loadCourse(courseEntry);
+		String locksubkey = AssessmentIdentityCourseNodeController.lockKey(courseNode, assessedIdentity);
+		if(CoordinatorManager.getInstance().getCoordinator().getLocker().isLocked(course, locksubkey)) {
+			LockEntry lock = CoordinatorManager.getInstance().getCoordinator().getLocker().getLockEntry(course, locksubkey);
+			if(lock != null && lock.getOwner() != null && !lock.getOwner().equals(getIdentity())) {
+				String msg = DialogBoxUIFactory.getLockedMessage(ureq, lock, "assessmentLock", getTranslator());
+				getWindowControl().setWarning(msg);
+				return true;
+			}
+		}
+		
+		return false;
 	}
 	
 	private Controller doSelect(UserRequest ureq, AssessedIdentityElementRow row) {
@@ -920,10 +961,12 @@ public class IdentityListCourseNodeController extends FormBasicController
 
 			ScoreEvaluation scoreEval = courseAssessmentService.getAssessmentEvaluation(courseNode, assessedUserCourseEnv);
 			ScoreEvaluation doneEval = new ScoreEvaluation(scoreEval.getScore(), scoreEval.getPassed(),
-					scoreEval.getAssessmentStatus(), visibility, scoreEval.getCurrentRunCompletion(),
+					scoreEval.getAssessmentStatus(), visibility,
+					scoreEval.getCurrentRunStartDate(), scoreEval.getCurrentRunCompletion(),
 					scoreEval.getCurrentRunStatus(), scoreEval.getAssessmentID());
 			courseAssessmentService.updateScoreEvaluation(courseNode, doneEval, assessedUserCourseEnv, getIdentity(),
 					false, Role.coach);
+			dbInstance.commitAndCloseSession();
 		}
 		loadModel(ureq);
 	}
@@ -944,39 +987,40 @@ public class IdentityListCourseNodeController extends FormBasicController
 			ICourse course = CourseFactory.loadCourse(courseEntry);
 			for(AssessedIdentityElementRow row:rows) {
 				Identity assessedIdentity = securityManager.loadIdentityByKey(row.getIdentityKey());
-				doSetDone(assessedIdentity, courseNode, course);
+				doSetStatus(assessedIdentity, AssessmentEntryStatus.done, courseNode, course);
+				dbInstance.commitAndCloseSession();
 			}
 			loadModel(ureq);
 		}
 	}
 	
-	protected void doSetDone(Identity assessedIdentity, CourseNode courseNode, ICourse course) {
+	protected void doSetStatus(Identity assessedIdentity, AssessmentEntryStatus status, CourseNode cNode, ICourse course) {
 		Roles roles = securityManager.getRoles(assessedIdentity);
 		
 		IdentityEnvironment identityEnv = new IdentityEnvironment(assessedIdentity, roles);
 		UserCourseEnvironment assessedUserCourseEnv = new UserCourseEnvironmentImpl(identityEnv, course.getCourseEnvironment(), coachCourseEnv.isCourseReadOnly());
 		assessedUserCourseEnv.getScoreAccounting().evaluateAll();
 
-		ScoreEvaluation scoreEval = courseAssessmentService.getAssessmentEvaluation(courseNode, assessedUserCourseEnv);
+		ScoreEvaluation scoreEval = courseAssessmentService.getAssessmentEvaluation(cNode, assessedUserCourseEnv);
 		ScoreEvaluation doneEval = new ScoreEvaluation(scoreEval.getScore(), scoreEval.getPassed(),
-				AssessmentEntryStatus.done, null, scoreEval.getCurrentRunCompletion(),
+				status, null, scoreEval.getCurrentRunStartDate(), scoreEval.getCurrentRunCompletion(),
 				scoreEval.getCurrentRunStatus(), scoreEval.getAssessmentID());
-		courseAssessmentService.updateScoreEvaluation(courseNode, doneEval, assessedUserCourseEnv,
+		courseAssessmentService.updateScoreEvaluation(cNode, doneEval, assessedUserCourseEnv,
 				getIdentity(), false, Role.coach);
-		
 	}
 	
-	private void doUpdateCompletion(Double completion, AssessmentRunStatus status, Long assessedIdentityKey) {
+	private void doUpdateCompletion(Date start, Double completion, AssessmentRunStatus status, Long assessedIdentityKey) {
 		List<AssessedIdentityElementRow> rows = usersTableModel.getObjects();
 		for(AssessedIdentityElementRow row:rows) {
 			if(assessedIdentityKey.equals(row.getIdentityKey())) {
-				doUpdateCompletion(completion, status, row);
+				doUpdateCompletion(start, completion, status, row);
 				break;
 			}
 		}
 	}
 	
-	private void doUpdateCompletion(Double completion, AssessmentRunStatus status, AssessedIdentityElementRow row) {
+	private void doUpdateCompletion(Date start, Double completion, AssessmentRunStatus status, AssessedIdentityElementRow row) {
+		row.getCurrentRunStart().setDate(start);
 		row.getCurrentCompletion().setCompletion(completion);
 		boolean endedRow = row.getCurrentCompletion().isEnded();
 		boolean endedEvent = status != null && AssessmentRunStatus.done.equals(status);

@@ -61,8 +61,6 @@ import org.olat.core.gui.media.MediaResource;
 import org.olat.core.gui.media.NotFoundMediaResource;
 import org.olat.core.id.Identity;
 import org.olat.core.id.OLATResourceable;
-import org.olat.core.id.User;
-import org.olat.core.id.UserConstants;
 import org.olat.core.id.context.ContextEntry;
 import org.olat.core.logging.activity.CourseLoggingAction;
 import org.olat.core.logging.activity.OlatResourceableType;
@@ -126,6 +124,8 @@ public class InfoDisplayController extends FormBasicController {
 	private LockResult lockEntry;
 	private MailFormatter sendMailFormatter;
 	private List<SendMailOption> sendMailOptions = new ArrayList<>();
+	private List<SendMailOption> groupsMailOptions = new ArrayList<>();
+	private List<SendMailOption> curriculaMailOptions = new ArrayList<>();
 	
 	public InfoDisplayController(UserRequest ureq, WindowControl wControl, InfoSecurityCallback secCallback,
 			BusinessGroup businessGroup, String resSubPath, String businessPath) {
@@ -165,6 +165,8 @@ public class InfoDisplayController extends FormBasicController {
 			after = afterConfig = cal.getTime();
 		}
 		
+		
+		
 		initForm(ureq);
 		
 		// OLAT-6302 when a specific message is shown display the page that
@@ -193,6 +195,22 @@ public class InfoDisplayController extends FormBasicController {
 	
 	public void addSendMailOptions(SendMailOption sendMailOption) {
 		sendMailOptions.add(sendMailOption);
+	}
+	
+	public List<SendMailOption> getGroupMailOptions() {
+		return groupsMailOptions;
+	}
+	
+	public void addGroupMailOption(SendMailOption sendMailOption) {
+		groupsMailOptions.add(sendMailOption);
+	}
+	
+	public List<SendMailOption> getCurriculaSendOptions() {
+		return curriculaMailOptions;
+	}
+	
+	public void addCurriuclaMailOptions(SendMailOption sendMailOption) {
+		curriculaMailOptions.add(sendMailOption);
 	}
 	
 	public MailFormatter getSendMailFormatter() {
@@ -375,7 +393,8 @@ public class InfoDisplayController extends FormBasicController {
 	protected void formInnerEvent(UserRequest ureq, FormItem source, FormEvent event) {
 		if(source == newInfoLink) {
 			InfoMessage msg = infoMessageManager.createInfoMessage(ores, resSubPath, businessPath, getIdentity());
-			start = new CreateInfoStep(ureq, sendMailOptions, msg);
+			
+			start = new CreateInfoStep(ureq, sendMailOptions, groupsMailOptions, curriculaMailOptions, msg);
 			newInfoWizard = new StepsMainRunController(ureq, getWindowControl(), start, new FinishedCallback(),
 					new CancelCallback(), translate("create_message"), "o_sel_info_messages_create_wizard");
 			listenTo(newInfoWizard);
@@ -406,7 +425,7 @@ public class InfoDisplayController extends FormBasicController {
 	
 	protected void popupDelete(UserRequest ureq, InfoMessage msg) {
 		OLATResourceable mres = OresHelper.createOLATResourceableInstance(InfoMessage.class, msg.getKey());
-		lockEntry = CoordinatorManager.getInstance().getCoordinator().getLocker().acquireLock(mres, ureq.getIdentity(), "");
+		lockEntry = CoordinatorManager.getInstance().getCoordinator().getLocker().acquireLock(mres, ureq.getIdentity(), "", getWindow());
 		if(lockEntry.isSuccess()) {
 			//locked -> reload the message
 			msg = infoMessageManager.loadInfoMessage(msg.getKey());
@@ -422,15 +441,13 @@ public class InfoDisplayController extends FormBasicController {
 				confirmDelete.setUserObject(msg);
 			}
 		} else {
-			User user = lockEntry.getOwner().getUser();
-			String name = user.getProperty(UserConstants.FIRSTNAME, null) + " " + user.getProperty(UserConstants.LASTNAME, null);
-			showWarning("already.edited", name);
+			showLockError();
 		}
 	}
 	
 	protected void popupEdit(UserRequest ureq, InfoMessage msg) {
 		OLATResourceable mres = OresHelper.createOLATResourceableInstance(InfoMessage.class, msg.getKey());
-		lockEntry = CoordinatorManager.getInstance().getCoordinator().getLocker().acquireLock(mres, ureq.getIdentity(), "");
+		lockEntry = CoordinatorManager.getInstance().getCoordinator().getLocker().acquireLock(mres, ureq.getIdentity(), "", getWindow());
 		if(lockEntry.isSuccess()) {
 			msg = infoMessageManager.loadInfoMessage(msg.getKey());
 			if(msg == null) {
@@ -449,8 +466,15 @@ public class InfoDisplayController extends FormBasicController {
 				listenTo(editDialogBox);
 			}
 		} else {
-			User user = lockEntry.getOwner().getUser();
-			String name = user.getProperty(UserConstants.FIRSTNAME, null) + " " + user.getProperty(UserConstants.LASTNAME, null);
+			showLockError();
+		}
+	}
+	
+	private void showLockError() {
+		String name = userManager.getUserDisplayName(lockEntry.getOwner());
+		if(lockEntry.isDifferentWindows()) {
+			showWarning("already.edited.same.user", name);
+		} else {
 			showWarning("already.edited", name);
 		}
 	}
@@ -463,11 +487,27 @@ public class InfoDisplayController extends FormBasicController {
 			@SuppressWarnings("unchecked")
 			Set<String> selectedOptions = (Set<String>)runContext.get(WizardConstants.SEND_MAIL);
 			@SuppressWarnings("unchecked")
+			Set<String> selectedGroupOptions = (Set<String>)runContext.get(WizardConstants.SEND_GROUPS);
+			@SuppressWarnings("unchecked")
+			Set<String> selectedCurriculumOptions = (Set<String>)runContext.get(WizardConstants.SEND_CURRICULA);
+			@SuppressWarnings("unchecked")
 			Collection<String> pathToDelete = (Set<String>)runContext.get(WizardConstants.PATH_TO_DELETE);
 
 			List<Identity> identities = new ArrayList<>();
-			for(SendMailOption option:sendMailOptions) {
-				if(selectedOptions != null && selectedOptions.contains(option.getOptionKey())) {
+			for (SendMailOption option : sendMailOptions) {
+				if (selectedOptions != null && selectedOptions.contains(option.getOptionKey())) {
+					identities.addAll(option.getSelectedIdentities());
+				}
+			}
+			
+			for (SendMailOption option : groupsMailOptions) {
+				if (selectedGroupOptions != null && selectedGroupOptions.contains(option.getOptionKey())) {
+					identities.addAll(option.getSelectedIdentities());
+				}
+			}
+			
+			for (SendMailOption option : curriculaMailOptions) {
+				if (selectedCurriculumOptions != null && selectedCurriculumOptions.contains(option.getOptionKey())) {
 					identities.addAll(option.getSelectedIdentities());
 				}
 			}

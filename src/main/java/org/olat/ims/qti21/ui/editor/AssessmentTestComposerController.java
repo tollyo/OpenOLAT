@@ -20,6 +20,7 @@
 package org.olat.ims.qti21.ui.editor;
 
 import java.io.File;
+import java.io.FileFilter;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -67,7 +68,6 @@ import org.olat.core.gui.control.generic.modal.DialogBoxUIFactory;
 import org.olat.core.gui.control.generic.wizard.Step;
 import org.olat.core.gui.control.generic.wizard.StepRunnerCallback;
 import org.olat.core.gui.control.generic.wizard.StepsMainRunController;
-import org.olat.core.gui.control.generic.wizard.StepsRunContext;
 import org.olat.core.gui.media.MediaResource;
 import org.olat.core.helpers.Settings;
 import org.olat.core.id.Roles;
@@ -75,7 +75,10 @@ import org.olat.core.id.context.BusinessControlFactory;
 import org.olat.core.id.context.ContextEntry;
 import org.olat.core.logging.AssertException;
 import org.olat.core.logging.activity.ThreadLocalUserActivityLogger;
+import org.olat.core.util.CodeHelper;
+import org.olat.core.util.FileUtils;
 import org.olat.core.util.Formatter;
+import org.olat.core.util.StringHelper;
 import org.olat.core.util.Util;
 import org.olat.core.util.coordinate.CoordinatorManager;
 import org.olat.core.util.coordinate.LockResult;
@@ -106,6 +109,7 @@ import org.olat.ims.qti21.model.xml.interactions.HottextAssessmentItemBuilder;
 import org.olat.ims.qti21.model.xml.interactions.KPrimAssessmentItemBuilder;
 import org.olat.ims.qti21.model.xml.interactions.MatchAssessmentItemBuilder;
 import org.olat.ims.qti21.model.xml.interactions.MultipleChoiceAssessmentItemBuilder;
+import org.olat.ims.qti21.model.xml.interactions.OrderAssessmentItemBuilder;
 import org.olat.ims.qti21.model.xml.interactions.SingleChoiceAssessmentItemBuilder;
 import org.olat.ims.qti21.model.xml.interactions.UploadAssessmentItemBuilder;
 import org.olat.ims.qti21.pool.QTI21QPoolServiceProvider;
@@ -166,7 +170,7 @@ public class AssessmentTestComposerController extends MainLayoutBasicController 
 	private Dropdown exportItemTools, addItemTools, changeItemTools;
 	private Link newTestPartLink, newSectionLink, newSingleChoiceLink, newMultipleChoiceLink,
 			newKPrimLink, newMatchLink, newMatchDragAndDropLink, newMatchTrueFalseLink,
-			newFIBLink, newNumericalLink, newHotspotLink, newHottextLink,
+			newFIBLink, newNumericalLink, newHotspotLink, newHottextLink, newOrderLink,
 			newEssayLink, newUploadLink, newDrawingLink;
 	private Link importFromPoolLink, importFromTableLink, exportToPoolLink, exportToDocxLink;
 	private Link reloadInCacheLink, deleteLink, copyLink;
@@ -190,15 +194,12 @@ public class AssessmentTestComposerController extends MainLayoutBasicController 
 	private ResolvedAssessmentTest resolvedAssessmentTest;
 	private AssessmentTestBuilder assessmentTestBuilder;
 	
-	private final boolean survey = false;
 	private final boolean restrictedEdit;
 	
 	private boolean assessmentChanged = false;
 	private boolean deleteAuthorSesssion = false;
 	
 	private LockResult lockEntry;
-	private LockResult activeSessionLock;
-	private CountDownLatch exportLatch;
 	
 	@Autowired
 	private QTI21Service qtiService;
@@ -219,14 +220,11 @@ public class AssessmentTestComposerController extends MainLayoutBasicController 
 		unzippedDirRoot = frm.unzipFileResource(testEntry.getOlatResource());
 		unzippedContRoot = frm.unzipContainerResource(testEntry.getOlatResource());
 		
-		lockEntry = CoordinatorManager.getInstance().getCoordinator().getLocker().aquirePersistentLock(testEntry.getOlatResource(), getIdentity(), null);
-		if (lockEntry.isSuccess()) {
-			// acquired a lock for the duration of the session only
-			//fileResource has the RepositoryEntre.getOlatResource within, which is used in qtiPackage
-			activeSessionLock = CoordinatorManager.getInstance().getCoordinator().getLocker().acquireLock(testEntry.getOlatResource(), getIdentity(), null);
-		} else {
+		lockEntry = CoordinatorManager.getInstance().getCoordinator().getLocker().acquireLock(testEntry.getOlatResource(), getIdentity(), null, getWindow());
+		if (!lockEntry.isSuccess()) {
 			String fullName = userManager.getUserDisplayName(lockEntry.getOwner());
-			String msg = translate("error.lock", new String[] { fullName, Formatter.formatDatetime(new Date(lockEntry.getLockAquiredTime())) });
+			String i18nMsg = lockEntry.isDifferentWindows() ? "error.lock.same.user" : "error.lock";
+			String msg = translate(i18nMsg, new String[] { fullName, Formatter.formatDatetime(new Date(lockEntry.getLockAquiredTime())) });
 			wControl.setWarning(msg);
 			MessageController contentCtr = MessageUIFactory.createInfoMessage(ureq, getWindowControl(), translate("error.lock.title"), msg);
 			listenTo(contentCtr);
@@ -308,6 +306,9 @@ public class AssessmentTestComposerController extends MainLayoutBasicController 
 		newHotspotLink = LinkFactory.createToolLink("new.hotspot", translate("new.hotspot"), this, "o_mi_qtihotspot");
 		newHotspotLink.setDomReplacementWrapperRequired(false);
 		addItemTools.addComponent(newHotspotLink);
+		newOrderLink = LinkFactory.createToolLink("new.order", translate("new.order"), this, "o_mi_qtiorder");
+		newOrderLink.setDomReplacementWrapperRequired(false);
+		addItemTools.addComponent(newOrderLink);
 		
 		newEssayLink = LinkFactory.createToolLink("new.essay", translate("new.essay"), this, "o_mi_qtiessay");
 		newEssayLink.setDomReplacementWrapperRequired(false);
@@ -413,13 +414,10 @@ public class AssessmentTestComposerController extends MainLayoutBasicController 
 	protected void doDispose() {
 		if (lockEntry != null && lockEntry.isSuccess()) {
 			try {
-				CoordinatorManager.getInstance().getCoordinator().getLocker().releasePersistentLock(lockEntry);
+				CoordinatorManager.getInstance().getCoordinator().getLocker().releaseLock(lockEntry);
 			} catch (AssertException e) {
 				logWarn("Lock was already released", e);
 			}
-		}
-		if (activeSessionLock != null && activeSessionLock.isSuccess()) {
-			CoordinatorManager.getInstance().getCoordinator().getLocker().releaseLock(activeSessionLock);			
 		}
 	}
 	
@@ -562,6 +560,8 @@ public class AssessmentTestComposerController extends MainLayoutBasicController 
 			doNewAssessmentItem(ureq, menuTree.getSelectedNode(), new HotspotAssessmentItemBuilder(translate("new.hotspot"), qtiService.qtiSerializer()));
 		} else if(newHottextLink == source) {
 			doNewAssessmentItem(ureq, menuTree.getSelectedNode(), new HottextAssessmentItemBuilder(translate("new.hottext"), translate("new.hottext.start"), translate("new.hottext.text"), qtiService.qtiSerializer()));
+		} else if(newOrderLink == source) {
+			doNewAssessmentItem(ureq, menuTree.getSelectedNode(), new OrderAssessmentItemBuilder(translate("new.order"), translate("new.answer"), qtiService.qtiSerializer()));
 		} else if(newEssayLink == source) {
 			doNewAssessmentItem(ureq, menuTree.getSelectedNode(), new EssayAssessmentItemBuilder(translate("new.essay"), qtiService.qtiSerializer()));
 		} else if(newUploadLink == source) {
@@ -780,7 +780,7 @@ public class AssessmentTestComposerController extends MainLayoutBasicController 
 	}
 	
 	private void doExportDocx(UserRequest ureq) {
-		exportLatch = new CountDownLatch(1);
+		CountDownLatch exportLatch = new CountDownLatch(1);
 		MediaResource mr = new QTI21WordExport(resolvedAssessmentTest, unzippedContRoot, unzippedDirRoot, getLocale(), "UTF-8", exportLatch);
 		ureq.getDispatchResult().setResultingMediaResource(mr);
 	}
@@ -790,14 +790,11 @@ public class AssessmentTestComposerController extends MainLayoutBasicController 
 
 		final AssessmentItemsPackage importPackage = new AssessmentItemsPackage();
 		final ImportOptions options = new ImportOptions();
-		options.setShuffle(!survey);
+		options.setShuffle(true);
 		Step start = new QImport_1_InputStep(ureq, importPackage, options, null);
-		StepRunnerCallback finish = new StepRunnerCallback() {
-			@Override
-			public Step execute(UserRequest uureq, WindowControl wControl, StepsRunContext runContext) {
-				runContext.put("importPackage", importPackage);
-				return StepsMainRunController.DONE_MODIFIED;
-			}
+		StepRunnerCallback finish = (uureq, wControl, runContext) -> {
+			runContext.put("importPackage", importPackage);
+			return StepsMainRunController.DONE_MODIFIED;
 		};
 		
 		importTableWizard = new StepsMainRunController(ureq, getWindowControl(), start, finish, null,
@@ -821,9 +818,13 @@ public class AssessmentTestComposerController extends MainLayoutBasicController 
 			AssessmentSection section = (AssessmentSection)sectionNode.getUserObject();
 			for(QuestionItemView item:items) {
 				QuestionItemFull qItem = qti21QPoolServiceProvider.getFullQuestionItem(item);
-				AssessmentItem assessmentItem = qti21QPoolServiceProvider.exportToQTIEditor(qItem, getLocale(), unzippedDirRoot);
+				String container =  qItem.getKey().toString();
+				File questionContainer = new File(unzippedDirRoot, container);
+				questionContainer.mkdir();
+				
+				AssessmentItem assessmentItem = qti21QPoolServiceProvider.exportToQTIEditor(qItem, getLocale(), questionContainer);
 				if(assessmentItem != null) {
-					AssessmentItemRef itemRef = doInsert(section, assessmentItem);
+					AssessmentItemRef itemRef = doInsert(section, container, assessmentItem);
 					if(firstItemId == null) {
 						firstItemId = itemRef.getIdentifier().toString();
 					}
@@ -881,7 +882,7 @@ public class AssessmentTestComposerController extends MainLayoutBasicController 
 				
 				AssessmentItemBuilder itemBuilder = itemAndMetadata.getItemBuilder();
 				AssessmentItem assessmentItem = itemBuilder.getAssessmentItem();
-				AssessmentItemRef itemRef = doInsert(section, assessmentItem);
+				AssessmentItemRef itemRef = doInsert(section, null, assessmentItem);
 				ManifestMetadataBuilder metadata = manifestBuilder.getResourceBuilderByHref(itemRef.getHref().toString());
 				metadata.setQtiMetadataInteractionTypes(itemBuilder.getInteractionNames());
 				itemAndMetadata.toBuilder(metadata, getLocale());
@@ -911,13 +912,20 @@ public class AssessmentTestComposerController extends MainLayoutBasicController 
 		}
 	}
 	
-	private AssessmentItemRef doInsert(AssessmentSection section, AssessmentItem assessmentItem)
+	private AssessmentItemRef doInsert(AssessmentSection section, String container, AssessmentItem assessmentItem)
 	throws URISyntaxException {
 		AssessmentItemRef itemRef = new AssessmentItemRef(section);
 		String itemId = assessmentItem.getIdentifier();
 		itemRef.setIdentifier(Identifier.parseString(itemId));
-		File itemFile = new File(unzippedDirRoot, itemId + ".xml");
-		itemRef.setHref(new URI(itemFile.getName()));
+		
+		String itemFilename;
+		if(StringHelper.containsNonWhitespace(container)) {
+			itemFilename = container + "/" + itemId + ".xml";
+		} else {
+			itemFilename = itemId + ".xml";
+		}
+		File itemFile = new File(unzippedDirRoot, itemFilename);
+		itemRef.setHref(new URI(itemFilename));
 		section.getSectionParts().add(itemRef);
 		
 		qtiService.persistAssessmentObject(itemFile, assessmentItem);
@@ -926,7 +934,7 @@ public class AssessmentTestComposerController extends MainLayoutBasicController 
 		File testFile = new File(testUri);
 		qtiService.updateAssesmentObject(testFile, resolvedAssessmentTest);
 
-		manifestBuilder.appendAssessmentItem(itemFile.getName());
+		manifestBuilder.appendAssessmentItem(itemFilename);
 		doSaveManifest();
 		return itemRef;
 	}
@@ -956,6 +964,7 @@ public class AssessmentTestComposerController extends MainLayoutBasicController 
 		String identifier = metadata.getOpenOLATMetadataIdentifier();
 		metadata.setOpenOLATMetadataMasterIdentifier(identifier);
 		metadata.setOpenOLATMetadataIdentifier(UUID.randomUUID().toString());
+		metadata.setOpenOLATMetadataCreator(getCreator());
 		doSaveManifest();
 
 		// reselect the node (--force)
@@ -964,6 +973,20 @@ public class AssessmentTestComposerController extends MainLayoutBasicController 
 		menuTree.setSelectedNode(newItemNode);
 		menuTree.open(newItemNode);
 		return doReloadItem(ureq);
+	}
+	
+	private String getCreator() {
+		StringBuilder sb = new StringBuilder();
+		String firstName = getIdentity().getUser().getFirstName();
+		if(StringHelper.containsNonWhitespace(firstName)) {
+			sb.append(firstName);
+		}
+		String lastName = getIdentity().getUser().getFirstName();
+		if(StringHelper.containsNonWhitespace(lastName)) {
+			if(StringHelper.containsNonWhitespace(firstName)) sb.append(" ");
+			sb.append(lastName);
+		}
+		return sb.toString();
 	}
 	
 	private TreeNode doReloadItem(UserRequest ureq) {
@@ -1264,7 +1287,8 @@ public class AssessmentTestComposerController extends MainLayoutBasicController 
 			URI testURI = resolvedAssessmentTest.getTestLookup().getSystemId();
 			File testFile = new File(testURI);
 			TestPart uniqueTestPart = test.getTestParts().size() == 1 ? test.getTestParts().get(0) : null;
-			currentEditorCtrl = new AssessmentTestEditorController(ureq, getWindowControl(), assessmentTestBuilder, uniqueTestPart,
+			currentEditorCtrl = new AssessmentTestEditorController(ureq, getWindowControl(), testEntry,
+					assessmentTestBuilder, resolvedAssessmentTest, uniqueTestPart,
 					unzippedDirRoot, unzippedContRoot, testFile, restrictedEdit);
 		} else if(uobject instanceof TestPart) {
 			currentEditorCtrl = new AssessmentTestPartEditorController(ureq, getWindowControl(), (TestPart)uobject,
@@ -1329,14 +1353,34 @@ public class AssessmentTestComposerController extends MainLayoutBasicController 
 			return;
 		}
 		QTI21QuestionType type = QTI21QuestionType.getType(originalAssessmentItem);
+		
+		String containerToCopy = getItemContainer(itemRefToCopy.getHref());
+		String container = null;
+		if(containerToCopy != null) {
+			File containerToCopyDir = new File(unzippedDirRoot, containerToCopy);
+			if(containerToCopyDir.exists()) {
+				container = generateContainerName(containerToCopy);
+				File containerDir = new File(unzippedDirRoot, container);
+				containerDir.mkdir();
+				FileUtils.copyDirContentsToDir(containerToCopyDir, containerDir, false, new XMLFileFilter(), "Copy question materials");
+			}
+		}
 
 		File itemFile = null;
 		try {
 			AssessmentItemRef itemRef = new AssessmentItemRef(section);
 			String itemId = IdentifierGenerator.newAsString(getTypePrefix(type));
 			itemRef.setIdentifier(Identifier.parseString(itemId));
-			itemFile = new File(unzippedDirRoot, itemId + ".xml");
-			itemRef.setHref(new URI(itemFile.getName()));
+			
+			String itemFilename;
+			if(container == null) {
+				itemFilename = itemId + ".xml";
+			} else {
+				itemFilename = container + "/" + itemId + ".xml";
+			}
+
+			itemFile = new File(unzippedDirRoot, itemFilename);
+			itemRef.setHref(new URI(itemFilename));
 
 			try(OutputStream out = new FileOutputStream(itemFile)) {
 				//make the copy
@@ -1354,7 +1398,7 @@ public class AssessmentTestComposerController extends MainLayoutBasicController 
 				
 				Map<AssessmentItemRef, AssessmentItem> flyingObjects = Collections.singletonMap(itemRef, copiedAssessmentItem);
 				doSaveAssessmentTest(ureq, flyingObjects);
-				manifestBuilder.appendAssessmentItem(itemFile.getName());
+				manifestBuilder.appendAssessmentItem(itemFilename);
 				doSaveManifest();
 			} catch (Exception e) {
 				logError("", e);
@@ -1369,6 +1413,28 @@ public class AssessmentTestComposerController extends MainLayoutBasicController 
 		} catch (URISyntaxException e) {
 			logError("", e);
 		}
+	}
+	
+	private String generateContainerName(String original) {
+		String container = original + "_c";
+		for(int i=1; i<1000; i++) {
+			String containerName = container + i;
+			if(!new File(unzippedDirRoot, containerName).exists()) {
+				return containerName;
+			}	
+		}
+		return CodeHelper.getUniqueID();
+	}
+	
+	private String getItemContainer(URI itemUri) {
+		String itemUriString = itemUri.toString();
+		File file = new File(unzippedDirRoot, itemUriString);
+		if(file.getParentFile().equals(unzippedDirRoot)) {
+			return null;
+		}
+		
+		String itemFilename = file.getName();
+		return itemUriString.substring(0, itemUriString.length() - itemFilename.length() - 1);
 	}
 	
 	private String getTypePrefix(QTI21QuestionType type) {
@@ -1557,5 +1623,20 @@ public class AssessmentTestComposerController extends MainLayoutBasicController 
 	private ManifestMetadataBuilder getMetadataBuilder(AssessmentItemRef itemRef) {
 		ResourceType resource = getResourceType(itemRef);
 		return manifestBuilder.getMetadataBuilder(resource, true);
+	}
+	
+	/**
+	 * Exclude file with XML extension.
+	 * 
+	 * Initial date: 23 juil. 2020<br>
+	 * @author srosse, stephane.rosse@frentix.com, http://www.frentix.com
+	 *
+	 */
+	private static class XMLFileFilter implements FileFilter {
+		@Override
+		public boolean accept(File pathname) {
+			String filename = pathname.getName().toLowerCase();
+			return !filename.endsWith(".xml");
+		}
 	}
 }

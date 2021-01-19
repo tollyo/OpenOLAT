@@ -46,11 +46,13 @@ public class UpdateIdentity implements Identity {
 	
 	private final String password;
 	private final String language;
+	private final Date expirationDate;
 	
-	public UpdateIdentity(Identity identity, String password, String language) {
+	public UpdateIdentity(Identity identity, String password, String language, Date expirationDate) {
 		this.identity = identity;
 		this.password = password;
 		this.language = language;
+		this.expirationDate = expirationDate;
 		this.userWrapper = new UpdateUser(identity.getUser());
 	}
 	
@@ -119,6 +121,21 @@ public class UpdateIdentity implements Identity {
 	}
 	
 	@Override
+	public Date getInactivationDate() {
+		return identity.getInactivationDate();
+	}
+
+	@Override
+	public Date getReactivationDate() {
+		return identity.getReactivationDate();
+	}
+	
+	@Override
+	public Date getExpirationDate() {
+		return expirationDate;
+	}
+
+	@Override
 	public int hashCode() {
 		return identity.hashCode();
 	}
@@ -161,6 +178,11 @@ public class UpdateIdentity implements Identity {
 		@Override
 		public String getLastName() {
 			return updatedProperties.get(UserConstants.LASTNAME);
+		}
+
+		@Override
+		public String getNickName() {
+			return updatedProperties.get(UserConstants.NICKNAME);
 		}
 
 		@Override

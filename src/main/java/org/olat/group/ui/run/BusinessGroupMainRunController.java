@@ -85,12 +85,15 @@ import org.olat.instantMessaging.CloseInstantMessagingEvent;
 import org.olat.instantMessaging.InstantMessagingModule;
 import org.olat.instantMessaging.InstantMessagingService;
 import org.olat.modules.adobeconnect.AdobeConnectModule;
+import org.olat.modules.bigbluebutton.BigBlueButtonModule;
+import org.olat.modules.bigbluebutton.ui.BigBlueButtonRunController;
 import org.olat.modules.co.ContactFormController;
 import org.olat.modules.openmeetings.OpenMeetingsModule;
 import org.olat.modules.portfolio.PortfolioV2Module;
+import org.olat.modules.teams.TeamsModule;
+import org.olat.modules.teams.ui.TeamsMeetingsRunController;
 import org.olat.modules.wiki.WikiManager;
 import org.olat.modules.wiki.WikiModule;
-import org.olat.portfolio.PortfolioModule;
 import org.olat.resource.OLATResource;
 import org.olat.resource.accesscontrol.ACService;
 import org.olat.resource.accesscontrol.AccessControlModule;
@@ -129,8 +132,10 @@ public class BusinessGroupMainRunController extends MainLayoutBasicController im
 	public static final OLATResourceable ORES_TOOLRESOURCES = OresHelper.createOLATResourceableType("toolresources");
 	public static final OLATResourceable ORES_TOOLPORTFOLIO = OresHelper.createOLATResourceableType("toolportfolio");
 	public static final OLATResourceable ORES_TOOLBOOKING = OresHelper.createOLATResourceableType("toolbooking");
+	public static final OLATResourceable ORES_TOOLTEAMS = OresHelper.createOLATResourceableType("toolteams");
 	public static final OLATResourceable ORES_TOOLOPENMEETINGS = OresHelper.createOLATResourceableType("toolopenmeetings");
 	public static final OLATResourceable ORES_TOOLADOBECONNECT = OresHelper.createOLATResourceableType("tooladobeconnect");
+	public static final OLATResourceable ORES_TOOLBIGBLUEBUTTON = OresHelper.createOLATResourceableType("toolbigbluebutton");
 	public static final OLATResourceable ORES_TOOLWIKI = OresHelper.createOLATResourceableType(WikiManager.WIKI_RESOURCE_FOLDER_NAME);
 
 	// activity identifiers are used as menu user objects and for the user
@@ -161,8 +166,12 @@ public class BusinessGroupMainRunController extends MainLayoutBasicController im
 	public static final String ACTIVITY_MENUSELECT_PORTFOLIO = "MENU_SHOW_PORTFOLIO";
 	/* activity identifier: user selected show OPENMEETINGS in menu */
 	public static final String ACTIVITY_MENUSELECT_OPENMEETINGS = "MENU_SHOW_OPENMEETINGS";
-	/* activity identifier: user selected show OPENMEETINGS in menu */
+	/* activity identifier: user selected show Adobe Connect in menu */
 	public static final String ACTIVITY_MENUSELECT_ADOBECONNECT = "MENU_SHOW_ADOBECONNECT";
+	/* activity identifier: user selected show BigBlueButton in menu */
+	public static final String ACTIVITY_MENUSELECT_BIGBLUEBUTTON = "MENU_SHOW_BIGBLUEBUTTON";
+	/* activity identifier: user selected show Teams in menu */
+	public static final String ACTIVITY_MENUSELECT_TEAMS = "MENU_SHOW_TEAMS";
 	/* activity identifier: user selected show access control in menu */
 	/* access control of resources */
 	public static final String ACTIVITY_MENUSELECT_AC = "MENU_SHOW_AC";
@@ -208,7 +217,13 @@ public class BusinessGroupMainRunController extends MainLayoutBasicController im
 	private GenericTreeNode nodePortfolio;
 	private GenericTreeNode nodeOpenMeetings;
 	private GenericTreeNode nodeAdobeConnect;
-	private GenericTreeNode nodeContact, nodeGroupOwners, nodeResources, nodeInformation, nodeAdmin;
+	private GenericTreeNode nodeBigBlueButton;
+	private GenericTreeNode nodeTeams;
+	private GenericTreeNode nodeContact;
+	private GenericTreeNode nodeGroupOwners;
+	private GenericTreeNode nodeResources;
+	private GenericTreeNode nodeInformation;
+	private GenericTreeNode nodeAdmin;
 	private boolean groupRunDisabled;
 	private OLATResourceable assessmentEventOres;
 	private Controller accessController;
@@ -220,17 +235,19 @@ public class BusinessGroupMainRunController extends MainLayoutBasicController im
 	@Autowired
 	private ACService acService;
 	@Autowired
+	private TeamsModule teamsModule;
+	@Autowired
 	private CalendarModule calendarModule;
 	@Autowired
 	private InstantMessagingModule imModule;
-	@Autowired
-	private PortfolioModule portfolioModule;
 	@Autowired
 	private PortfolioV2Module portfolioV2Module;
 	@Autowired
 	private OpenMeetingsModule openMeetingsModule;
 	@Autowired
 	private AdobeConnectModule adobeConnectModule;
+	@Autowired
+	private BigBlueButtonModule bigBlueButtonModule;
 	@Autowired
 	private BusinessGroupService businessGroupService;	
 
@@ -656,6 +673,10 @@ public class BusinessGroupMainRunController extends MainLayoutBasicController im
 			doOpenMeetings(ureq);
 		} else if (ACTIVITY_MENUSELECT_ADOBECONNECT.equals(cmd)) {
 			doAdobeConnect(ureq);
+		} else if(ACTIVITY_MENUSELECT_BIGBLUEBUTTON.equals(cmd)) {
+			doBigBlueButton(ureq);
+		} else if(ACTIVITY_MENUSELECT_TEAMS.equals(cmd)) {
+			doTeams(ureq);
 		} else if (ACTIVITY_MENUSELECT_AC.equals(cmd)) {
 			doAccessControlHistory(ureq);
 		} 
@@ -810,6 +831,38 @@ public class BusinessGroupMainRunController extends MainLayoutBasicController im
 		listenTo(collabToolCtr);
 		mainPanel.setContent(collabToolCtr.getInitialComponent());
 	}
+	
+	private BigBlueButtonRunController doBigBlueButton(UserRequest ureq) {
+		addLoggingResourceable(LoggingResourceable.wrap(ORES_TOOLBIGBLUEBUTTON, OlatResourceableType.bigbluebutton));
+		
+		ContextEntry ce = BusinessControlFactory.getInstance().createContextEntry(ORES_TOOLBIGBLUEBUTTON);
+		WindowControl bwControl = BusinessControlFactory.getInstance().createBusinessWindowControl(ce, getWindowControl());
+		ThreadLocalUserActivityLogger.addLoggingResourceInfo(LoggingResourceable.wrapPortfolioOres(ce.getOLATResourceable()));
+		addToHistory(ureq, bwControl);
+		
+		CollaborationTools collabTools = CollaborationToolsFactory.getInstance().getOrCreateCollaborationTools(businessGroup);
+		BigBlueButtonRunController bigBlueButtonToolCtrl = collabTools.createBigBlueButtonController(ureq, bwControl, businessGroup, isAdmin);
+		collabToolCtr = bigBlueButtonToolCtrl;
+		listenTo(collabToolCtr);
+		mainPanel.setContent(collabToolCtr.getInitialComponent());
+		return bigBlueButtonToolCtrl;
+	}
+	
+	private TeamsMeetingsRunController doTeams(UserRequest ureq) {
+		addLoggingResourceable(LoggingResourceable.wrap(ORES_TOOLTEAMS, OlatResourceableType.teams));
+		
+		ContextEntry ce = BusinessControlFactory.getInstance().createContextEntry(ORES_TOOLTEAMS);
+		WindowControl bwControl = BusinessControlFactory.getInstance().createBusinessWindowControl(ce, getWindowControl());
+		ThreadLocalUserActivityLogger.addLoggingResourceInfo(LoggingResourceable.wrapPortfolioOres(ce.getOLATResourceable()));
+		addToHistory(ureq, bwControl);
+		
+		CollaborationTools collabTools = CollaborationToolsFactory.getInstance().getOrCreateCollaborationTools(businessGroup);
+		TeamsMeetingsRunController teamsToolCtrl = collabTools.createTeamsController(ureq, bwControl, businessGroup, isAdmin);
+		collabToolCtr = teamsToolCtrl;
+		listenTo(collabToolCtr);
+		mainPanel.setContent(collabToolCtr.getInitialComponent());
+		return teamsToolCtrl;
+	}
 
 	private Activateable2 doAdministration(UserRequest ureq) {
 		removeAsListenerAndDispose(bgEditCntrllr);
@@ -869,6 +922,7 @@ public class BusinessGroupMainRunController extends MainLayoutBasicController im
 	/**
 	 * @see org.olat.core.gui.control.DefaultController#doDispose(boolean)
 	 */
+	@Override
 	protected void doDispose() {
 		ThreadLocalUserActivityLogger.log(GroupLoggingAction.GROUP_CLOSED, getClass());
 		
@@ -966,6 +1020,26 @@ public class BusinessGroupMainRunController extends MainLayoutBasicController im
 			if (nodeAdobeConnect != null) {
 				doAdobeConnect(ureq);
 				bgTree.setSelectedNode(nodeAdobeConnect);
+			} else if(mainPanel != null) { // not enabled
+				String text = translate("warn.portfolionotavailable");
+				Controller mc = MessageUIFactory.createInfoMessage(ureq, getWindowControl(), null, text);
+				listenTo(mc); // cleanup on dispose
+				mainPanel.setContent(mc.getInitialComponent());
+			}
+		} else if (OresHelper.equals(ores, ORES_TOOLBIGBLUEBUTTON)) {
+			if (nodeBigBlueButton != null) {
+				doBigBlueButton(ureq).activate(ureq, entries, ce.getTransientState());
+				bgTree.setSelectedNode(nodeBigBlueButton);
+			} else if(mainPanel != null) { // not enabled
+				String text = translate("warn.portfolionotavailable");
+				Controller mc = MessageUIFactory.createInfoMessage(ureq, getWindowControl(), null, text);
+				listenTo(mc); // cleanup on dispose
+				mainPanel.setContent(mc.getInitialComponent());
+			}
+		} else if (OresHelper.equals(ores, ORES_TOOLTEAMS)) {
+			if (nodeTeams != null) {
+				doTeams(ureq).activate(ureq, entries, ce.getTransientState());
+				bgTree.setSelectedNode(nodeTeams);
 			} else if(mainPanel != null) { // not enabled
 				String text = translate("warn.portfolionotavailable");
 				Controller mc = MessageUIFactory.createInfoMessage(ureq, getWindowControl(), null, text);
@@ -1198,8 +1272,7 @@ public class BusinessGroupMainRunController extends MainLayoutBasicController im
 			nodeWiki = gtnChild;
 		}
 			
-		if (collabTools.isToolEnabled(CollaborationTools.TOOL_PORTFOLIO) &&
-				(portfolioModule.isEnabled() || portfolioV2Module.isEnabled())) {
+		if (portfolioV2Module.isEnabled() && collabTools.isToolEnabled(CollaborationTools.TOOL_PORTFOLIO)) {
 			gtnChild = new GenericTreeNode(nodeIdPrefix.concat("eportfolio"));
 			gtnChild.setTitle(translate("menutree.portfolio"));
 			gtnChild.setUserObject(ACTIVITY_MENUSELECT_PORTFOLIO);
@@ -1230,7 +1303,29 @@ public class BusinessGroupMainRunController extends MainLayoutBasicController im
 			root.addChild(gtnChild);
 			nodeAdobeConnect = gtnChild;
 		}
-
+		
+		if(bigBlueButtonModule.isEnabled() && bigBlueButtonModule.isGroupsEnabled()
+				&& collabTools.isToolEnabled(CollaborationTools.TOOL_BIGBLUEBUTTON)) {
+			gtnChild = new GenericTreeNode(nodeIdPrefix.concat("bigbluebutton"));
+			gtnChild.setTitle(translate("menutree.bigbluebutton"));
+			gtnChild.setUserObject(ACTIVITY_MENUSELECT_BIGBLUEBUTTON);
+			gtnChild.setAltText(translate("menutree.bigbluebutton.alt"));
+			gtnChild.setIconCssClass("o_vc_icon");
+			root.addChild(gtnChild);
+			nodeBigBlueButton = gtnChild;
+		}
+		
+		if(teamsModule.isEnabled() && teamsModule.isGroupsEnabled()
+				&& collabTools.isToolEnabled(CollaborationTools.TOOL_TEAMS)) {
+			gtnChild = new GenericTreeNode(nodeIdPrefix.concat("teams"));
+			gtnChild.setTitle(translate("menutree.teams"));
+			gtnChild.setUserObject(ACTIVITY_MENUSELECT_TEAMS);
+			gtnChild.setAltText(translate("menutree.teams.alt"));
+			gtnChild.setIconCssClass("o_vc_icon");
+			root.addChild(gtnChild);
+			nodeBigBlueButton = gtnChild;
+		}
+	
 		if (isAdmin) {
 			gtnChild = new GenericTreeNode(nodeIdPrefix.concat("admin"));
 			gtnChild.setTitle(translate("menutree.administration"));

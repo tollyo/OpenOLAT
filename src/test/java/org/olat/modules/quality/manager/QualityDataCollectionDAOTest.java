@@ -27,7 +27,9 @@ import static org.olat.modules.quality.QualityDataCollectionStatus.PREPARATION;
 import static org.olat.modules.quality.QualityDataCollectionStatus.READY;
 import static org.olat.modules.quality.QualityDataCollectionStatus.RUNNING;
 import static org.olat.modules.quality.QualityReportAccessReference.of;
+import static org.olat.test.JunitTestHelper.random;
 
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
@@ -40,14 +42,20 @@ import org.junit.Before;
 import org.junit.Test;
 import org.olat.basesecurity.GroupRoles;
 import org.olat.basesecurity.IdentityRelationshipService;
+import org.olat.basesecurity.OrganisationService;
 import org.olat.basesecurity.RelationRight;
 import org.olat.basesecurity.RelationRole;
 import org.olat.core.commons.persistence.DB;
 import org.olat.core.commons.persistence.SortKey;
 import org.olat.core.id.Identity;
 import org.olat.core.id.Organisation;
+import org.olat.course.certificate.CertificateEmailRightProvider;
 import org.olat.modules.curriculum.Curriculum;
+import org.olat.modules.curriculum.CurriculumCalendars;
 import org.olat.modules.curriculum.CurriculumElement;
+import org.olat.modules.curriculum.CurriculumElementStatus;
+import org.olat.modules.curriculum.CurriculumLearningProgress;
+import org.olat.modules.curriculum.CurriculumLectures;
 import org.olat.modules.curriculum.CurriculumRoles;
 import org.olat.modules.curriculum.CurriculumService;
 import org.olat.modules.forms.EvaluationFormManager;
@@ -62,6 +70,7 @@ import org.olat.modules.quality.QualityDataCollectionTopicType;
 import org.olat.modules.quality.QualityDataCollectionView;
 import org.olat.modules.quality.QualityDataCollectionViewSearchParams;
 import org.olat.modules.quality.QualityReportAccess;
+import org.olat.modules.quality.QualityReportAccessRightProvider;
 import org.olat.modules.quality.QualityService;
 import org.olat.modules.quality.generator.QualityGenerator;
 import org.olat.modules.quality.ui.DataCollectionDataModel.DataCollectionCols;
@@ -95,6 +104,8 @@ public class QualityDataCollectionDAOTest extends OlatTestCase {
 	private CurriculumService curriculumService;
 	@Autowired
 	private IdentityRelationshipService identityRelationshipService;
+	@Autowired
+	private OrganisationService organisationService;
 	
 	@Autowired
 	private QualityDataCollectionDAO sut;
@@ -476,7 +487,47 @@ public class QualityDataCollectionDAOTest extends OlatTestCase {
 				.containsExactlyInAnyOrder(dataCollection1, dataCollection2)
 				.doesNotContain(dataCollectionOtherKey, dataCollectionNoKey);
 	}
-
+	
+	@Test
+	public void shouldLoadGenerators() {
+		String title = JunitTestHelper.random();
+		QualityGenerator generator1 = qualityTestHelper.createGenerator();
+		QualityGenerator generator2 = qualityTestHelper.createGenerator();
+		QualityDataCollection dataCollection11 = sut.createDataCollection(generator1, 123l);
+		dataCollection11.setTitle(title);
+		dataCollection11 = sut.updateDataCollection(dataCollection11);
+		QualityDataCollection dataCollection12 = sut.createDataCollection(generator1, 124l);
+		dataCollection12.setTitle(title);
+		dataCollection12 = sut.updateDataCollection(dataCollection12);
+		QualityDataCollection dataCollection21 = sut.createDataCollection(generator2, 123l);
+		dataCollection21.setTitle(title);
+		dataCollection21 = sut.updateDataCollection(dataCollection21);
+		dbInstance.commitAndCloseSession();
+		
+		QualityDataCollectionViewSearchParams searchParams = new QualityDataCollectionViewSearchParams();
+		searchParams.setTitle(title);
+		List<QualityGenerator> generators = sut.loadGenerators(searchParams);
+		
+		assertThat(generators).containsExactlyInAnyOrder(generator1, generator2);
+	}
+	
+	@Test
+	public void shouldLoadFormEntries() {
+		RepositoryEntry formEntry1 = JunitTestHelper.createAndPersistRepositoryEntry();
+		RepositoryEntry formEntry2 = JunitTestHelper.createAndPersistRepositoryEntry();
+		Organisation organisation = qualityTestHelper.createOrganisation();
+		qualityTestHelper.createDataCollection(organisation, formEntry1);
+		qualityTestHelper.createDataCollection(organisation, formEntry1);
+		qualityTestHelper.createDataCollection(organisation, formEntry2);
+		dbInstance.commitAndCloseSession();
+		
+		QualityDataCollectionViewSearchParams searchParams = new QualityDataCollectionViewSearchParams();
+		searchParams.setOrgansationRefs(Collections.singletonList(organisation));
+		List<RepositoryEntry> formEntries = sut.loadFormEntries(searchParams);
+		
+		assertThat(formEntries).containsExactlyInAnyOrder(formEntry1, formEntry2);
+	}
+	
 	@Test
 	public void shouldGetDataCollectionCount() {
 		int numberOfDataCollections = 3;
@@ -968,6 +1019,370 @@ public class QualityDataCollectionDAOTest extends OlatTestCase {
 	}
 	
 	@Test
+	public void shouldFilterDataCollectionsByFormEntries() {
+		RepositoryEntry formEntry1 = JunitTestHelper.createAndPersistRepositoryEntry();
+		RepositoryEntry formEntry2 = JunitTestHelper.createAndPersistRepositoryEntry();
+		RepositoryEntry formEntryOther = JunitTestHelper.createAndPersistRepositoryEntry();
+		Organisation organisation = qualityTestHelper.createOrganisation();
+		QualityDataCollection dataCollection1 = qualityTestHelper.createDataCollection(organisation, formEntry1);
+		QualityDataCollection dataCollection2 = qualityTestHelper.createDataCollection(organisation, formEntry1);
+		QualityDataCollection dataCollection3 = qualityTestHelper.createDataCollection(organisation, formEntry2);
+		QualityDataCollection dataCollectionOther = qualityTestHelper.createDataCollection(organisation, formEntryOther);
+		dbInstance.commitAndCloseSession();
+		
+		QualityDataCollectionViewSearchParams searchParams = new QualityDataCollectionViewSearchParams();
+		searchParams.setFormEntryRefs(Arrays.asList(formEntry1, formEntry2));
+		List<QualityDataCollectionView> dataCollections = sut.loadDataCollections(TRANSLATOR, searchParams, 0, -1);
+		
+		assertThat(dataCollections)
+				.extracting(QualityDataCollectionView::getKey)
+				.containsExactlyInAnyOrder(
+						dataCollection1.getKey(),
+						dataCollection2.getKey(),
+						dataCollection3.getKey())
+				.doesNotContain(
+						dataCollectionOther.getKey());
+	}
+	
+	@Test
+	public void shouldFilterDataCollectionsBySearchString() {
+		Organisation organisation = qualityTestHelper.createOrganisation();
+		QualityDataCollection dataCollectionTitle = qualityTestHelper.createDataCollection(organisation);
+		dataCollectionTitle.setTitle("Are lions evil?");
+		dataCollectionTitle = sut.updateDataCollection(dataCollectionTitle);
+		QualityDataCollection dataCollectionCustom = qualityTestHelper.createDataCollection(organisation);
+		dataCollectionCustom.setTopicCustom("liOn");
+		dataCollectionCustom = sut.updateDataCollection(dataCollectionCustom);
+		QualityDataCollection dataCollectionCustomOther = qualityTestHelper.createDataCollection(organisation);
+		dataCollectionCustomOther.setTopicCustom("cat");
+		dataCollectionCustomOther = sut.updateDataCollection(dataCollectionCustomOther);
+		
+		QualityDataCollectionViewSearchParams searchParams = new QualityDataCollectionViewSearchParams();
+		searchParams.setOrgansationRefs(Collections.singletonList(organisation));
+		searchParams.setSearchString("lion");
+		List<QualityDataCollectionView> dataCollections = sut.loadDataCollections(TRANSLATOR, searchParams, 0, -1);
+		
+		assertThat(dataCollections)
+				.extracting(QualityDataCollectionView::getKey)
+				.containsExactlyInAnyOrder(
+						dataCollectionTitle.getKey(),
+						dataCollectionCustom.getKey())
+				.doesNotContain(
+						dataCollectionCustomOther.getKey());
+	}
+	
+	@Test
+	public void shouldFilterDataCollectionsByTitle() {
+		Organisation organisation = qualityTestHelper.createOrganisation();
+		QualityDataCollection dataCollection1 = qualityTestHelper.createDataCollection(organisation);
+		dataCollection1.setTitle("lion");
+		dataCollection1 = sut.updateDataCollection(dataCollection1);
+		QualityDataCollection dataCollection2 = qualityTestHelper.createDataCollection(organisation);
+		dataCollection2.setTitle("Lion King");
+		dataCollection2 = sut.updateDataCollection(dataCollection2);
+		QualityDataCollection dataCollection3 = qualityTestHelper.createDataCollection(organisation);
+		dataCollection3.setTitle("My lion is the king");
+		dataCollection3 = sut.updateDataCollection(dataCollection3);
+		QualityDataCollection dataCollectionOther = qualityTestHelper.createDataCollection(organisation);
+		dataCollectionOther.setTitle("tiger");
+		dataCollectionOther = sut.updateDataCollection(dataCollectionOther);
+		dbInstance.commitAndCloseSession();
+		
+		QualityDataCollectionViewSearchParams searchParams = new QualityDataCollectionViewSearchParams();
+		searchParams.setOrgansationRefs(Collections.singletonList(organisation));
+		searchParams.setTitle("lion");
+		List<QualityDataCollectionView> dataCollections = sut.loadDataCollections(TRANSLATOR, searchParams, 0, -1);
+		
+		assertThat(dataCollections)
+				.extracting(QualityDataCollectionView::getKey)
+				.containsExactlyInAnyOrder(
+						dataCollection1.getKey(),
+						dataCollection2.getKey(),
+						dataCollection3.getKey())
+				.doesNotContain(
+						dataCollectionOther.getKey());
+	}
+	
+	@Test
+	public void shouldFilterDataCollectionsByStartAfter() {
+		Organisation organisation = qualityTestHelper.createOrganisation();
+		QualityDataCollection dataCollection1 = qualityTestHelper.createDataCollection(organisation);
+		dataCollection1.setStart(qualityTestHelper.getDateInFuture());
+		qualityService.updateDataCollection(dataCollection1);
+		QualityDataCollection dataCollection2 = qualityTestHelper.createDataCollection(organisation);
+		dataCollection2.setStart(qualityTestHelper.getDateInFuture());
+		qualityService.updateDataCollection(dataCollection2);
+		QualityDataCollection dataCollectionOther = qualityTestHelper.createDataCollection(organisation);
+		dataCollectionOther.setStart(qualityTestHelper.getDateInPast());
+		qualityService.updateDataCollection(dataCollectionOther);
+		dbInstance.commitAndCloseSession();
+		
+		QualityDataCollectionViewSearchParams searchParams = new QualityDataCollectionViewSearchParams();
+		searchParams.setOrgansationRefs(Collections.singletonList(organisation));
+		searchParams.setStartAfter(new Date());
+		List<QualityDataCollectionView> dataCollections = sut.loadDataCollections(TRANSLATOR, searchParams, 0, -1);
+		
+		assertThat(dataCollections)
+				.extracting(QualityDataCollectionView::getKey)
+				.containsExactlyInAnyOrder(
+						dataCollection1.getKey(),
+						dataCollection2.getKey())
+				.doesNotContain(
+						dataCollectionOther.getKey());
+	}
+	
+	@Test
+	public void shouldFilterDataCollectionsByStartBefore() {
+		Organisation organisation = qualityTestHelper.createOrganisation();
+		QualityDataCollection dataCollection1 = qualityTestHelper.createDataCollection(organisation);
+		dataCollection1.setStart(qualityTestHelper.getDateInPast());
+		qualityService.updateDataCollection(dataCollection1);
+		QualityDataCollection dataCollection2 = qualityTestHelper.createDataCollection(organisation);
+		dataCollection2.setStart(qualityTestHelper.getDateInPast());
+		qualityService.updateDataCollection(dataCollection2);
+		QualityDataCollection dataCollectionOther = qualityTestHelper.createDataCollection(organisation);
+		dataCollectionOther.setStart(qualityTestHelper.getDateInFuture());
+		qualityService.updateDataCollection(dataCollectionOther);
+		dbInstance.commitAndCloseSession();
+		
+		QualityDataCollectionViewSearchParams searchParams = new QualityDataCollectionViewSearchParams();
+		searchParams.setOrgansationRefs(Collections.singletonList(organisation));
+		searchParams.setStartBefore(new Date());
+		List<QualityDataCollectionView> dataCollections = sut.loadDataCollections(TRANSLATOR, searchParams, 0, -1);
+		
+		assertThat(dataCollections)
+				.extracting(QualityDataCollectionView::getKey)
+				.containsExactlyInAnyOrder(
+						dataCollection1.getKey(),
+						dataCollection2.getKey())
+				.doesNotContain(
+						dataCollectionOther.getKey());
+	}
+	
+	@Test
+	public void shouldFilterDataCollectionsByDeadlineAfter() {
+		Organisation organisation = qualityTestHelper.createOrganisation();
+		QualityDataCollection dataCollection1 = qualityTestHelper.createDataCollection(organisation);
+		dataCollection1.setDeadline(qualityTestHelper.getDateInFuture());
+		qualityService.updateDataCollection(dataCollection1);
+		QualityDataCollection dataCollection2 = qualityTestHelper.createDataCollection(organisation);
+		dataCollection2.setDeadline(qualityTestHelper.getDateInFuture());
+		qualityService.updateDataCollection(dataCollection2);
+		QualityDataCollection dataCollectionOther = qualityTestHelper.createDataCollection(organisation);
+		dataCollectionOther.setDeadline(qualityTestHelper.getDateInPast());
+		qualityService.updateDataCollection(dataCollectionOther);
+		dbInstance.commitAndCloseSession();
+		
+		QualityDataCollectionViewSearchParams searchParams = new QualityDataCollectionViewSearchParams();
+		searchParams.setOrgansationRefs(Collections.singletonList(organisation));
+		searchParams.setDeadlineAfter(new Date());
+		List<QualityDataCollectionView> dataCollections = sut.loadDataCollections(TRANSLATOR, searchParams, 0, -1);
+		
+		assertThat(dataCollections)
+				.extracting(QualityDataCollectionView::getKey)
+				.containsExactlyInAnyOrder(
+						dataCollection1.getKey(),
+						dataCollection2.getKey())
+				.doesNotContain(
+						dataCollectionOther.getKey());
+	}
+	
+	@Test
+	public void shouldFilterDataCollectionsByDeadlineBefore() {
+		Organisation organisation = qualityTestHelper.createOrganisation();
+		QualityDataCollection dataCollection1 = qualityTestHelper.createDataCollection(organisation);
+		dataCollection1.setDeadline(qualityTestHelper.getDateInPast());
+		qualityService.updateDataCollection(dataCollection1);
+		QualityDataCollection dataCollection2 = qualityTestHelper.createDataCollection(organisation);
+		dataCollection2.setDeadline(qualityTestHelper.getDateInPast());
+		qualityService.updateDataCollection(dataCollection2);
+		QualityDataCollection dataCollectionOther = qualityTestHelper.createDataCollection(organisation);
+		dataCollectionOther.setDeadline(qualityTestHelper.getDateInFuture());
+		qualityService.updateDataCollection(dataCollectionOther);
+		dbInstance.commitAndCloseSession();
+		
+		QualityDataCollectionViewSearchParams searchParams = new QualityDataCollectionViewSearchParams();
+		searchParams.setOrgansationRefs(Collections.singletonList(organisation));
+		searchParams.setDeadlineBefore(new Date());
+		List<QualityDataCollectionView> dataCollections = sut.loadDataCollections(TRANSLATOR, searchParams, 0, -1);
+		
+		assertThat(dataCollections)
+				.extracting(QualityDataCollectionView::getKey)
+				.containsExactlyInAnyOrder(
+						dataCollection1.getKey(),
+						dataCollection2.getKey())
+				.doesNotContain(
+						dataCollectionOther.getKey());
+	}
+	
+	@Test
+	public void shouldFilterDataCollectionsByTopicType() {
+		Organisation organisation = qualityTestHelper.createOrganisation();
+		QualityDataCollection dataCollection1 = qualityTestHelper.createDataCollection(organisation);
+		dataCollection1.setTopicType(QualityDataCollectionTopicType.CUSTOM);
+		dataCollection1 = sut.updateDataCollection(dataCollection1);
+		QualityDataCollection dataCollection2 = qualityTestHelper.createDataCollection(organisation);
+		dataCollection2.setTopicType(QualityDataCollectionTopicType.CUSTOM);
+		dataCollection2 = sut.updateDataCollection(dataCollection2);
+		QualityDataCollection dataCollection3 = qualityTestHelper.createDataCollection(organisation);
+		dataCollection3.setTopicType(QualityDataCollectionTopicType.CURRICULUM);
+		dataCollection3 = sut.updateDataCollection(dataCollection3);
+		QualityDataCollection dataCollectionOther = qualityTestHelper.createDataCollection(organisation);
+		dataCollectionOther.setTopicType(QualityDataCollectionTopicType.IDENTIY);
+		dataCollectionOther = sut.updateDataCollection(dataCollectionOther);
+		dbInstance.commitAndCloseSession();
+		
+		QualityDataCollectionViewSearchParams searchParams = new QualityDataCollectionViewSearchParams();
+		searchParams.setOrgansationRefs(Collections.singletonList(organisation));
+		searchParams.setTopicTypes(Arrays.asList(QualityDataCollectionTopicType.CUSTOM, QualityDataCollectionTopicType.CURRICULUM));
+		List<QualityDataCollectionView> dataCollections = sut.loadDataCollections(TRANSLATOR, searchParams, 0, -1);
+		
+		assertThat(dataCollections)
+				.extracting(QualityDataCollectionView::getKey)
+				.containsExactlyInAnyOrder(
+						dataCollection1.getKey(),
+						dataCollection2.getKey(),
+						dataCollection3.getKey())
+				.doesNotContain(
+						dataCollectionOther.getKey());
+	}
+	
+	@Test
+	public void shouldFilterDataCollectionsByTopic() {
+		Organisation organisation = qualityTestHelper.createOrganisation();
+		
+		// Custom
+		QualityDataCollection dataCollectionCustom = qualityTestHelper.createDataCollection(organisation);
+		dataCollectionCustom.setTopicCustom("liOn");
+		dataCollectionCustom = sut.updateDataCollection(dataCollectionCustom);
+
+		QualityDataCollection dataCollectionCustomOther = qualityTestHelper.createDataCollection(organisation);
+		dataCollectionCustomOther.setTopicCustom("cat");
+		dataCollectionCustomOther = sut.updateDataCollection(dataCollectionCustomOther);
+		
+		// Identity
+		Identity identity = JunitTestHelper.createAndPersistIdentityAsUser("LION");
+		QualityDataCollection dataCollectionIdentity = qualityTestHelper.createDataCollection(organisation);
+		dataCollectionIdentity.setTopicIdentity(identity);
+		dataCollectionIdentity = sut.updateDataCollection(dataCollectionIdentity);
+		
+		// Organisation
+		Organisation topicOrganisation = organisationService.createOrganisation("The lions cage", UUID.randomUUID().toString(), null, null, null);
+		QualityDataCollection dataCollectionOrganisation = qualityTestHelper.createDataCollection(organisation);
+		dataCollectionOrganisation.setTopicOrganisation(topicOrganisation);
+		dataCollectionOrganisation = sut.updateDataCollection(dataCollectionOrganisation);
+		
+		// Curriculum
+		Curriculum curriculum = curriculumService.createCurriculum("i", "Lions training", "d", organisation);;
+		QualityDataCollection dataCollectionCurriculum = qualityTestHelper.createDataCollection(organisation);
+		dataCollectionCurriculum.setTopicCurriculum(curriculum);
+		dataCollectionCurriculum = sut.updateDataCollection(dataCollectionCurriculum);
+		
+		// CurriculumElement
+		Curriculum curriculumCE = curriculumService.createCurriculum("i", "d", "d", organisation);;
+		CurriculumElement curriculumElement = curriculumService.createCurriculumElement("ident", "LIONS Physiognomy", CurriculumElementStatus.active, null, null, null,
+				null, CurriculumCalendars.disabled, CurriculumLectures.disabled, CurriculumLearningProgress.disabled,
+				curriculumCE);
+		QualityDataCollection dataCollectionCurElement = qualityTestHelper.createDataCollection(organisation);
+		dataCollectionCurElement.setTopicCurriculumElement(curriculumElement);
+		dataCollectionCurElement = sut.updateDataCollection(dataCollectionCurElement);
+		
+		// RepositoryEntry
+		RepositoryEntry entry = JunitTestHelper.createAndPersistRepositoryEntry();
+		entry.setDisplayname("Course with Lions");
+		entry = repositoryService.update(entry);
+		QualityDataCollection dataCollectionRepoEntry = qualityTestHelper.createDataCollection(organisation);
+		dataCollectionRepoEntry.setTopicRepositoryEntry(entry);
+		dataCollectionRepoEntry = sut.updateDataCollection(dataCollectionRepoEntry);
+		
+		QualityDataCollectionViewSearchParams searchParams = new QualityDataCollectionViewSearchParams();
+		searchParams.setOrgansationRefs(Collections.singletonList(organisation));
+		searchParams.setTopic("lion");
+		List<QualityDataCollectionView> dataCollections = sut.loadDataCollections(TRANSLATOR, searchParams, 0, -1);
+		
+		assertThat(dataCollections)
+				.extracting(QualityDataCollectionView::getKey)
+				.containsExactlyInAnyOrder(
+						dataCollectionCustom.getKey(),
+						dataCollectionIdentity.getKey(),
+						dataCollectionOrganisation.getKey(),
+						dataCollectionCurriculum.getKey(),
+						dataCollectionCurElement.getKey(),
+						dataCollectionRepoEntry.getKey())
+				.doesNotContain(
+						dataCollectionCustomOther.getKey());
+	}
+	
+	@Test
+	public void shouldFilterDataCollectionsByGeneratorRefs() {
+		Collection<Organisation> organisations = Collections.singletonList(qualityTestHelper.createOrganisation());
+		RepositoryEntry formEntry = JunitTestHelper.createAndPersistRepositoryEntry();
+		String title = JunitTestHelper.random();
+		QualityGenerator generator1 = qualityTestHelper.createGenerator();
+		QualityGenerator generator2 = qualityTestHelper.createGenerator();
+		QualityGenerator generatorOther = qualityTestHelper.createGenerator();
+		QualityDataCollection dataCollection11 = qualityService.createDataCollection(organisations, formEntry, generator1, 123l);
+		dataCollection11.setTitle(title);
+		dataCollection11 = sut.updateDataCollection(dataCollection11);
+		QualityDataCollection dataCollection12 = qualityService.createDataCollection(organisations, formEntry, generator1, 124l);
+		dataCollection12.setTitle(title);
+		dataCollection12 = sut.updateDataCollection(dataCollection12);
+		QualityDataCollection dataCollection21 = qualityService.createDataCollection(organisations, formEntry, generator2, 123l);
+		dataCollection21.setTitle(title);
+		dataCollection21 = sut.updateDataCollection(dataCollection21);
+		QualityDataCollection dataCollectionOther = qualityService.createDataCollection(organisations, formEntry, generatorOther, 123l);
+		dataCollectionOther.setTitle(title);
+		dataCollectionOther = sut.updateDataCollection(dataCollectionOther);
+		QualityDataCollection dataCollectionNoGenerator = sut.createDataCollection();
+		dataCollectionNoGenerator.setTitle(title);
+		dataCollectionNoGenerator = sut.updateDataCollection(dataCollectionNoGenerator);
+		dbInstance.commitAndCloseSession();
+		
+		QualityDataCollectionViewSearchParams searchParams = new QualityDataCollectionViewSearchParams();
+		searchParams.setTitle(title);
+		searchParams.setGeneratorRefs(Arrays.asList(generator1, generator2));
+		List<QualityDataCollectionView> dataCollections = sut.loadDataCollections(TRANSLATOR, searchParams, 0, -1);
+		
+		assertThat(dataCollections)
+				.extracting(QualityDataCollectionView::getKey)
+				.containsExactlyInAnyOrder(
+						dataCollection11.getKey(),
+						dataCollection12.getKey(),
+						dataCollection21.getKey())
+				.doesNotContain(
+						dataCollectionOther.getKey(),
+						dataCollectionNoGenerator.getKey());
+	}
+	
+	@Test
+	public void shouldFilterDataCollectionsByStatus() {
+		Organisation organisation = qualityTestHelper.createOrganisation();
+		QualityDataCollection dataCollection1 = qualityTestHelper.createDataCollection(organisation);
+		dataCollection1 = sut.updateDataCollectionStatus(dataCollection1, READY);
+		QualityDataCollection dataCollection2 = qualityTestHelper.createDataCollection(organisation);
+		dataCollection2 = sut.updateDataCollectionStatus(dataCollection2, READY);
+		QualityDataCollection dataCollection3 = qualityTestHelper.createDataCollection(organisation);
+		dataCollection3 = sut.updateDataCollectionStatus(dataCollection3, FINISHED);
+		QualityDataCollection dataCollectionOther = qualityTestHelper.createDataCollection(organisation);
+		dataCollectionOther = sut.updateDataCollectionStatus(dataCollectionOther, PREPARATION);
+		dbInstance.commitAndCloseSession();
+		
+		QualityDataCollectionViewSearchParams searchParams = new QualityDataCollectionViewSearchParams();
+		searchParams.setOrgansationRefs(Collections.singletonList(organisation));
+		searchParams.setStatus(Arrays.asList(READY, FINISHED));
+		List<QualityDataCollectionView> dataCollections = sut.loadDataCollections(TRANSLATOR, searchParams, 0, -1);
+		
+		assertThat(dataCollections)
+				.extracting(QualityDataCollectionView::getKey)
+				.containsExactlyInAnyOrder(
+						dataCollection1.getKey(),
+						dataCollection2.getKey(),
+						dataCollection3.getKey())
+				.doesNotContain(
+						dataCollectionOther.getKey());
+	}
+	
+	@Test
 	public void shouldFilterDataCollectionsByReportMembers() {
 		Identity member = JunitTestHelper.createAndPersistIdentityAsRndUser("p1");
 		// Everything fulfilled
@@ -1023,8 +1438,8 @@ public class QualityDataCollectionDAOTest extends OlatTestCase {
 		Identity coachSourceOtherRight = JunitTestHelper.createAndPersistIdentityAsUser("otherRight");
 		Identity relSource = JunitTestHelper.createAndPersistIdentityAsUser("rt");
 		List<RelationRight> rights = identityRelationshipService.getAvailableRights();
-		RelationRight right = rights.get(0);
-		RelationRight rightOther = rights.get(1);
+		RelationRight right = rights.stream().filter(r -> r.getRight().equals(QualityReportAccessRightProvider.RELATION_RIGHT)).findFirst().get();
+		RelationRight rightOther = rights.stream().filter(r -> r.getRight().equals(CertificateEmailRightProvider.RELATION_RIGHT)).findFirst().get();
 		RelationRole role = identityRelationshipService.createRole(random(), singletonList(right));
 		RelationRole roleOtherRole = identityRelationshipService.createRole(random(), singletonList(right));
 		RelationRole roleOtherRight = identityRelationshipService.createRole(random(), singletonList(rightOther));
@@ -1141,8 +1556,86 @@ public class QualityDataCollectionDAOTest extends OlatTestCase {
 						);
 	}
 	
-	private String random() {
-		return UUID.randomUUID().toString();
+	@Test
+	public void shouldFilterDataCollectionsByLearningResourceOrganisations() {
+		Organisation organisation1 = qualityTestHelper.createOrganisation();
+		Organisation organisation11 = qualityTestHelper.createOrganisation(organisation1);
+		Organisation organisation12 = qualityTestHelper.createOrganisation(organisation1);
+		Organisation organisation111 = qualityTestHelper.createOrganisation(organisation11);
+		Identity executor = JunitTestHelper.createAndPersistIdentityAsRndUser("e1");
+		
+		// Everything fulfilled
+		QualityDataCollection dc = qualityTestHelper.createDataCollection();
+		dc = qualityService.updateDataCollectionStatus(dc, QualityDataCollectionStatus.FINISHED);
+		RepositoryEntry entry = JunitTestHelper.createAndPersistRepositoryEntry();
+		repositoryService.addOrganisation(entry, organisation11);
+		List<EvaluationFormParticipation> participations = qualityService.addParticipations(dc, Collections.singletonList(executor));
+		qualityService.createContextBuilder(dc, participations.get(0), entry, GroupRoles.participant).build();
+		QualityReportAccess ra = qualityService.createReportAccess(of(dc), QualityReportAccess.Type.LearnResourceManager, null);
+		ra.setOnline(true);
+		qualityService.updateReportAccess(ra);
+		
+		// Suborganisation
+		QualityDataCollection dcSubOrg = qualityTestHelper.createDataCollection();
+		dcSubOrg = qualityService.updateDataCollectionStatus(dcSubOrg, QualityDataCollectionStatus.FINISHED);
+		RepositoryEntry entrySubOrg = JunitTestHelper.createAndPersistRepositoryEntry();
+		repositoryService.addOrganisation(entrySubOrg, organisation111);
+		List<EvaluationFormParticipation> participationsSubOrg = qualityService.addParticipations(dcSubOrg, Collections.singletonList(executor));
+		qualityService.createContextBuilder(dcSubOrg, participationsSubOrg.get(0), entrySubOrg, GroupRoles.participant).build();
+		QualityReportAccess raSubOrg = qualityService.createReportAccess(of(dcSubOrg), QualityReportAccess.Type.LearnResourceManager, null);
+		raSubOrg.setOnline(true);
+		qualityService.updateReportAccess(raSubOrg);
+		
+		// other organisation
+		QualityDataCollection dcOtherOrg = qualityTestHelper.createDataCollection();
+		dcOtherOrg = qualityService.updateDataCollectionStatus(dcOtherOrg, QualityDataCollectionStatus.FINISHED);
+		RepositoryEntry entryOtherOrg = JunitTestHelper.createAndPersistRepositoryEntry();
+		repositoryService.addOrganisation(entryOtherOrg, organisation12);
+		List<EvaluationFormParticipation> participationsOtherOrg = qualityService.addParticipations(dcOtherOrg, Collections.singletonList(executor));
+		qualityService.createContextBuilder(dcOtherOrg, participationsOtherOrg.get(0), entryOtherOrg, GroupRoles.participant).build();
+		QualityReportAccess raOtherOrg = qualityService.createReportAccess(of(dcOtherOrg), QualityReportAccess.Type.LearnResourceManager, null);
+		raOtherOrg.setOnline(true);
+		qualityService.updateReportAccess(raOtherOrg);
+		
+		// not finished
+		QualityDataCollection dcNotFinished = qualityTestHelper.createDataCollection();
+		dcNotFinished = qualityService.updateDataCollectionStatus(dcNotFinished, QualityDataCollectionStatus.RUNNING);
+		RepositoryEntry entryNotFinished = JunitTestHelper.createAndPersistRepositoryEntry();
+		repositoryService.addOrganisation(entryNotFinished, organisation11);
+		List<EvaluationFormParticipation> participationsNoFinished = qualityService.addParticipations(dcNotFinished, Collections.singletonList(executor));
+		qualityService.createContextBuilder(dcNotFinished, participationsNoFinished.get(0), entryNotFinished, GroupRoles.participant).build();
+		QualityReportAccess raNotFinished = qualityService.createReportAccess(of(dcNotFinished), QualityReportAccess.Type.LearnResourceManager, null);
+		raNotFinished.setOnline(true);
+		qualityService.updateReportAccess(raNotFinished);
+		
+		// no report access
+		QualityDataCollection dcNoAccess = qualityTestHelper.createDataCollection();
+		dcNoAccess = qualityService.updateDataCollectionStatus(dcNoAccess, QualityDataCollectionStatus.FINISHED);
+		RepositoryEntry entryNoAccess = JunitTestHelper.createAndPersistRepositoryEntry();
+		repositoryService.addOrganisation(entryNoAccess, organisation11);
+		List<EvaluationFormParticipation> participationsNoAccess = qualityService.addParticipations(dcNoAccess, Collections.singletonList(executor));
+		qualityService.createContextBuilder(dcNoAccess, participationsNoAccess.get(0), entryNoAccess, GroupRoles.participant).build();
+		QualityReportAccess raNoAccess = qualityService.createReportAccess(of(dcNoAccess), QualityReportAccess.Type.LearnResourceManager, null);
+		raNoAccess.setOnline(false);
+		qualityService.updateReportAccess(raNoAccess);
+		
+		dbInstance.commitAndCloseSession();
+		
+		QualityDataCollectionViewSearchParams searchParams = new QualityDataCollectionViewSearchParams();
+		searchParams.setOrgansationRefs(Collections.emptyList());
+		searchParams.setLearnResourceManagerOrganisationRefs(Arrays.asList(organisation11, organisation111));
+		List<QualityDataCollectionView> dataCollections = sut.loadDataCollections(TRANSLATOR, searchParams, 0, -1);
+		
+		assertThat(dataCollections)
+				.extracting(QualityDataCollectionView::getKey)
+				.containsExactlyInAnyOrder(
+						dc.getKey(),
+						dcSubOrg.getKey())
+				.doesNotContain(
+						dcOtherOrg.getKey(),
+						dcNotFinished.getKey(),
+						dcNoAccess.getKey()
+						);
 	}
 
 }

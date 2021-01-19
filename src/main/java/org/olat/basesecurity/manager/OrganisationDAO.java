@@ -30,7 +30,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-
 import javax.persistence.TypedQuery;
 
 import org.olat.basesecurity.GroupMembershipInheritance;
@@ -69,7 +68,7 @@ public class OrganisationDAO {
 	private DB dbInstance;
 	@Autowired
 	private GroupDAO groupDao;
-	
+
 	public Organisation create(String displayName, String identifier, String description,
 			Organisation parentOrganisation, OrganisationType type) {
 		OrganisationImpl organisation = new OrganisationImpl();
@@ -149,6 +148,7 @@ public class OrganisationDAO {
 		  .append(" inner join fetch org.group baseGroup")
 		  .append(" left join fetch org.type orgType")
 		  .append(" left join fetch org.parent parentOrg")
+
 		  .append(" where org.key=:key");
 		
 		List<Organisation> organisations = dbInstance.getCurrentEntityManager()

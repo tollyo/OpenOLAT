@@ -149,7 +149,7 @@ public interface GradingService {
 	
 	public List<GradingAssignmentWithInfos> getGradingAssignmentsWithInfos(GradingAssignmentSearchParameters searchParams);
 	
-	public void assignGrader(RepositoryEntry referenceEntry, AssessmentEntry assessmentEntry, boolean updateAssessmentDate);
+	public GradingAssignment assignGrader(RepositoryEntry referenceEntry, AssessmentEntry assessmentEntry, Date AssessmentDate, boolean updateAssessmentDate);
 	
 
 	public GradingAssignment extendAssignmentDeadline(GradingAssignment assignment, Date newDeadline);
@@ -158,6 +158,8 @@ public interface GradingService {
 	
 	public GradingAssignment unassignGrader(GradingAssignment assignment);
 	
+	public GradingAssignment deactivateAssignment(GradingAssignment assignment);
+	
 	/**
 	 * Set the assignment status to done.
 	 * 
@@ -165,9 +167,9 @@ public interface GradingService {
 	 * @param metadatatime The time use based on metadata (of QTI 2.1 questions)
 	 * @return The merged assignment
 	 */
-	public GradingAssignment assignmentDone(GradingAssignment assignment, Long metadatatime);
+	public GradingAssignment assignmentDone(GradingAssignment assignment, Long metadatatime, Boolean visibleToUser);
 	
-	public GradingAssignment reopenAssignment(GradingAssignment assignment);
+	public GradingAssignment reopenAssignment(GradingAssignment assignment, Date assessmentDate);
 	
 
 	public void updateDeadline(RepositoryEntry referenceEntry, RepositoryEntryGradingConfiguration configuration);
@@ -233,6 +235,15 @@ public interface GradingService {
 	public GradingTimeRecordRef getCurrentTimeRecord(GradingAssignment assignment, Date date);
 	
 	public void appendTimeTo(GradingTimeRecordRef record, long addedTime, TimeUnit unit);
+	
+	/**
+	 * Check if the specified assignment has at least one minute of
+	 * recorded time.
+	 * 
+	 * @param assignment The assignment
+	 * @return true if at least one minute was recorded
+	 */
+	public boolean hasRecordedTime(GradingAssignment assignment);
 	
 	public String getCachedCourseElementTitle(RepositoryEntry entry, String subIdenty);
 	

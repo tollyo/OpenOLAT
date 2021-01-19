@@ -545,7 +545,8 @@ public class FileUtils {
 	}
 	
 	/**
-	 * Delete a file (not a filled directory)
+	 * Delete a file (not a filled directory) and the metadata.
+	 * 
 	 * @param file The file
 	 * @return true if successfully deleted
 	 */
@@ -557,7 +558,7 @@ public class FileUtils {
 			}
 			deleted = Files.deleteIfExists(file.toPath());
 		} catch (IOException e) {
-			log.error("", e);
+			log.error("Cannot delete file: {}", file, e);
 			deleted = false;
 		}
 		return deleted;
@@ -824,7 +825,9 @@ public class FileUtils {
 				.replace("\u00E6", "ae");
 		String nameNormalized = Normalizer.normalize(nameFirstPass, Normalizer.Form.NFKD)
 				.replaceAll("\\p{InCombiningDiacriticalMarks}+","");
-		return nameNormalized.replaceAll("\\W+", "");
+		nameNormalized = nameNormalized.replaceAll("\\W+", "");
+		nameNormalized = nameNormalized.length() > 0? nameNormalized: "_";
+		return nameNormalized;
 	}
 	
 	/**

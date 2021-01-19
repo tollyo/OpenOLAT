@@ -27,9 +27,11 @@ package org.olat.modules.wiki;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Properties;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -40,6 +42,8 @@ import org.olat.core.util.ZipUtil;
 import org.olat.core.util.vfs.VFSContainer;
 import org.olat.core.util.vfs.VFSItem;
 import org.olat.core.util.vfs.VFSLeaf;
+import org.olat.core.util.vfs.filters.VFSAllItemsFilter;
+import org.olat.core.util.vfs.filters.VFSSystemItemFilter;
 
 /**
  * Description:<br>
@@ -113,24 +117,26 @@ public class WikiToZipUtils {
 		}
 		VFSLeaf zipFile = (VFSLeaf)rootContainer.resolve("wiki.zip");
 		if(rootContainer.resolve("wiki.zip") != null) zipFile.delete();
-		ZipUtil.zip(filesTozip, rootContainer.createChildLeaf("wiki.zip"), true);
+		ZipUtil.zip(filesTozip, rootContainer.createChildLeaf("wiki.zip"), VFSAllItemsFilter.ACCEPT_ALL, false);
 		return (VFSLeaf)rootContainer.resolve("wiki.zip");
 	}
 	
 	public static void wikiToZip(VFSContainer rootContainer, String currentPath, ZipOutputStream exportStream)
-	throws IOException {
-		for (VFSItem item:rootContainer.getItems()) {
+	throws IOException {		
+		Set<String> path = new HashSet<>();
+		for (VFSItem item:rootContainer.getItems(new VFSSystemItemFilter())) {
 			if (item instanceof VFSContainer) {
 				VFSContainer folder = (VFSContainer) item;
 				List<VFSItem> items = folder.getItems();
 				String overviewPage = WikiToZipUtils.createIndexPageForExport(items);
-				if(overviewPage != null){
+				if(overviewPage != null && !path.contains(overviewPage)) {
+					path.add(overviewPage);
 					exportStream.putNextEntry(new ZipEntry(currentPath + "/index.html"));
 					IOUtils.write(overviewPage, exportStream, StandardCharsets.UTF_8);
 					exportStream.closeEntry();
 				}
 				for(VFSItem wikiItem:items) {
-					ZipUtil.addToZip(wikiItem, currentPath, exportStream);
+					ZipUtil.addToZip(wikiItem, currentPath, exportStream, VFSAllItemsFilter.ACCEPT_ALL, false);
 				}
 			}
 		}

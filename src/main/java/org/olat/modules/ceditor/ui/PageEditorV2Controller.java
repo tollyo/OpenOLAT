@@ -52,7 +52,9 @@ import org.olat.modules.ceditor.ui.component.ContentEditorContainerComponent;
 import org.olat.modules.ceditor.ui.component.ContentEditorFragment;
 import org.olat.modules.ceditor.ui.component.ContentEditorFragmentComponent;
 import org.olat.modules.ceditor.ui.event.AddElementEvent;
+import org.olat.modules.ceditor.ui.event.ChangePartEvent;
 import org.olat.modules.ceditor.ui.event.CloseElementsEvent;
+import org.olat.modules.ceditor.ui.event.ClosePartEvent;
 import org.olat.modules.ceditor.ui.event.DeleteElementEvent;
 import org.olat.modules.ceditor.ui.event.DropToEditorEvent;
 import org.olat.modules.ceditor.ui.event.DropToPageElementEvent;
@@ -61,6 +63,7 @@ import org.olat.modules.ceditor.ui.event.MoveDownElementEvent;
 import org.olat.modules.ceditor.ui.event.MoveUpElementEvent;
 import org.olat.modules.ceditor.ui.event.OpenAddElementEvent;
 import org.olat.modules.ceditor.ui.event.PositionEnum;
+import org.olat.modules.ceditor.ui.event.SaveElementEvent;
 
 /**
  * 
@@ -171,6 +174,11 @@ public class PageEditorV2Controller extends BasicController {
 			cleanUp();
 		} else if(cmc == source) {
 			cleanUp();
+		} else if(event instanceof ChangePartEvent) {
+			doSaveElement(ureq);
+		} else if(event instanceof ClosePartEvent) {
+			ClosePartEvent cpe = (ClosePartEvent)event;
+			doCloseEditor(ureq, cpe.getElement());
 		}
 		super.event(ureq, source, event);
 	}
@@ -208,7 +216,23 @@ public class PageEditorV2Controller extends BasicController {
 			doDrop(ureq, (DropToEditorEvent)event);
 		} else if(event instanceof DropToPageElementEvent) {
 			doDrop(ureq, (DropToPageElementEvent)event);
+		} else if(event instanceof SaveElementEvent) {
+			fireEvent(ureq, Event.CHANGED_EVENT);
 		}
+	}
+	
+	private void doCloseEditor(UserRequest ureq, PageElement element) {
+		new ComponentTraverser((comp, uureq) -> {
+			if(comp instanceof ContentEditorFragment) {
+				ContentEditorFragment elementCmp = (ContentEditorFragment)comp;
+				if(elementCmp.getElementId().equals(element.getId()) && elementCmp.isEditMode()) {
+					elementCmp.setEditMode(false);
+				}
+			}
+			return true;
+		}, editorCmp, false).visitAll(ureq);
+
+		fireEvent(ureq, Event.CHANGED_EVENT);
 	}
 	
 	private void doCloseEditionEvent(UserRequest ureq, String elementId) {
@@ -361,6 +385,10 @@ public class PageEditorV2Controller extends BasicController {
 		return fragment;
 	}
 	
+	private void doSaveElement(UserRequest ureq) {
+		fireEvent(ureq, Event.CHANGED_EVENT);
+	}
+	
 	private void doSaveElement(UserRequest ureq, ContentEditorFragment fragment) {
 		fragment.setEditMode(false);
 		fireEvent(ureq, Event.CHANGED_EVENT);
@@ -438,7 +466,11 @@ public class PageEditorV2Controller extends BasicController {
 		
 		boolean after = dropEvent.getPosition() == PositionEnum.bottom;
 		provider.movePageElement(source.getElement(), null, after);
-		editorCmp.addRootComponent(source);
+		if(after) {
+			editorCmp.addRootComponent(source);
+		} else {
+			editorCmp.addRootComponent(0, source);
+		}
 		fireEvent(ureq, Event.CHANGED_EVENT);
 	}
 	

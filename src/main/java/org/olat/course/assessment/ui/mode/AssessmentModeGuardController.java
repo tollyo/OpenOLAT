@@ -45,10 +45,14 @@ import org.olat.core.util.Formatter;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.coordinate.CoordinatorManager;
 import org.olat.core.util.event.GenericEventListener;
+import org.olat.course.assessment.AssessmentMode.EndStatus;
 import org.olat.course.assessment.AssessmentMode.Status;
+import org.olat.course.assessment.AssessmentModeCoordinationService;
 import org.olat.course.assessment.AssessmentModeManager;
 import org.olat.course.assessment.AssessmentModeNotificationEvent;
 import org.olat.course.assessment.model.TransientAssessmentMode;
+import org.olat.modules.dcompensation.DisadvantageCompensationService;
+import org.olat.repository.model.RepositoryEntryRefImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
@@ -72,6 +76,10 @@ public class AssessmentModeGuardController extends BasicController implements Ge
 	
 	@Autowired
 	private AssessmentModeManager assessmentModeMgr;
+	@Autowired
+	private DisadvantageCompensationService disadvantageCompensationService;
+	@Autowired
+	private AssessmentModeCoordinationService assessmentModeCoordinationService;
 	
 	/**
 	 *
@@ -156,7 +164,7 @@ public class AssessmentModeGuardController extends BasicController implements Ge
 		Date beginWithLeadTime = mode.getBeginWithLeadTime();
 		Date endWithFollowupTime = mode.getEndWithFollowupTime();
 		//check if the mode must not be guarded anymore
-		if(mode.isManual() && (Status.end.equals(mode.getStatus()) || Status.none.equals(mode.getStatus()))) {
+		if(mode.isManual() && ((Status.end.equals(mode.getStatus()) && EndStatus.all.equals(mode.getEndStatus())) || Status.none.equals(mode.getStatus()))) {
 			return null;
 		} else if(!mode.isManual() && (beginWithLeadTime.after(now) || now.after(endWithFollowupTime))) {
 			return null;
@@ -197,6 +205,9 @@ public class AssessmentModeGuardController extends BasicController implements Ge
 			Link go = guard.getGo();
 			Link cont = guard.getContinue();
 			state = updateButtons(mode, now, go, cont);
+			if(go.isVisible()) {
+				assessmentModeCoordinationService.waitFor(getIdentity(), mode);
+			}
 		} else {
 			state = "error";
 		}
@@ -208,79 +219,97 @@ public class AssessmentModeGuardController extends BasicController implements Ge
 	private String updateButtons(TransientAssessmentMode mode, Date now, Link go, Link cont) {
 		String state;
 		if(mode.isManual()) {
-			if(Status.leadtime == mode.getStatus()) {
-				state = Status.leadtime.name();
-				go.setEnabled(false);
-				go.setVisible(true);
-				cont.setEnabled(false);
-				cont.setVisible(false);
-			} else if(Status.assessment == mode.getStatus()) {
-				state = Status.assessment.name();
-				go.setEnabled(true);
-				go.setVisible(true);
-				cont.setEnabled(false);
-				cont.setVisible(false);
-			} else if(Status.followup == mode.getStatus()) {
-				state = Status.followup.name();
-				go.setEnabled(false);
-				go.setVisible(false);
-				cont.setEnabled(false);
-				cont.setVisible(false);
-			} else if(Status.end == mode.getStatus()) {
-				state = Status.end.name();
-				go.setEnabled(false);
-				go.setVisible(false);
-				cont.setEnabled(true);
-				cont.setVisible(true);
-			} else {
-				state = "error";
-				go.setEnabled(false);
-				go.setVisible(false);
-				cont.setEnabled(false);
-				cont.setVisible(false);
-			}
+			state = updateButtonsManual(mode, go, cont);
 		} else {
-
-			Date begin = mode.getBegin();
-			Date beginWithLeadTime = mode.getBeginWithLeadTime();
-			Date end = mode.getEnd();
-			Date endWithLeadTime = mode.getEndWithFollowupTime();
-			
-			if(beginWithLeadTime.compareTo(now) <= 0 && begin.compareTo(now) > 0) {
-				state = Status.leadtime.name();
-				go.setEnabled(false);
-				go.setVisible(true);
-				cont.setEnabled(false);
-				cont.setVisible(false);
-			} else if(begin.compareTo(now) <= 0 && end.compareTo(now) > 0) {
-				state = Status.assessment.name();
-				go.setEnabled(true);
-				go.setVisible(true);
-				cont.setEnabled(false);
-				cont.setVisible(false);
-			} else if(end.compareTo(now) <= 0 && endWithLeadTime.compareTo(now) > 0) {
-				state = Status.followup.name();
-				go.setEnabled(false);
-				go.setVisible(false);
-				cont.setEnabled(false);
-				cont.setVisible(false);
-			} else if(endWithLeadTime.compareTo(now) <= 0 || Status.end == mode.getStatus()) {
-				state = Status.end.name();
-				go.setEnabled(false);
-				go.setVisible(false);
-				cont.setEnabled(true);
-				cont.setVisible(true);
-			} else {
-				state = "error";
-				go.setEnabled(false);
-				go.setVisible(false);
-				cont.setEnabled(false);
-				cont.setVisible(false);
-			}
+			state = updateButtonsAuto(mode, now, go, cont);
 		}
-		
 		return state;
+	}
+	
+	private String updateButtonsManual(TransientAssessmentMode mode, Link go, Link cont) {
+		String state;
+		if(Status.leadtime == mode.getStatus()) {
+			state = Status.leadtime.name();
+			go.setEnabled(false);
+			go.setVisible(true);
+			cont.setEnabled(false);
+			cont.setVisible(false);
+		} else if(Status.assessment == mode.getStatus() || isDisadvantageCompensationExtension(mode)) {
+			state = Status.assessment.name();
+			go.setEnabled(true);
+			go.setVisible(true);
+			cont.setEnabled(false);
+			cont.setVisible(false);
+		} else if(Status.followup == mode.getStatus()) {
+			state = Status.followup.name();
+			go.setEnabled(false);
+			go.setVisible(false);
+			cont.setEnabled(false);
+			cont.setVisible(false);
+		} else if(Status.end == mode.getStatus()) {
+			state = Status.end.name();
+			go.setEnabled(false);
+			go.setVisible(false);
+			cont.setEnabled(true);
+			cont.setVisible(true);
+		} else {
+			state = "error";
+			go.setEnabled(false);
+			go.setVisible(false);
+			cont.setEnabled(false);
+			cont.setVisible(false);
+		}
+		return state;
+	}
+	
+	private boolean isDisadvantageCompensationExtension(TransientAssessmentMode mode) {
+		if(mode.getEndStatus() == EndStatus.withoutDisadvantage
+				&& (mode.getStatus() == Status.followup || mode.getStatus() == Status.end)) {
+			return disadvantageCompensationService.isActiveDisadvantageCompensation(getIdentity(),
+					new RepositoryEntryRefImpl(mode.getRepositoryEntryKey()), mode.getElementList());
+		}
+		return false;
+	}
+	
+	private String updateButtonsAuto(TransientAssessmentMode mode, Date now, Link go, Link cont) {
+		Date begin = mode.getBegin();
+		Date beginWithLeadTime = mode.getBeginWithLeadTime();
+		Date end = mode.getEnd();
+		Date endWithLeadTime = mode.getEndWithFollowupTime();
 		
+		String state;
+		if(beginWithLeadTime.compareTo(now) <= 0 && begin.compareTo(now) > 0) {
+			state = Status.leadtime.name();
+			go.setEnabled(false);
+			go.setVisible(true);
+			cont.setEnabled(false);
+			cont.setVisible(false);
+		} else if(begin.compareTo(now) <= 0 && end.compareTo(now) > 0) {
+			state = Status.assessment.name();
+			go.setEnabled(true);
+			go.setVisible(true);
+			cont.setEnabled(false);
+			cont.setVisible(false);
+		} else if(end.compareTo(now) <= 0 && endWithLeadTime.compareTo(now) > 0) {
+			state = Status.followup.name();
+			go.setEnabled(false);
+			go.setVisible(false);
+			cont.setEnabled(false);
+			cont.setVisible(false);
+		} else if(endWithLeadTime.compareTo(now) <= 0 || Status.end == mode.getStatus()) {
+			state = Status.end.name();
+			go.setEnabled(false);
+			go.setVisible(false);
+			cont.setEnabled(true);
+			cont.setVisible(true);
+		} else {
+			state = "error";
+			go.setEnabled(false);
+			go.setVisible(false);
+			cont.setEnabled(false);
+			cont.setVisible(false);
+		}
+		return state;
 	}
 	
 	private ResourceGuard createGuard(TransientAssessmentMode mode) {
@@ -369,7 +398,7 @@ public class AssessmentModeGuardController extends BasicController implements Ge
 			cmc.deactivate();
 			
 			//make sure to see the navigation bar
-			ChiefController cc = Windows.getWindows(ureq).getChiefController();
+			ChiefController cc = Windows.getWindows(ureq).getChiefController(ureq);
 			cc.getScreenMode().setMode(Mode.standard, null);
 			
 			fireEvent(ureq, new Event("continue"));
@@ -389,7 +418,7 @@ public class AssessmentModeGuardController extends BasicController implements Ge
 	 */
 	private void launchAssessmentMode(UserRequest ureq, TransientAssessmentMode mode) {
 		cmc.deactivate();
-		
+	
 		ureq.getUserSession().setAssessmentModes(null);
 		OLATResourceable resource = mode.getResource();
 		ureq.getUserSession().setLockResource(resource, mode);
@@ -401,13 +430,16 @@ public class AssessmentModeGuardController extends BasicController implements Ge
 			businessPath += "[CourseNode:" + mode.getStartElementKey() + "]";
 		}
 		NewControllerFactory.getInstance().launch(businessPath, ureq, getWindowControl());
+
+		assessmentModeCoordinationService.start(getIdentity(), mode);
 	}
 	
 	public static final class ResourceGuard {
 
 		private String status;
 		private String errors;
-		private final Link goButton, continueButton;
+		private final Link goButton;
+		private final Link continueButton;
 		
 		private final Long modeKey;
 		private String name;

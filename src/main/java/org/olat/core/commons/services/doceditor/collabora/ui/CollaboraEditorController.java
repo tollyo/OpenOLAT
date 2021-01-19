@@ -19,14 +19,14 @@
  */
 package org.olat.core.commons.services.doceditor.collabora.ui;
 
+import org.olat.core.commons.services.doceditor.Access;
 import org.olat.core.commons.services.doceditor.DocEditor.Mode;
-import org.olat.core.commons.services.doceditor.DocEditorSecurityCallback;
-import org.olat.core.commons.services.doceditor.DocEditorSecurityCallbackBuilder;
+import org.olat.core.commons.services.doceditor.DocEditorService;
 import org.olat.core.commons.services.doceditor.collabora.CollaboraService;
-import org.olat.core.commons.services.doceditor.wopi.Access;
 import org.olat.core.commons.services.vfs.VFSMetadata;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
+import org.olat.core.gui.components.Window;
 import org.olat.core.gui.components.velocity.VelocityContainer;
 import org.olat.core.gui.control.Event;
 import org.olat.core.gui.control.WindowControl;
@@ -44,25 +44,23 @@ import org.springframework.beans.factory.annotation.Autowired;
  */
 public class CollaboraEditorController extends BasicController {
 	
-	private final VFSLeaf vfsLeaf;
-	private DocEditorSecurityCallback secCallback;
 	private LockResult lock;
 	private Access access;
 
 	@Autowired
 	private CollaboraService collaboraService;
+	@Autowired
+	private DocEditorService docEditorService;
 
-	public CollaboraEditorController(UserRequest ureq, WindowControl wControl, VFSLeaf vfsLeaf,
-			final DocEditorSecurityCallback securityCallback) {
+	public CollaboraEditorController(UserRequest ureq, WindowControl wControl, VFSLeaf vfsLeaf, Access access) {
 		super(ureq, wControl);
-		this.vfsLeaf = vfsLeaf;
-		this.secCallback = securityCallback;
+		this.access = access;
+		
+		wControl.getWindowBackOffice().getWindow().addListener(this);
 	
-		if (collaboraService.isLockNeeded(securityCallback.getMode())) {
+		if (collaboraService.isLockNeeded(access.getMode())) {
 			if (collaboraService.isLockedForMe(vfsLeaf, getIdentity())) {
-				this.secCallback = DocEditorSecurityCallbackBuilder.clone(securityCallback)
-						.withMode(Mode.VIEW)
-						.build();
+				this.access = docEditorService.updateMode(access, Mode.VIEW);
 				showWarning("editor.warning.locked");
 			} else {
 				lock = collaboraService.lock(vfsLeaf, getIdentity());
@@ -74,11 +72,9 @@ public class CollaboraEditorController extends BasicController {
 		if (vfsMetadata == null) {
 			mainVC.contextPut("warning", translate("editor.warning.no.metadata"));
 		} else {
-			this.access = collaboraService.createAccess(vfsMetadata, getIdentity(), secCallback);
 			String url = CollaboraEditorUrlBuilder
 					.builder(access)
 					.withLang(ureq.getLocale().getLanguage())
-					.withCloseButton(access.isCanClose())
 					.build();
 			
 			mainVC.contextPut("id", "o_" + CodeHelper.getRAMUniqueID());
@@ -90,18 +86,21 @@ public class CollaboraEditorController extends BasicController {
 
 	@Override
 	protected void event(UserRequest ureq, Component source, Event event) {
-		if ("close".equals(event.getCommand())) {
-			// Suppress close event, because we can not hide close button
-			if (access.isCanClose()) {
-				fireEvent(ureq, Event.DONE_EVENT);
-			}
+		if(event == Window.CLOSE_WINDOW) {
+			deleteAccess();
 		}
 	}
 
 	@Override
 	protected void doDispose() {
-		collaboraService.unlock(vfsLeaf, lock);
-		collaboraService.deleteAccess(access);
+		deleteAccess();
+		getWindowControl().getWindowBackOffice().getWindow().removeListener(this);
 	}
-
+	
+	private void deleteAccess() {
+		if (access != null) {
+			collaboraService.deleteAccessAndUnlock(access, lock);
+			access = null;
+		}
+	}
 }

@@ -70,7 +70,12 @@ public class UserChangePasswordController extends BasicController {
 
 		user = changeableUser;
 		mainVC = createVelocityContainer("pwd");
-		chPwdForm = new ChangeUserPasswordForm(ureq, wControl, user);
+		String authenticationUsername = olatAuthenticationSpi.getAuthenticationUsername(changeableUser);
+		if (authenticationUsername == null) { // create new authentication for provider OLAT
+			authenticationUsername = olatAuthenticationSpi.getOlatAuthusernameFromIdentity(changeableUser);
+		}
+		
+		chPwdForm = new ChangeUserPasswordForm(ureq, wControl, user, authenticationUsername);
 		listenTo(chPwdForm);
 		mainVC.put("chPwdForm", chPwdForm.getInitialComponent());
 		if (userModule.isAnyPasswordChangeAllowed()) {
@@ -92,7 +97,7 @@ public class UserChangePasswordController extends BasicController {
 		if (source == chPwdForm && event.equals(Event.DONE_EVENT)) {
 			if (olatAuthenticationSpi.changePassword(ureq.getIdentity(), user, chPwdForm.getNewPassword())) {
 				showInfo("changeuserpwd.successful");
-				logAudit ("user password changed successfully of " +user.getKey());
+				logAudit("user password changed successfully of " + user.getKey());
 			} else {
 				showError("changeuserpwd.failed");
 			}
@@ -100,6 +105,7 @@ public class UserChangePasswordController extends BasicController {
 		}
 	}
 
+	@Override
 	protected void doDispose() {
 		//
 	}

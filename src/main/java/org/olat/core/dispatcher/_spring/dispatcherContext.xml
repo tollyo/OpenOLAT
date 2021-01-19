@@ -64,6 +64,15 @@
 				<entry key="/edusharing/">
 					<ref bean="edusharingwebbean" />
 				</entry>
+				<entry key="/bigbluebutton/">
+					<ref bean="bigbluebuttonguestjoinbean" />
+				</entry>
+				<entry key="/teams/">
+					<ref bean="teamsguestjoinbean" />
+				</entry>
+				<entry key="/trace/">
+					<ref bean="contacttracingbean" />
+				</entry>
 				<entry key="/podcast/">
 					<ref bean="podcastMediaBean" />
 				</entry>
@@ -85,13 +94,19 @@
 				<entry key="/pdfd/">
 					<ref bean="pdfDeliveryBean" />
 				</entry>
+				<entry key="/checkoutv2">
+					<ref bean="paypalCheckoutCallback" />
+				</entry>
+				<entry key="/checkoutv2/">
+					<ref bean="paypalCheckoutCallback" />
+				</entry>
 			</map>
 		</property>
 	</bean>
 	
 	
 	<bean id="restdispatcher" class="org.olat.dispatcher.RESTDispatcher">
-		<property name="userDeletionManager" ref="userDeletionManager" />
+		<property name="securityManager" ref="baseSecurityManager" />
 		<property name="userSessionManager" ref="userSessionManager" />
 		<property name="restSecurityBean" ref="restSecurityBean" />
 		<property name="loginModule" ref="loginModule" />
@@ -228,21 +243,20 @@
 	</bean>
 	
 	<!--  provides the possibility to log in using a remote loginform, e.g. from a portal.
-		The follwing requirements are given:
+		The following requirements are given:
 		username parameter: username
 		password parameter: pwd
 		form submit method : POST (GET not allowed)
 		form action: /olat/remotelogin/
 	-->
 	<bean id="remoteloginbean" class="org.olat.dispatcher.RemoteLoginformDispatcher">
-		<property name="userDeletionManager" ref="userDeletionManager" />
+		<property name="securityManager" ref="baseSecurityManager" />
 	</bean>
 	<bean id="librarydispatcher" class="org.olat.modules.library.ui.LibraryDispatcher" />
 
 	<bean id="shibbean" class="org.olat.shibboleth.ShibbolethDispatcher">
 		<property name="shibbolethModule" ref="shibbolethModule"/>
 		<property name="securityManager" ref="baseSecurityManager"/>
-		<property name="userDeletionManager" ref="userDeletionManager"/>
 	</bean>
 		
 	<!--  static files delivery. See org.olat.core.dispatcher.mapper.package.html for more infos -->
@@ -271,6 +285,15 @@
 	<bean id="edusharingwebbean"
 		class="org.olat.modules.edusharing.EdusharingDispatcher" />
 
+	<bean id="bigbluebuttonguestjoinbean"
+		class="org.olat.modules.bigbluebutton.BigBlueButtonDispatcher" />
+
+	<bean id="teamsguestjoinbean"
+		class="org.olat.modules.teams.TeamsDispatcher" />
+		
+	<bean id="contacttracingbean"
+		  class="org.olat.modules.contacttracing.ContactTracingDispatcher" />
+		
 	<!-- podcast media dispatcher -->
 	<bean id="podcastMediaBean" class="org.olat.modules.webFeed.dispatching.FeedMediaDispatcher">
 		<property name="feedManager" ref="feedManager"/>

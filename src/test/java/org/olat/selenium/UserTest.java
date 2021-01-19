@@ -598,6 +598,8 @@ public class UserTest extends Deployments {
 		//we are in administration
 		browser.navigate().back();
 		//we are in user management
+		By userManagementCreateBy = By.cssSelector("ul.o_tools a.o_sel_useradmin_create");
+		OOGraphene.waitElement(userManagementCreateBy, browser);
 		browser.navigate().back();
 		//we are in "My courses", check
 		OOGraphene.waitElement(NavigationPage.myCoursesAssertBy, browser);
@@ -697,9 +699,11 @@ public class UserTest extends Deployments {
 		//admin delete
 		userAdminPage
 			.openSearchUser()
-			.openDirectDeleteUser()
-			.searchUserToDelete(username)
-			.selectAndDeleteUser(lastName);
+			.searchByUsername(username)
+			.selectByUsername(username)
+			.assertOnUserEditView(username)
+			.deleteUser()
+			.confirmDeleteUsers();
 		
 		//user try the login
 		userLoginPage = LoginPage.load(userBrowser, deploymentUrl);

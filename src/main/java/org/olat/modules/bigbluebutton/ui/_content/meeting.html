@@ -1,0 +1,87 @@
+<div class="o_sel_bbb_meeting">
+<h3>$r.escapeHtml($title)</h3>
+#if($r.isNotEmpty($errorMessage))
+	<div class="o_error">$errorMessage</div>
+#end
+#if($r.isNotNull($start) || $r.isNotNull($end))
+<div><i class="o_icon o_icon_lifecycle_date"> </i> #if($r.isNotNull($start))$start#end - #if($r.isNotNull($end))$end#end</div>
+#end
+#if($r.isNotEmpty($mainPresenter))
+<div><i class="o_icon o_icon_user"> </i> $r.escapeHtml($mainPresenter)</div>
+#end
+#if($r.isNotEmpty($description))
+	<div class="o_block_large o_info">$r.xssScan($description)</div>
+#end
+
+#if($r.isNotEmpty($externalUrl) && $r.isFalse($ended))
+<div class="o_block_large">
+	<label forid="externalusersmeetingurl">$r.translate("meeting.url.external.users")</label>
+	<div class="o_copy_code o_nowrap form-control-static"><a href="javascript:;" id="o_extmeetingurl"><i class="o_icon o_icon-lg o_icon-fw o_icon_qrcode"> </i></a><input id="externalusersmeetingurl" type="text" value="$externalUrl" onclick="this.select()"/></div>
+	
+	#if($r.isNotEmpty($externalPassword))
+		<label forid="externalpassword">$r.translate("meeting.password")</label>
+		<div class="o_copy_code o_nowrap form-control-static"><input id="externalpassword" type="text" value="$externalPassword" onclick="this.select()"/></div>
+	#end
+	<script>
+	jQuery(function() {
+		o_QRCodePopup('o_extmeetingurl', '$externalUrl', 'right');
+	});
+	</script>
+</div>
+#end
+
+#if($r.isNotEmpty($documents))
+<label forid="meeting-slides"><i class="o_icon o_filetype_file"> </i> $r.translate("meeting.slides")</label>
+<ul id="meeting-slides" class="list-unstyled o_slides">
+	#foreach($document in $documents)
+		<li><a href="$mapperUri/slides/$r.encodeUrl($document.filename)" target="_blank"><i class="o_icon $r.getFiletypeIconCss($document.filename)"> </i> $r.escapeHtml($document.label)</a> #if($r.visible($document.deleteButton))$r.render($document.deleteButton)#end</li>
+	#end
+</ul>
+<div class="o_warning">$r.translate("warning.slides.meeting.running")</div>
+#end
+#if($r.available("meeting.slides.upload"))
+	$r.render("meeting.slides.upload")
+#end
+
+#if($r.isTrue($ended))
+	<div class="o_block_large o_warning">$r.translate("meeting.ended")</div>
+#end
+#if($r.isTrue($disabled))
+	<div class="o_block_large o_error" role="alert">$r.translate("error.serverDisabled")</div>
+#elseif($r.isTrue($notStarted))
+<div class="o_block_large o_info">$r.translate("meeting.create.intro")</div>
+#end
+
+#if($r.visible("meeting.acknowledge.recording"))
+<div class="o_warning">
+	<h4>$r.translate("meeting.acknowledge.recording.explain.title")</h4>
+	<p>$r.translate("meeting.acknowledge.recording.explain")</p>
+	$r.render("meeting.acknowledge.recording")
+	#if($f.hasError("meeting.acknowledge.recording"))
+		$r.render("meeting.acknowledge.recording_ERROR")
+	#end
+</div>
+#end
+
+<div class="o_button_group">
+#if($r.available("meeting.join.button") && $r.visible("meeting.join.button"))
+	$r.render("meeting.join.button")
+#end
+
+#if($r.available("meeting.guest.join.button") && $r.visible("meeting.guest.join.button"))
+	$r.render("meeting.guest.join.button")
+#end
+</div>
+
+#if($r.isTrue($ended) || $r.isTrue($hasRecordings))
+<div class="o_block_large">
+	<fieldset>
+		<legend>$r.translate("recordings")</legend>
+		#if ($r.isTrue($hasRecordings) && $r.isNotNull($recordingInfo))
+		<div class="o_note"><i class="o_icon o_icon-fw o_icon_info"> </i> $recordingInfo</div>
+		#end
+		$r.render("recordings")
+	</fieldset>
+</div>
+#end
+</div>

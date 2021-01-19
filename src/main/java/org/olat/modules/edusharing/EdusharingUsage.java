@@ -32,6 +32,8 @@ import org.olat.core.id.OLATResourceable;
  */
 public interface EdusharingUsage extends ModifiedInfo, CreateInfo {
 
+	public Long getKey();
+	
 	/**
 	 * The identifier is the shared key between edu-sharing and OpenOLAT. In
 	 * edu-sharing that key is called "resourceId".

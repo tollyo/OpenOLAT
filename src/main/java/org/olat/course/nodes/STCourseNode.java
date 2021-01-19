@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.logging.log4j.Logger;
+import org.olat.basesecurity.GroupRoles;
 import org.olat.core.commons.controllers.linkchooser.CustomLinkTreeModel;
 import org.olat.core.commons.fullWebApp.LayoutMain3ColsController;
 import org.olat.core.commons.fullWebApp.popup.BaseFullWebappPopupLayoutFactory;
@@ -73,6 +74,7 @@ import org.olat.course.run.navigation.NodeRunConstructionResult;
 import org.olat.course.run.scoring.FailedEvaluationType;
 import org.olat.course.run.scoring.ScoreCalculator;
 import org.olat.course.run.scoring.ScoreEvaluation;
+import org.olat.course.run.tools.CourseToolLinkTreeModel;
 import org.olat.course.run.userview.CourseNodeSecurityCallback;
 import org.olat.course.run.userview.UserCourseEnvironment;
 import org.olat.course.tree.CourseEditorTreeNode;
@@ -177,7 +179,13 @@ public class STCourseNode extends AbstractAccessableCourseNode {
 					userCourseEnv.getCourseEnvironment().isPreview(), courseRepoKey);
 			// check if user is allowed to edit the page in the run view
 			CourseGroupManager cgm = userCourseEnv.getCourseEnvironment().getCourseGroupManager();
-			boolean hasEditRights = userCourseEnv.isAdmin() || cgm.hasRight(ureq.getIdentity(),CourseRights.RIGHT_COURSEEDITOR)
+			GroupRoles role = GroupRoles.owner;
+			if (userCourseEnv.isParticipant()) {
+				role = GroupRoles.participant;
+			} else if (userCourseEnv.isCoach()) {
+				role = GroupRoles.coach;
+			}
+			boolean hasEditRights = userCourseEnv.isAdmin() || cgm.hasRight(ureq.getIdentity(),CourseRights.RIGHT_COURSEEDITOR, role)
 					|| (getModuleConfiguration().getBooleanSafe(SPEditController.CONFIG_KEY_ALLOW_COACH_EDIT, false) && userCourseEnv.isCoach());
 			
 			if (hasEditRights) {
@@ -185,6 +193,7 @@ public class STCourseNode extends AbstractAccessableCourseNode {
 				// set the link tree model to internal for the HTML editor
 				CustomLinkTreeModel linkTreeModel = new CourseInternalLinkTreeModel(userCourseEnv.getCourseEnvironment().getRunStructure().getRootNode());
 				spCtr.setInternalLinkTreeModel(linkTreeModel);
+				spCtr.setToolLinkTreeModel(new CourseToolLinkTreeModel(userCourseEnv.getCourseEnvironment().getCourseConfig(), ureq.getLocale()));
 			}
 			spCtr.addLoggingResourceable(LoggingResourceable.wrap(this));
 			// create clone wrapper layout, allow popping into second window
@@ -380,7 +389,7 @@ public class STCourseNode extends AbstractAccessableCourseNode {
 			
 			STCourseNode stParent = getFirstSTParent(parent);
 			if (stParent != null) {
-				boolean scoreCalculatorSupported = stParent.getModuleConfiguration().getBooleanSafe(CONFIG_SCORE_CALCULATOR_SUPPORTED);
+				boolean scoreCalculatorSupported = stParent.getModuleConfiguration().getBooleanSafe(CONFIG_SCORE_CALCULATOR_SUPPORTED, true);
 				config.setBooleanEntry(CONFIG_SCORE_CALCULATOR_SUPPORTED, scoreCalculatorSupported);
 				if (scoreCalculatorSupported) {
 					scoreCalculator = new ScoreCalculator();
@@ -533,34 +542,37 @@ public class STCourseNode extends AbstractAccessableCourseNode {
 		} else {
 			retVal = new ArrayList<>();
 		}
-		// init passedExpression and scoreExpression
-		getScoreCalculator();
+		
+		if (getModuleConfiguration().getBooleanSafe(STCourseNode.CONFIG_SCORE_CALCULATOR_SUPPORTED, true)) {
+			// init passedExpression and scoreExpression
+			getScoreCalculator();
 
-		passedExpression.setExpertMode(true);
-		String coS = passedExpression.getConditionExpression();
-		if (StringHelper.containsNonWhitespace(coS)) {
-			// an active condition is defined
-			ConditionExpression ce = new ConditionExpression(passedExpression.getConditionId());
-			ce.setExpressionString(passedExpression.getConditionExpression());
-			retVal.add(ce);
-		}
-		
-		scoreExpression.setExpertMode(true);
-		coS = scoreExpression.getConditionExpression();
-		if (StringHelper.containsNonWhitespace(coS)) {
-			// an active condition is defined
-			ConditionExpression ce = new ConditionExpression(scoreExpression.getConditionId());
-			ce.setExpressionString(scoreExpression.getConditionExpression());
-			retVal.add(ce);
-		}
-		
-		failedExpression.setExpertMode(true);
-		coS = failedExpression.getConditionExpression();
-		if (StringHelper.containsNonWhitespace(coS)) {
-			// an active condition is defined
-			ConditionExpression ce = new ConditionExpression(failedExpression.getConditionId());
-			ce.setExpressionString(failedExpression.getConditionExpression());
-			retVal.add(ce);
+			passedExpression.setExpertMode(true);
+			String coS = passedExpression.getConditionExpression();
+			if (StringHelper.containsNonWhitespace(coS)) {
+				// an active condition is defined
+				ConditionExpression ce = new ConditionExpression(passedExpression.getConditionId());
+				ce.setExpressionString(passedExpression.getConditionExpression());
+				retVal.add(ce);
+			}
+			
+			scoreExpression.setExpertMode(true);
+			coS = scoreExpression.getConditionExpression();
+			if (StringHelper.containsNonWhitespace(coS)) {
+				// an active condition is defined
+				ConditionExpression ce = new ConditionExpression(scoreExpression.getConditionId());
+				ce.setExpressionString(scoreExpression.getConditionExpression());
+				retVal.add(ce);
+			}
+			
+			failedExpression.setExpertMode(true);
+			coS = failedExpression.getConditionExpression();
+			if (StringHelper.containsNonWhitespace(coS)) {
+				// an active condition is defined
+				ConditionExpression ce = new ConditionExpression(failedExpression.getConditionId());
+				ce.setExpressionString(failedExpression.getConditionExpression());
+				retVal.add(ce);
+			}
 		}
 		return retVal;
 	}

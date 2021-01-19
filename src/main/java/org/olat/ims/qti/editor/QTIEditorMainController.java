@@ -273,6 +273,8 @@ public class QTIEditorMainController extends MainLayoutBasicController implement
 	private RepositoryEntry qtiEntry;
 
 	@Autowired
+	private IQManager iqManager;
+	@Autowired
 	private QTIModule qtiModule;
 	@Autowired
 	private UserManager userManager;
@@ -340,11 +342,12 @@ public class QTIEditorMainController extends MainLayoutBasicController implement
 		qtiPackage = new QTIEditorPackageImpl(ureq.getIdentity(), fileResource, secCallback, getTranslator());
 
 		// try to get lock which lives longer then the browser session in case of a closing browser window
-		lockEntry = CoordinatorManager.getInstance().getCoordinator().getLocker().aquirePersistentLock(qtiPackage.getRepresentingResourceable(), ureq.getIdentity(), null);
+		lockEntry = iqManager.aquirePersistentLock(qtiPackage.getRepresentingResourceable(), ureq.getIdentity(), null);
 		if (lockEntry.isSuccess()) {
 			// acquired a lock for the duration of the session only
 			//fileResource has the RepositoryEntre.getOlatResource within, which is used in qtiPackage
-			activeSessionLock = CoordinatorManager.getInstance().getCoordinator().getLocker().acquireLock(qtiPackage.getRepresentingResourceable(), ureq.getIdentity(), null);
+			activeSessionLock = CoordinatorManager.getInstance().getCoordinator().getLocker()
+					.acquireLock(qtiPackage.getRepresentingResourceable(), ureq.getIdentity(), null, getWindow());
 			//
 			if (qtiPackage.getQTIDocument() == null) {
 				notEditable = true;				
@@ -688,23 +691,14 @@ public class QTIEditorMainController extends MainLayoutBasicController implement
 		// remove lock
 		if (lockEntry.isSuccess()){
 			CoordinatorManager.getInstance().getCoordinator().getLocker().releaseLock(activeSessionLock);
-			CoordinatorManager.getInstance().getCoordinator().getLocker().releasePersistentLock(lockEntry);
+			iqManager.releasePersistentLock(lockEntry);
 		}
 		fireEvent(ureq, Event.DONE_EVENT); // close editor
 	}
 
 	private void saveAndExit(UserRequest ureq) {
 		boolean saveOk = false;
-		//
-		// acquire write lock
-		//IS_SAVING_RWL.writeLock().lock();
-		// synchronized(IS_SAVING){
-		//try {
-			saveOk = qtiPackage.savePackageToRepository();
-		//} finally {
-		//	IS_SAVING_RWL.writeLock().unlock();
-		//}
-		// }// release write lock
+		saveOk = qtiPackage.savePackageToRepository();
 		if (!saveOk) {
 			getWindowControl().setError(translate("error.save"));
 			return;
@@ -1068,7 +1062,7 @@ public class QTIEditorMainController extends MainLayoutBasicController implement
 		removeAsListenerAndDispose(createConvertedTestController);
 
 		RepositoryHandler handler = repositoryHandlerFactory.getRepositoryHandler(ImsQTI21Resource.TYPE_NAME);
-		createConvertedTestController = new CreateRepositoryEntryController(ureq, getWindowControl(), handler);
+		createConvertedTestController = new CreateRepositoryEntryController(ureq, getWindowControl(), handler, false);
 		createConvertedTestController.setCreateObject(qtiEntry.getOlatResource());
 		createConvertedTestController.setDisplayname(qtiEntry.getDisplayname());
 		listenTo(createConvertedTestController);
@@ -1242,7 +1236,9 @@ public class QTIEditorMainController extends MainLayoutBasicController implement
 		// enter save/discard dialog if not already in it
 		if(exportLatch != null) {
 			try {
-				exportLatch.await(30, TimeUnit.SECONDS);
+				if(!exportLatch.await(30, TimeUnit.SECONDS)) {
+					logWarn("Cannot close editor in 30s.", null);
+				}
 			} catch (InterruptedException e) {
 				logError("", e);
 			}

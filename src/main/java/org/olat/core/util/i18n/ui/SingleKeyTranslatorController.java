@@ -36,6 +36,7 @@ import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.Event;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.translator.Translator;
+import org.olat.core.util.StringHelper;
 import org.olat.core.util.Util;
 import org.olat.core.util.i18n.I18nItem;
 import org.olat.core.util.i18n.I18nManager;
@@ -55,11 +56,14 @@ import org.springframework.beans.factory.annotation.Autowired;
  */
 public class SingleKeyTranslatorController extends FormBasicController {
 
-	private String[] i18nItemKeys;
-	private List<I18nRowBundle> bundles;
-	private Class<?> translatorBaseClass;
 	private static final String TXT_NAME_PREFIX = "text.";
 	private static final String LBL_NAME_PREFIX = "lbl.";
+
+	private final String[] i18nItemKeys;
+	private final Class<?> translatorBaseClass;
+	private final InputType inputType;
+	private final String translatedDescription;
+	private List<I18nRowBundle> bundles;
 	private Map<String, TextElement> textElements;
 	private Object uobject;
 
@@ -68,8 +72,48 @@ public class SingleKeyTranslatorController extends FormBasicController {
 	@Autowired
 	private I18nModule i18nModule;
 
+	/**
+	 * 
+	 * @param ureq The user request
+	 * @param wControl The window control
+	 * @param keyToTranslate The key to translate
+	 * @param translatorBaseClass The package to translate
+	 */
 	public SingleKeyTranslatorController(UserRequest ureq, WindowControl wControl, String keyToTranslate, Class<?> translatorBaseClass) {
-		this(ureq,wControl,new String[]{keyToTranslate},translatorBaseClass);
+		this(ureq, wControl, new String[]{keyToTranslate}, translatorBaseClass, InputType.TEXT_ELEMENT, null);
+	}
+	
+	/**
+	 * 
+	 * @param ureq The user request
+	 * @param wControl The window control
+	 * @param keyToTranslate The key to translate
+	 * @param translatorBaseClass The package to translate
+	 * @param inputType Type of input, textElement, textArea or richTextElement
+	 */
+	public SingleKeyTranslatorController(UserRequest ureq, WindowControl wControl, String keyToTranslate,
+			Class<?> translatorBaseClass, InputType inputType, String translatedDescription) {
+		this(ureq, wControl, new String[]{keyToTranslate}, translatorBaseClass, inputType, translatedDescription);
+	}
+	
+	/**
+	 * 
+	 * @param ureq The user request
+	 * @param wControl The window control
+	 * @param keysToTranslate array of keys to translate (each key will have the
+	 *          same value, translation is only done once (for each language) !)
+	 * @param translatorBaseClass The package to translate
+	 * @param inputType Type of input, textElement, textArea or richTextElement
+	 * @param translatedDescription the translated form description
+	 */
+	public SingleKeyTranslatorController(UserRequest ureq, WindowControl wControl, String[] keysToTranslate,
+			Class<?> translatorBaseClass, InputType inputType, String translatedDescription) {
+		super(ureq, wControl, FormBasicController.LAYOUT_VERTICAL);
+		this.inputType = inputType;
+		i18nItemKeys = keysToTranslate;
+		this.translatorBaseClass = translatorBaseClass;
+		this.translatedDescription = translatedDescription;
+		initForm(ureq);
 	}
 
 	/**
@@ -82,21 +126,6 @@ public class SingleKeyTranslatorController extends FormBasicController {
 		return this.translatorBaseClass;
 	}
 
-	/**
-	 * 
-	 * @param ureq
-	 * @param wControl
-	 * @param keysToTranslate array of keys to translate (each key will have the
-	 *          same value, translation is only done once (for each language) !)
-	 * @param translatorBaseClass
-	 */
-	public SingleKeyTranslatorController(UserRequest ureq, WindowControl wControl, String[] keysToTranslate, Class<?> translatorBaseClass) {
-		super(ureq, wControl, FormBasicController.LAYOUT_VERTICAL);
-		i18nItemKeys = keysToTranslate;
-		this.translatorBaseClass = translatorBaseClass;
-		initForm(ureq);
-	}
-	
 	public Object getUserObject() {
 		return uobject;
 	}
@@ -107,6 +136,10 @@ public class SingleKeyTranslatorController extends FormBasicController {
 
 	@Override
 	protected void initForm(FormItemContainer formLayout, Controller listener, UserRequest ureq) {
+		if (StringHelper.containsNonWhitespace(translatedDescription)) {
+			setFormDescription("placeholder", new String[] {translatedDescription});
+		}
+		
 		Map<Locale, Locale> allOverlays = i18nModule.getOverlayLocales();
 
 		Collection<String> enabledKeys = i18nModule.getEnabledLanguageKeys();
@@ -119,18 +152,30 @@ public class SingleKeyTranslatorController extends FormBasicController {
 		// build the form
 		textElements = new HashMap<>();
 		for (I18nRowBundle i18nRowBundle : bundles) {
-			uifactory.addStaticTextElement(LBL_NAME_PREFIX + i18nRowBundle.getLanguageKey(), null, i18nRowBundle.getKeyTranslator().getLocale()
-					.getDisplayLanguage(getLocale()), formLayout);
+			String labelId = LBL_NAME_PREFIX + i18nRowBundle.getLanguageKey();
+			String label = i18nRowBundle.getKeyTranslator().getLocale().getDisplayLanguage(getLocale());
+			uifactory.addStaticTextElement(labelId, null, label, formLayout);
 
 			String value = "";
 			if (i18nRowBundle.hasTranslationForValue(i18nItemKeys[0])) {
 				value = i18nRowBundle.getKeyTranslator().translate(i18nItemKeys[0]);
 			}
-			TextElement te = uifactory.addTextElement(TXT_NAME_PREFIX + i18nRowBundle.getLanguageKey(), null, 255, value, formLayout);
+			String textId = TXT_NAME_PREFIX + i18nRowBundle.getLanguageKey();
+			TextElement te = null;
+			switch (inputType) {
+				case TEXT_ELEMENT:
+					te = uifactory.addTextElement(textId, textId, null, 255, value, formLayout);
+					te.setDisplaySize(60);
+					break;
+				case TEXT_AREA:
+					te = uifactory.addTextAreaElement(textId, null, -1, 8, 60, false, false, value, formLayout);
+					break;
+				case RICH_TEXT_ELEMENT:
+					te = uifactory.addRichTextElementForStringDataMinimalistic(textId, null, value, -1, -1, formLayout, getWindowControl()); //, null, formLayout, ureq.getUserSession(), getWindowControl());
+					break;
+			}
 			te.setMandatory(true);
-			te.setDisplaySize(60);
 			textElements.put(i18nRowBundle.getLanguageKey(), te);
-
 		}
 
 		FormLayoutContainer buttonLayout = FormLayoutContainer.createButtonLayout("ok_cancel", getTranslator());
@@ -190,11 +235,11 @@ public class SingleKeyTranslatorController extends FormBasicController {
 	 * 
 	 * @author strentini
 	 */
-	class I18nRowBundle {
-		private Locale overlayLocale;
-		private Locale locale;
-		private String languageKey;
-		private Translator keyTranslator;
+	private class I18nRowBundle {
+		private final Locale overlayLocale;
+		private final Locale locale;
+		private final String languageKey;
+		private final Translator keyTranslator;
 
 		/**
 		 * 
@@ -217,10 +262,6 @@ public class SingleKeyTranslatorController extends FormBasicController {
 			return overlayLocale;
 		}
 
-		public Locale getLocale() {
-			return locale;
-		}
-
 		public String getLanguageKey() {
 			return languageKey;
 		}
@@ -228,7 +269,11 @@ public class SingleKeyTranslatorController extends FormBasicController {
 		public Translator getKeyTranslator() {
 			return keyTranslator;
 		}
-
 	}
 
+	public enum InputType {
+		TEXT_ELEMENT,
+		TEXT_AREA,
+		RICH_TEXT_ELEMENT
+	}
 }

@@ -29,12 +29,12 @@ import java.io.IOException;
 import java.util.Iterator;
 import java.util.Set;
 
+import org.apache.logging.log4j.Logger;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.olat.core.gui.components.form.flexible.FormItem;
 import org.olat.core.gui.render.StringOutput;
 import org.olat.core.logging.OLATRuntimeException;
-import org.apache.logging.log4j.Logger;
 import org.olat.core.logging.Tracing;
 
 /**
@@ -60,16 +60,16 @@ public class FormJSHelper {
 	 * @param actions
 	 * @return
 	 */
-	public static StringBuilder getRawJSFor(Form form, String id, int actions) {
+	public static StringBuilder getRawJSFor(Form form, String id, int actions, NameValuePair... pairs) {
 		StringBuilder sb = new StringBuilder(64);
 		// find correct action! only one action supported
 		for (int i = FormEvent.ON_DOTDOTDOT.length - 1; i >= 0; i--) {
 			if (actions - FormEvent.ON_DOTDOTDOT[i] > 0)
 				throw new AssertionError("only one actions supported here");
 			if (actions - FormEvent.ON_DOTDOTDOT[i] == 0) {
-				sb.append(" on" + EXTJSACTIONS[i]);// javascript action
+				sb.append(" on").append(EXTJSACTIONS[i]);// javascript action
 				sb.append("=\"");
-				sb.append(getJSFnCallFor(form, id, i));
+				sb.append(getJSFnCallFor(form, id, i, pairs));
 				sb.append("\"");
 				break;
 			}
@@ -77,7 +77,7 @@ public class FormJSHelper {
 		return sb;
 	}
 
-	public static String getJSFnCallFor(Form form, String id, int actionIndex) {
+	public static String getJSFnCallFor(Form form, String id, int actionIndex, NameValuePair... pairs) {
 		StringBuilder sb = new StringBuilder(64);
 		sb.append("o_ffEvent('")
 		  .append(form.getFormName()).append("','")
@@ -85,7 +85,18 @@ public class FormJSHelper {
 		  .append(id).append("','")
 		  .append(form.getEventFieldId()).append("','")
 		  .append(FormEvent.ON_DOTDOTDOT[actionIndex])
-		  .append("')");
+		  .append("'");
+		if(pairs != null && pairs.length > 0) {
+			for(NameValuePair pair:pairs) {
+				if(pair != null) {
+					sb.append(",'")
+					  .append(pair.getName()).append("','")
+					  .append(pair.getValue())
+					  .append("'");
+				}
+			}
+		}
+		sb.append(")");
 		return sb.toString();
 	}
 	
@@ -124,8 +135,8 @@ public class FormJSHelper {
 	 * @param pairs Additional name value pairs send by the link
 	 * @return
 	 */
-	public static String getXHRFnCallFor(FormItem item, boolean dirtyCheck, boolean pushState, NameValuePair... pairs) {
-		return getXHRFnCallFor(item.getRootForm(), item.getFormDispatchId(), 1, dirtyCheck, pushState, false, pairs);
+	public static String getXHRFnCallFor(FormItem item, boolean dirtyCheck, boolean pushState, boolean submit, NameValuePair... pairs) {
+		return getXHRFnCallFor(item.getRootForm(), item.getFormDispatchId(), 1, dirtyCheck, pushState, submit, pairs);
 	}
 	
 	/**

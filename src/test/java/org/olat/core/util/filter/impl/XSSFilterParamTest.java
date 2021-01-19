@@ -185,6 +185,8 @@ public class XSSFilterParamTest {
 				"<img src=\"/olat/edusharing/preview?objectUrl&#61;ccrep://OpenOLAT/d5130470-14b4-4ad4-88b7-dfb3ebe943da&amp;version&#61;1.0\" data-es_identifier=\"2083dbe64f00b07232b11608ec0842fc\" data-es_objecturl=\"ccrep://OpenOLAT/d5130470-14b4-4ad4-88b7-dfb3ebe943da\" data-es_version=\"1.0\" data-es_version_current=\"1.0\" data-es_mediatype=\"i23\" data-es_mimetype=\"image/png\" data-es_width=\"1000\" data-es_height=\"446\" data-es_first_edit=\"false\" class=\"edusharing\" alt=\"Bildschirmfoto 2018-11-07 um 16.09.49.png\" title=\"Bildschirmfoto 2018-11-07 um 16.09.49.png\" width=\"1000\" height=\"446\" />"	
 			},
 			{ "<a href=\"javascript:parent.gotonode(100055283652712)\">Test</a>", "<a href=\"javascript:parent.gotonode(100055283652712)\">Test</a>" },
+			{ "<a href='javascript:parent.gototool(\"blog\")'>Blog</a>", "<a href=\"javascript:parent.gototool(&#34;blog&#34;)\">Blog</a>" },
+			{ "<a href=\"javascript:parent.gototool('blog')\">Blog</a>", "<a href=\"javascript:parent.gototool(&#39;blog&#39;)\">Blog</a>" },
 			{ "<a href=\"media/LTT ZUJ SCM 09.09.2019.pdf\">doc</a>", "<a href=\"media/LTT%20ZUJ%20SCM%2009.09.2019.pdf\">doc</a>" },
 			{ "<a href=\"media/LTT%20ZUJ%20SCM%2009.09.2019.pdf\">doc</a>", "<a href=\"media/LTT%20ZUJ%20SCM%2009.09.2019.pdf\">doc</a>" },
 			{ "<p><img class=\"b_float_left\" src=\"media/IMG 1484.jpg\" width=\"74\" height=\"74\" /></p>", "<p><img class=\"b_float_left\" src=\"media/IMG%201484.jpg\" width=\"74\" height=\"74\" /></p>" },
@@ -193,6 +195,10 @@ public class XSSFilterParamTest {
 			{ "<a href=\"#Title_1\">Title 1</a>", "<a href=\"#Title_1\">Title 1</a>" },
 			{ "<a href=\"#Title 1\">Title with space</a>", "<a>Title with space</a>" },
 			{ "<a href=\"#Title#1\">Title with #</a>", "<a>Title with #</a>" },
+			// video tag
+			{ "<video src=\"http://localhost/win/video.mp4\" width=\"320\" height=\"240\"></video>", "<video src=\"http://localhost/win/video.mp4\" width=\"320\" height=\"240\"></video>" },
+			{ "<audio src=\"http://localhost/win/video.mp4\"></audio>", "<audio src=\"http://localhost/win/video.mp4\"></audio>" },
+			
 			{ null, "" } // be tolerant	
         });
     }

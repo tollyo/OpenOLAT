@@ -30,6 +30,8 @@ import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiTable
  */
 class RepositoryEntryDataModel extends DefaultFlexiTableDataSourceModel<RepositoryEntryRow> {
 	
+	private static final Cols[] COLS = Cols.values();
+	
 	public RepositoryEntryDataModel(DefaultRepositoryEntryDataSource source, FlexiTableColumnModel columnModel) {
 		super(source, columnModel);
 	}
@@ -57,7 +59,7 @@ class RepositoryEntryDataModel extends DefaultFlexiTableDataSourceModel<Reposito
 			return null;//don't break here
 		}
 		
-		switch(Cols.values()[col]) {
+		switch(COLS[col]) {
 			case key: return item.getKey();
 			case displayName: return item.getDisplayName();
 			case externalId: return item.getExternalId();

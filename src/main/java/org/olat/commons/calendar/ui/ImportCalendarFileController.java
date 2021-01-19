@@ -78,7 +78,7 @@ public class ImportCalendarFileController extends FormBasicController {
 	protected void initForm(FormItemContainer formLayout, Controller listener, UserRequest ureq) {
 		int identityLen = ureq.getIdentity().getName().length();
 		calendarName = uifactory.addTextElement("calname", "cal.import.calname.prompt", 41-identityLen, "", formLayout);
-		uploadEl = uifactory.addFileElement(getWindowControl(), "upload", "cal.import.form.prompt", formLayout);
+		uploadEl = uifactory.addFileElement(getWindowControl(), getIdentity(), "upload", "cal.import.form.prompt", formLayout);
 		
 		FormLayoutContainer buttonsCont = FormLayoutContainer.createButtonLayout("buttons", getTranslator());
 		buttonsCont.setRootForm(mainForm);
@@ -94,7 +94,7 @@ public class ImportCalendarFileController extends FormBasicController {
 
 	@Override
 	protected boolean validateFormLogic(UserRequest ureq) {
-		boolean allOk = true;
+		boolean allOk = super.validateFormLogic(ureq);
 		
 		calendarName.clearError();
 		if (calendarName.isEmpty()) {
@@ -114,7 +114,7 @@ public class ImportCalendarFileController extends FormBasicController {
 			 allOk &= false;
 		}
 		
-		return allOk & super.validateFormLogic(ureq);
+		return allOk;
 	}
 
 	@Override

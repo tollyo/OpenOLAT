@@ -53,9 +53,7 @@ import org.olat.course.run.userview.UserCourseEnvironment;
 import org.olat.course.run.userview.UserCourseEnvironmentImpl;
 import org.olat.modules.assessment.ui.event.AssessmentFormEvent;
 import org.olat.modules.coach.model.EfficiencyStatementEntry;
-import org.olat.modules.lecture.LectureModule;
 import org.olat.modules.lecture.LectureService;
-import org.olat.modules.lecture.RepositoryEntryLectureConfiguration;
 import org.olat.modules.lecture.ui.ParticipantLectureBlocksController;
 import org.olat.repository.RepositoryEntry;
 import org.olat.repository.RepositoryEntrySecurity;
@@ -83,6 +81,7 @@ public class UserDetailsController extends BasicController implements Activateab
 	private Link previousLink, detailsCmp, nextLink;
 	
 	private boolean hasChanged;
+	private boolean inheritTools;
 	private EfficiencyStatementEntry statementEntry;
 	
 	private AssessmentIdentityCourseController assessmentCtrl;
@@ -91,9 +90,6 @@ public class UserDetailsController extends BasicController implements Activateab
 	
 	private final Identity assessedIdentity;
 	
-
-	@Autowired
-	private LectureModule lectureModule;
 	@Autowired
 	private LectureService lectureService;
 	@Autowired
@@ -104,8 +100,8 @@ public class UserDetailsController extends BasicController implements Activateab
 	private EfficiencyStatementManager efficiencyStatementManager;
 
 	public UserDetailsController(UserRequest ureq, WindowControl wControl, TooledStackedPanel stackPanel,
-			EfficiencyStatementEntry statementEntry, Identity assessedIdentity, String details,
-			int entryIndex, int numOfEntries, Segment selectSegment) {
+	 	EfficiencyStatementEntry statementEntry, Identity assessedIdentity, String details,
+		int entryIndex, int numOfEntries, Segment selectSegment, boolean showAssessmentTool, boolean inheritTools) {
 		super(ureq, wControl);
 		
 		this.details = details;
@@ -113,6 +109,7 @@ public class UserDetailsController extends BasicController implements Activateab
 		this.stackPanel = stackPanel;
 		this.numOfEntries = numOfEntries;
 		this.statementEntry = statementEntry;
+		this.inheritTools = inheritTools;
 		
 		mainVC = createVelocityContainer("efficiency_details");
 
@@ -131,15 +128,14 @@ public class UserDetailsController extends BasicController implements Activateab
 				efficiencyStatementLink = LinkFactory.createLink("details.statement", mainVC, this);
 				segmentView.addSegment(efficiencyStatementLink, selectSegment == null || selectSegment == Segment.efficiencyStatement);
 				
-				assessmentLink = LinkFactory.createLink("details.assessment", mainVC, this);
-				segmentView.addSegment(assessmentLink, selectSegment == Segment.assessment);
+				if (showAssessmentTool) {
+					assessmentLink = LinkFactory.createLink("details.assessment", mainVC, this);
+					segmentView.addSegment(assessmentLink, selectSegment == Segment.assessment);
+				}
 				
-				if(lectureModule.isEnabled()) {
-					RepositoryEntryLectureConfiguration lectureConfig = lectureService.getRepositoryEntryLectureConfiguration(entry);
-					if(lectureConfig != null && lectureConfig.isLectureEnabled()) {
-						lecturesLink = LinkFactory.createLink("details.lectures", mainVC, this);
-						segmentView.addSegment(lecturesLink, selectSegment == Segment.lectures);
-					}
+				if(lectureService.isRepositoryEntryLectureEnabled(entry)) {
+					lecturesLink = LinkFactory.createLink("details.lectures", mainVC, this);
+					segmentView.addSegment(lecturesLink, selectSegment == Segment.lectures);
 				}
 				
 				if(selectSegment == Segment.assessment) {
@@ -167,20 +163,22 @@ public class UserDetailsController extends BasicController implements Activateab
 
 	@Override
 	public void initTools() {
-		previousLink = LinkFactory.createToolLink("previous", translate("previous"), this);
-		previousLink.setIconLeftCSS("o_icon o_icon_previous");
-		previousLink.setEnabled(entryIndex > 0);
-		stackPanel.addTool(previousLink);
-
-		detailsCmp = LinkFactory.createToolLink("details.course", StringHelper.escapeHtml(details), this);
-		detailsCmp.setIconLeftCSS("o_icon o_icon_user");
-		stackPanel.addTool(detailsCmp);
-
-		nextLink = LinkFactory.createToolLink("next", translate("next"), this);
-		nextLink.setIconLeftCSS("o_icon o_icon_next");
-		nextLink.setEnabled(entryIndex < numOfEntries);
-		stackPanel.addTool(nextLink);
-		stackPanel.addListener(this);
+		if (!inheritTools) {
+			previousLink = LinkFactory.createToolLink("previous", translate("previous"), this);
+			previousLink.setIconLeftCSS("o_icon o_icon_previous");
+			previousLink.setEnabled(entryIndex > 0);
+			stackPanel.addTool(previousLink);
+	
+			detailsCmp = LinkFactory.createToolLink("details.course", StringHelper.escapeHtml(details), this);
+			detailsCmp.setIconLeftCSS("o_icon o_icon_user");
+			stackPanel.addTool(detailsCmp);
+	
+			nextLink = LinkFactory.createToolLink("next", translate("next"), this);
+			nextLink.setIconLeftCSS("o_icon o_icon_next");
+			nextLink.setEnabled(entryIndex < numOfEntries);
+			stackPanel.addTool(nextLink);
+			stackPanel.addListener(this);
+		}
 	}
 
 	public EfficiencyStatementEntry getEntry() {

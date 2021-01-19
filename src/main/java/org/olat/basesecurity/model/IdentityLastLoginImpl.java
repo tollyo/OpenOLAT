@@ -26,7 +26,6 @@ import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;
 import javax.persistence.GenerationType;
 import javax.persistence.Id;
-import javax.persistence.NamedQueries;
 import javax.persistence.NamedQuery;
 import javax.persistence.Table;
 import javax.persistence.Temporal;
@@ -43,9 +42,7 @@ import org.olat.core.id.Persistable;
  */
 @Entity(name="bidentitylastlogin")
 @Table(name="o_bs_identity")
-@NamedQueries({
-	@NamedQuery(name="updateIdentityLastLogin", query="update bidentitylastlogin set lastLogin=:now where key=:identityKey")
-})
+@NamedQuery(name="updateIdentityLastLogin", query="update bidentitylastlogin set lastLogin=:now, inactivationEmailDate=null where key=:identityKey")
 public class IdentityLastLoginImpl implements Persistable, IdentityRef {
 
 	private static final long serialVersionUID = 2090002193918262648L;
@@ -58,6 +55,10 @@ public class IdentityLastLoginImpl implements Persistable, IdentityRef {
 	@Temporal(TemporalType.TIMESTAMP)
 	@Column(name="lastlogin", nullable=false, insertable=true, updatable=true)
 	private Date lastLogin;
+	
+	@Temporal(TemporalType.TIMESTAMP)
+	@Column(name="inactivationemaildate", nullable=false, insertable=true, updatable=true)
+	private Date inactivationEmailDate;
 	
 	public IdentityLastLoginImpl() {
 		//

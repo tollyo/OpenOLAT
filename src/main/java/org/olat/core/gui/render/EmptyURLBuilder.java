@@ -30,7 +30,7 @@ import org.olat.core.gui.components.Component;
 public class EmptyURLBuilder extends URLBuilder {
 
 	public EmptyURLBuilder() {
-		super(null, null, null);
+		super(null, null, null, null);
 	}
 
 	@Override

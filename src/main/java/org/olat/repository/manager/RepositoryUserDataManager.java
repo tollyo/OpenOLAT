@@ -85,13 +85,13 @@ public class RepositoryUserDataManager implements UserDataDeletable, UserDataExp
 	public void deleteUserData(Identity identity, String newDeletedUserName) {
 		// Remove as owner
 		Identity adminIdentity = deletionModule.getAdminUserIdentity();
-		List<RepositoryEntry> ownedRepoEntries = repositoryManager.queryByOwner(identity, false);
+		List<RepositoryEntry> ownedRepoEntries = repositoryManager.queryByOwner(identity, false, null);
 		for (RepositoryEntry repositoryEntry: ownedRepoEntries) {
 			repositoryService.removeRole(identity, repositoryEntry, GroupRoles.owner.name());
 			if (adminIdentity != null && repositoryService.countMembers(repositoryEntry, GroupRoles.owner.name()) == 0) {
 				// This group has no owner anymore => add OLAT-Admin as owner
 				repositoryService.addRole(deletionModule.getAdminUserIdentity(), repositoryEntry, GroupRoles.owner.name());
-				log.info("Delete user-data, add Administrator-identity as owner of repositoryEntry=" + repositoryEntry.getDisplayname());
+				log.info("Delete user-data, add Administrator-identity as owner of repositoryEntry={}", repositoryEntry.getDisplayname());
 			}
 		}
 		// Remove as initial author
@@ -104,10 +104,10 @@ public class RepositoryUserDataManager implements UserDataDeletable, UserDataExp
 			for (RepositoryEntry repositoryEntry: repoEntries) {
 				repositoryEntry.setInitialAuthor(replacement);
 				repositoryService.update(repositoryEntry);
-				log.info("Delete user-data, add Administrator-identity as initial-author of repositoryEntry=" + repositoryEntry.getDisplayname());
+				log.info("Delete user-data, add Administrator-identity as initial-author of repositoryEntry={}", repositoryEntry);
 			}
 		}
-		log.debug("All owner and initial-author entries in repository deleted for identity=" + identity);
+		log.debug("All owner and initial-author entries in repository deleted for identity={}", identity);
 	}
 
 	@Override

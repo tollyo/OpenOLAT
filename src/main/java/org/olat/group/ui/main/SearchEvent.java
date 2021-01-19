@@ -19,6 +19,8 @@
  */
 package org.olat.group.ui.main;
 
+import java.util.Date;
+
 import org.olat.core.gui.control.Event;
 import org.olat.core.id.context.StateEntry;
 import org.olat.core.util.StringHelper;
@@ -42,7 +44,9 @@ public class SearchEvent extends Event implements StateEntry {
 	private boolean waiting;
 	private boolean headless = false;
 	private Boolean publicGroups;
+	private Boolean managed;
 	private Boolean resources;
+	private Date lastUsageBefore;
 	
 	public SearchEvent() {
 		super("search");
@@ -119,6 +123,14 @@ public class SearchEvent extends Event implements StateEntry {
 	public void setPublicGroups(Boolean publicGroups) {
 		this.publicGroups = publicGroups;
 	}
+	
+	public Boolean getManaged() {
+		return managed;
+	}
+
+	public void setManaged(Boolean managed) {
+		this.managed = managed;
+	}
 
 	public Boolean getResources() {
 		return resources;
@@ -127,7 +139,7 @@ public class SearchEvent extends Event implements StateEntry {
 	public void setResources(Boolean resources) {
 		this.resources = resources;
 	}
-	
+
 	public boolean isHeadless() {
 		return headless;
 	}
@@ -136,6 +148,14 @@ public class SearchEvent extends Event implements StateEntry {
 		this.headless = headless;
 	}
 	
+	public Date getLastUsageBefore() {
+		return lastUsageBefore;
+	}
+
+	public void setLastUsageBefore(Date lastUsageBefore) {
+		this.lastUsageBefore = lastUsageBefore;
+	}
+
 	public BusinessGroupQueryParams convertToBusinessGroupQueriesParams() {
 		BusinessGroupQueryParams params = new BusinessGroupQueryParams();
 		params.setIdRef(StringHelper.containsNonWhitespace(idRef) ? idRef : null);
@@ -147,8 +167,10 @@ public class SearchEvent extends Event implements StateEntry {
 		params.setAttendee(isAttendee());
 		params.setWaiting(isWaiting());
 		params.setPublicGroups(getPublicGroups());
+		params.setManaged(getManaged());
 		params.setResources(getResources());
 		params.setHeadless(isHeadless());
+		params.setLastUsageBefore(getLastUsageBefore());
 		return params;
 	}
 
@@ -165,7 +187,9 @@ public class SearchEvent extends Event implements StateEntry {
 		clone.waiting = waiting;
 		clone.headless = headless;
 		clone.publicGroups = publicGroups;
+		clone.publicGroups = publicGroups;
 		clone.resources = resources;
+		clone.lastUsageBefore = lastUsageBefore;
 		return clone;
 	}
 }

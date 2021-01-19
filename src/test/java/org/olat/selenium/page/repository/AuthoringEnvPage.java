@@ -29,7 +29,6 @@ import org.olat.selenium.page.graphene.OOGraphene;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
-import org.openqa.selenium.support.ui.Select;
 
 /**
  * Page to control the author environnment.
@@ -83,9 +82,13 @@ public class AuthoringEnvPage {
 	}
 	
 	public CourseSettingsPage createCourse(String title) {
+		return createCourse(title, false);
+	}
+	
+	public CourseSettingsPage createCourse(String title, boolean learnPath) {
 		openCreateDropDown()
 			.clickCreate(ResourceType.course)
-			.fillCreateCourseForm(title, false)
+			.fillCreateCourseForm(title, learnPath)
 			.assertOnInfos();
 		return new CourseSettingsPage(browser);
 	}
@@ -159,10 +162,9 @@ public class AuthoringEnvPage {
 		By inputBy = By.cssSelector("div.modal.o_sel_author_create_popup div.o_sel_author_displayname input");
 		browser.findElement(inputBy).sendKeys(displayName);
 		// select node model for the course
-		By typeBy = By.cssSelector("#o_cocif_node_access_SELBOX>select");
-		WebElement typeEl = browser.findElement(typeBy);
 		String type = learnPath ? "learningpath" : "condition";
-		new Select(typeEl).selectByValue(type);
+		By typeBy = By.xpath("//div[@id='o_cocif_node_access']//input[@name='cif.node.access'][@value='" + type + "']");
+		browser.findElement(typeBy).click();
 		OOGraphene.waitBusy(browser);
 		// create the course
 		By submitBy = By.cssSelector("div.modal.o_sel_author_create_popup .o_sel_author_create_submit");
@@ -184,12 +186,14 @@ public class AuthoringEnvPage {
 		By inputBy = By.cssSelector("div.modal.o_sel_author_create_popup div.o_sel_author_displayname input");
 		browser.findElement(inputBy).sendKeys(displayName);
 		// select node model for the course
-		By typeBy = By.cssSelector("#o_cocif_node_access_SELBOX>select");
-		WebElement typeEl = browser.findElement(typeBy);
-		new Select(typeEl).selectByValue("condition");
+		By typeBy = By.xpath("//div[@id='o_cocif_node_access']//input[@name='cif.node.access'][@value='condition']");
+		browser.findElement(typeBy).click();
 		OOGraphene.waitBusy(browser);
-		
-		By createBy = By.cssSelector("div.modal.o_sel_author_create_popup .o_sel_author_create_wizard");
+		// select the simple wizard
+		By simpleCourseWizardBy = By.xpath("//div[@id='o_cocsc_wizard']//input[@name='csc.wizard'][@value='simple.course']");
+		browser.findElement(simpleCourseWizardBy).click();
+		// create the course
+		By createBy = By.cssSelector("div.modal.o_sel_author_create_popup .o_sel_author_create_submit");
 		browser.findElement(createBy).click();
 		OOGraphene.waitBusy(browser);
 		return new CourseWizardPage(browser);

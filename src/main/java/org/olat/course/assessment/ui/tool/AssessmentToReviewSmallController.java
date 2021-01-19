@@ -41,15 +41,16 @@ import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiTable
 import org.olat.core.gui.components.form.flexible.impl.elements.table.SelectionEvent;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.SortableFlexiTableDataModel;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.SortableFlexiTableModelDelegate;
+import org.olat.core.gui.components.tree.TreeModel;
+import org.olat.core.gui.components.tree.TreeNode;
 import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.id.Identity;
 import org.olat.core.util.Util;
-import org.olat.core.util.nodes.INode;
 import org.olat.core.util.tree.TreeVisitor;
-import org.olat.core.util.tree.Visitor;
 import org.olat.course.CourseFactory;
-import org.olat.course.Structure;
+import org.olat.course.ICourse;
+import org.olat.course.assessment.AssessmentHelper;
 import org.olat.course.assessment.AssessmentModule;
 import org.olat.course.assessment.AssessmentToolManager;
 import org.olat.course.assessment.model.SearchAssessedIdentityParams;
@@ -74,7 +75,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 public class AssessmentToReviewSmallController extends FormBasicController {
 	
 	private final RepositoryEntry courseEntry;
-	private final boolean isAdministrativeUser;
 	private final AssessmentToolSecurityCallback assessmentCallback;
 	
 	private FlexiTableElement tableEl;
@@ -98,20 +98,21 @@ public class AssessmentToReviewSmallController extends FormBasicController {
 		this.courseEntry = courseEntry;
 		this.assessmentCallback = assessmentCallback;
 		
-		isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
+		boolean isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
 		userPropertyHandlers = userManager.getUserPropertyHandlersFor(AssessmentToolConstants.reducedUsageIdentifyer, isAdministrativeUser);
 		
 		nodeIdentToNodeShortTitles = new HashMap<>();
-		Structure structure = CourseFactory.loadCourse(courseEntry).getRunStructure();
-		new TreeVisitor(new Visitor() {
-			@Override
-			public void visit(INode node) {
-				if(node instanceof CourseNode) {
-					CourseNode tNode = (CourseNode)node;
+		ICourse course = CourseFactory.loadCourse(courseEntry);
+		TreeModel tm = AssessmentHelper.assessmentTreeModel(course);
+		new TreeVisitor(node -> {
+			if(node instanceof TreeNode) {
+				Object uobject = ((TreeNode)node).getUserObject();
+				if(uobject instanceof CourseNode) {
+					CourseNode tNode = (CourseNode)uobject;
 					nodeIdentToNodeShortTitles.put(tNode.getIdent(), tNode.getShortTitle());
 				}
 			}
-		}, structure.getRootNode(), false).visitAll();
+		}, tm.getRootNode(), false).visitAll();
 		
 		initForm(ureq);
 		loadModel();
@@ -121,10 +122,7 @@ public class AssessmentToReviewSmallController extends FormBasicController {
 	protected void initForm(FormItemContainer formLayout, Controller listener, UserRequest ureq) {
 		//add the table
 		FlexiTableColumnModel columnsModel = FlexiTableDataModelFactory.createFlexiTableColumnModel();
-		if(isAdministrativeUser) {
-			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(ToReviewCols.username, "select"));
-		}
-		
+
 		int colIndex = AssessmentToolConstants.USER_PROPS_OFFSET;
 		for (int i = 0; i < userPropertyHandlers.size(); i++) {
 			UserPropertyHandler userPropertyHandler	= userPropertyHandlers.get(i);
@@ -148,9 +146,12 @@ public class AssessmentToReviewSmallController extends FormBasicController {
 		SearchAssessedIdentityParams params = new SearchAssessedIdentityParams(courseEntry, null, null, assessmentCallback);
 		List<AssessmentEntry> entries = assessmentToolManager.getAssessmentEntries(getIdentity(), params, AssessmentEntryStatus.inReview);
 		List<UserToReviewRow> rows = new ArrayList<>();
-		
 		Map<Long,UserToReviewRow> identityKeyToRow = new HashMap<>();
 		for(AssessmentEntry entry:entries) {
+			if(!nodeIdentToNodeShortTitles.containsKey(entry.getSubIdent())) {
+				continue;
+			}
+			
 			Identity assessedIdentity = entry.getIdentity();
 			if(identityKeyToRow.containsKey(assessedIdentity.getKey())) {
 				identityKeyToRow.get(assessedIdentity.getKey())
@@ -230,7 +231,6 @@ public class AssessmentToReviewSmallController extends FormBasicController {
 		public Object getValueAt(UserToReviewRow row, int col) {
 			if(col >= 0 && col < ToReviewCols.values().length) {
 				switch(ToReviewCols.values()[col]) {
-					case username: return row.getIdentityName();
 					case toReview: return row;
 				}
 			}
@@ -245,8 +245,6 @@ public class AssessmentToReviewSmallController extends FormBasicController {
 	}
 
 	public enum ToReviewCols implements FlexiSortableColumnDef {
-		
-		username("table.header.name"),
 		toReview("table.header.elements.toReview");
 		
 		private final String i18nKey;

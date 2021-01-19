@@ -88,6 +88,7 @@ mail: halpen@openolat.com
 o: Bauer
 sn: Alpen
 uid: halpen
+employeeNumber: 234
 userpassword:: e1NIQX1SWEhpU0lWZGN1SU1EdVNiVCtaaFpOcWFwYWs9
 
 dn: uid=kmeier,ou=person,dc=olattest,dc=org
@@ -102,6 +103,7 @@ mail: kmeier@openolat.com
 o: Informatik
 sn: Meier
 uid: kmeier
+employeeNumber: author
 userPassword: olat
 
 dn: uid=hhuerlimann,ou=person,dc=olattest,dc=org
@@ -132,5 +134,214 @@ sn:: SMK4cmxpbWFubg==
 uid: krass
 userpassword:: e1NIQX1SWEhpU0lWZGN1SU1EdVNiVCtaaFpOcWFwYWs9
 modifyTimestamp: 20100630180000Z
+
+dn: uid=dforster,ou=person,dc=olattest,dc=org
+objectClass: organizationalPerson
+objectClass: person
+objectClass: inetOrgPerson
+objectClass: top
+cn: Dalia Forster
+givenname: Dalia
+labeleduri: https://www.openolat.com/dforster
+mail: dforster@openolat.com
+o: Informatik
+sn: Forster
+uid: dforster
+userPassword: olat
+modifyTimestamp: 20100630180000Z
+
+dn: uid=sramljak,ou=person,dc=olattest,dc=org
+objectClass: organizationalPerson
+objectClass: person
+objectClass: inetOrgPerson
+objectClass: top
+cn: Sandy Ramljak
+givenname: Sandy
+labeleduri: https://www.openolat.com/sramljak
+mail: sramljak@openolat.com
+o: Informatik
+sn: Ramljak
+uid: sramljak
+userPassword: olat
+modifyTimestamp: 20100630180000Z
+
+dn: uid=gstieger,ou=person,dc=olattest,dc=org
+objectClass: organizationalPerson
+objectClass: person
+objectClass: inetOrgPerson
+objectClass: top
+cn: Gerda Stieger
+givenname: Gerda
+labeleduri: https://www.openolat.com/gstieger
+mail: gstieger@openolat.com
+o: Informatik
+sn: gstieger
+uid: gstieger
+userPassword: olat
+memberOf: ldapopenolat,ldapcoaching
+modifyTimestamp: 20100630180000Z
+
+dn: uid=hcoulter,ou=person,dc=olattest,dc=org
+objectClass: organizationalPerson
+objectClass: person
+objectClass: inetOrgPerson
+objectClass: top
+cn: Heinrich Coulter
+givenname: Heinrich
+labeleduri: https://www.openolat.com/hcoulter
+mail: hcoulter@openolat.com
+o: Informatik
+sn: hcoulter
+uid: hcoulter
+userPassword: olat
+
+dn: uid=cguerrera,ou=person,dc=olattest,dc=org
+objectClass: organizationalPerson
+objectClass: person
+objectClass: inetOrgPerson
+objectClass: top
+cn: Carmen Guerrera
+givenname: Carmen
+labeleduri: https://www.openolat.com/cguerrera
+mail: cguerrera@openolat.com
+o: Informatik
+sn: Guerrera
+uid: cguerrera
+userPassword: olat
+modifyTimestamp: 20100630180000Z
+
+dn: uid=uschelling,ou=person,dc=olattest,dc=org
+objectClass: organizationalPerson
+objectClass: person
+objectClass: inetOrgPerson
+objectClass: top
+cn: Ursula Schelling
+givenname: Ursula
+labeleduri: https://www.openolat.com/uschelling
+mail: uschelling@openolat.com
+o: Informatik
+sn: Schelling
+uid: uschelling
+userPassword: olat
+modifyTimestamp: 20100630180000Z
+
+dn: uid=lsalathe,ou=person,dc=olattest,dc=org
+objectClass: organizationalPerson
+objectClass: person
+objectClass: inetOrgPerson
+objectClass: top
+cn: Leyla Salathe
+givenname: Leyla
+labeleduri: https://www.openolat.com/lsalathe
+mail: lsalathe@openolat.com
+o: Informatik
+sn: Salathe
+uid: lsalathe
+userPassword: olat
+modifyTimestamp: 20100630180000Z
+
+dn: uid=ahentschel,ou=person,dc=olattest,dc=org
+objectClass: organizationalPerson
+objectClass: person
+objectClass: inetOrgPerson
+objectClass: top
+cn: Alessandro	Hentschel
+givenname: Alessandro
+labeleduri: https://www.openolat.com/ahentschel
+mail: ahentschel@openolat.com
+o: Informatik
+sn: Hentschel
+uid: ahentschel
+memberOf: ldapteaching
+userPassword: olat
+modifyTimestamp: 20100630180000Z
+
+dn: uid=LP7AFreimann,ou=person,dc=olattest,dc=org
+objectClass: organizationalPerson
+objectClass: person
+objectClass: inetOrgPerson
+objectClass: top
+cn: Lorcan Freimann
+givenname: Lorcan
+labeleduri: https://www.openolat.com/lp7afreimann
+mail: LP7AFreimann@openolat.com
+o: Informatik
+sn: Freimann
+uid: LP7AFreimann
+employeeNumber: 7235
+employeeType: ldaplearning
+userPassword: olat
+modifyTimestamp: 20100630180000Z
+
+dn: uid=afrommenwiler,ou=person,dc=olattest,dc=org
+objectClass: organizationalPerson
+objectClass: person
+objectClass: inetOrgPerson
+objectClass: top
+cn: Annabelle Frommenwiler
+givenname: Annabelle
+labeleduri: https://www.openolat.com/afrommenwiler
+o: Informatik
+sn: Frommenwiler
+uid: afrommenwiler
+userPassword: olat
+modifyTimestamp: 20100630180000Z
+
+dn: uid=mbuchholz,ou=person,dc=olattest,dc=org
+objectClass: organizationalPerson
+objectClass: person
+objectClass: inetOrgPerson
+objectClass: top
+cn: Michel Buchholz
+givenname: Michel
+labeleduri: https://www.openolat.com/mbuchholz
+o: Informatik
+sn: Buchholz
+uid: mbuchholz
+userPassword: olat
+modifyTimestamp: 20100630180000Z
+
+dn: cn=ldaplearning,ou=groups,dc=olattest,dc=org
+objectclass: top
+objectclass: groupOfNames
+cn: ldaplearning
+member: uid=halpen,ou=person,dc=olattest,dc=org
+member: uid=LP7AFreimann,ou=person,dc=olattest,dc=org
+member: uid=hcoulter,ou=person,dc=olattest,dc=org
+
+dn: cn=ldapteaching,ou=groups,dc=olattest,dc=org
+objectclass: top
+objectclass: groupOfNames
+cn: ldapteaching
+member: uid=hcoulter,ou=person,dc=olattest,dc=org
+
+dn: cn=ldapcoaching,ou=groups,dc=olattest,dc=org
+objectclass: top
+objectclass: groupOfNames
+cn: ldapcoaching
+member: uid=gstieger,ou=person,dc=olattest,dc=org
+member: uid=dforster,ou=person,dc=olattest,dc=org
+
+dn: cn=ldapopenolat,ou=groups,dc=olattest,dc=org
+objectclass: top
+objectclass: groupOfNames
+cn: ldapopenolat
+member: uid=gstieger,ou=person,dc=olattest,dc=org
+member: uid=dforster,ou=person,dc=olattest,dc=org
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 

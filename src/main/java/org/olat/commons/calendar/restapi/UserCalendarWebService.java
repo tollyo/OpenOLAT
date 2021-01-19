@@ -88,7 +88,6 @@ import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
@@ -119,15 +118,13 @@ public class UserCalendarWebService {
 	@GET
 	@Tag(name = "Calendar")
 	@Operation(summary = "List calendars of a specific user.", description = "Returns list of calendars of a specific user. Will always return the administrator's calendars for administrators.")
-	@ApiResponses({
-		@ApiResponse(responseCode = "200", description = "Request was successful.",
-			content = {
-				@Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = CalendarVO.class))),
-				@Content(mediaType = "application/xml", array = @ArraySchema(schema = @Schema(implementation = CalendarVO.class)))
-			}, links = {}),
-		@ApiResponse(responseCode = "401", description = "Not authorized."),
-		@ApiResponse(responseCode = "404", description = "Not found.")}
-		)
+	@ApiResponse(responseCode = "200", description = "Request was successful.",
+		content = {
+			@Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = CalendarVO.class))),
+			@Content(mediaType = "application/xml", array = @ArraySchema(schema = @Schema(implementation = CalendarVO.class)))
+		}, links = {})
+	@ApiResponse(responseCode = "401", description = "Not authorized.")
+	@ApiResponse(responseCode = "404", description = "Not found.")
 	@Produces({MediaType.APPLICATION_XML, MediaType.APPLICATION_JSON})
 	public Response getCalendars(@PathParam("identityKey") Long identityKey, @Context HttpServletRequest httpRequest) {
 		UserRequest ureq = getUserRequest(httpRequest);
@@ -158,11 +155,21 @@ public class UserCalendarWebService {
 		if(ureq.getIdentity() == null || !ureq.getUserSession().isAuthenticated()) {
 			throw new WebApplicationException(Response.serverError().status(Status.UNAUTHORIZED).build());
 		}
-		if (!ureq.getIdentity().getKey().equals(identityKey) && !isManager(identityKey, httpRequest)) {
+		
+		Identity identity;
+		if(ureq.getIdentity().getKey().equals(identityKey)) {
+			identity = ureq.getIdentity();
+		} else if (!ureq.getIdentity().getKey().equals(identityKey) && !isManager(identityKey, httpRequest)) {
 			throw new WebApplicationException(Response.serverError().status(Status.UNAUTHORIZED).build());
+		} else {
+			identity = securityManager.loadIdentityByKey(identityKey);
 		}
 		
-		KalendarRenderWrapper calendar = getCalendar(ureq, calendarId);
+		if(identity == null) {
+			throw new WebApplicationException(Response.serverError().status(Status.NOT_FOUND).build());
+		}
+		
+		KalendarRenderWrapper calendar = getCalendar(ureq, identity, calendarId);
 		if(calendar == null) {
 			throw new WebApplicationException(Response.serverError().status(Status.NOT_FOUND).build());
 		}
@@ -176,16 +183,13 @@ public class UserCalendarWebService {
 	@GET
 	@Path("events")
 	@Operation(summary = "List all events from a user.", description = "Returns list of all events in for a specific user.")
-	@ApiResponses({
-		@ApiResponse(responseCode = "200", description = "Request was successful.",
-			content = {
-				@Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = EventVO.class))),
-				@Content(mediaType = "application/xml", array = @ArraySchema(schema = @Schema(implementation = EventVO.class)))
-			} 
-		),
-		@ApiResponse(responseCode = "401", description = "Not authorized."),
-		@ApiResponse(responseCode = "404", description = "Not found.")}
-)	
+	@ApiResponse(responseCode = "200", description = "Request was successful.",
+		content = {
+			@Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = EventVO.class))),
+			@Content(mediaType = "application/xml", array = @ArraySchema(schema = @Schema(implementation = EventVO.class)))
+		})
+	@ApiResponse(responseCode = "401", description = "Not authorized.")
+	@ApiResponse(responseCode = "404", description = "Not found.")
 	@Produces({MediaType.APPLICATION_XML, MediaType.APPLICATION_JSON})
 	public Response getEvents(@PathParam("identityKey") Long identityKey,
 			@QueryParam("start")  @Parameter(description = "Set the date for the earliest event.")@DefaultValue("0") Integer start,
@@ -216,7 +220,7 @@ public class UserCalendarWebService {
 		return processEvents(events, onlyFuture, start, limit, httpRequest, request);
 	}
 	
-	private KalendarRenderWrapper getCalendar(UserRequest ureq, String calendarId) {
+	private KalendarRenderWrapper getCalendar(UserRequest ureq, Identity identity, String calendarId) {
 		int typeIndex = calendarId.indexOf('_');
 		if(typeIndex <= 0 || (typeIndex + 1 >= calendarId.length())) {
 			return null;
@@ -247,13 +251,10 @@ public class UserCalendarWebService {
 			CalSecurityCallback secCallback = CalSecurityCallbackFactory.createCourseCalendarCallback(userCourseEnv);
 			wrapper = CourseCalendars.getCourseCalendarWrapper(ureq, userCourseEnv, secCallback);
 		} else if("user".equals(type) && calendarModule.isEnablePersonalCalendar()) {
-			if(id.equals(ureq.getIdentity().getName())) {
-				wrapper = getPersonalCalendar(ureq.getIdentity());
+			if(id.equals(identity.getName()) || id.equals(identity.getKey().toString())) {
+				wrapper = getPersonalCalendar(identity);
 			} else {
-				Identity identity = securityManager.findIdentityByName(id);
-				if(isManager(identity, ureq.getHttpReq())) {
-					wrapper = getPersonalCalendar(identity);
-				}
+				log.warn("Personal calendar id {} doesn't match identity key: {}", id, identity.getKey());
 			}
 		}
 		return wrapper;

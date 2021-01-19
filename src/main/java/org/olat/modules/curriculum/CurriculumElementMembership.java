@@ -39,6 +39,8 @@ public interface CurriculumElementMembership {
 	
 	public boolean isCurriculumElementOwner();
 	
+	public boolean isMasterCoach();
+	
 	/**
 	 * @return true if the identity has at least one role on the curriculum element
 	 */

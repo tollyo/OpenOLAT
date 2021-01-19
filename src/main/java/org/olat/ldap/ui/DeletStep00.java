@@ -102,7 +102,7 @@ public class DeletStep00 extends BasicStep{
 			for(Integer index:selectedIndexes) {
 				identities.add(tableModel.getObject(index.intValue()));
 			}
-			addToRunContext("hasIdentitiesToDelete", new Boolean(identities.size() > 0));
+			addToRunContext("hasIdentitiesToDelete", Boolean.valueOf(!identities.isEmpty()));
 			addToRunContext("identitiesToDelete", identities);
 			fireEvent(ureq, StepsEvent.ACTIVATE_NEXT);
 		}
@@ -120,7 +120,6 @@ public class DeletStep00 extends BasicStep{
 			
 			FlexiTableColumnModel tableColumnModel = FlexiTableDataModelFactory.createFlexiTableColumnModel();
 			int colPos = 0;
-			tableColumnModel.addFlexiColumnModel(new DefaultFlexiColumnModel("username", 10000));
 			for (UserPropertyHandler userProperty : handlers) {
 				tableColumnModel.addFlexiColumnModel(new DefaultFlexiColumnModel(userProperty.i18nColumnDescriptorLabelKey(), colPos++));
 			}

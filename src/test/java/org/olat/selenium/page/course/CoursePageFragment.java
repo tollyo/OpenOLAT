@@ -64,8 +64,13 @@ public class CoursePageFragment {
 	}
 	
 	public static CoursePageFragment getCourse(WebDriver browser, URL deploymentUrl, CourseVO course) {
-		browser.navigate().to(deploymentUrl.toExternalForm() + "url/RepositoryEntry/" + course.getRepoEntryKey());
-		OOGraphene.waitElement(courseRun, browser);
+		browser.get(deploymentUrl.toExternalForm() + "url/RepositoryEntry/" + course.getRepoEntryKey());
+		try {
+			OOGraphene.waitElementSlowly(courseRun, 10, browser);
+		} catch (Exception e) {
+			OOGraphene.takeScreenshot("GetcourseByGet", browser);
+			throw e;
+		}
 		return new CoursePageFragment(browser);
 	}
 	
@@ -89,6 +94,37 @@ public class CoursePageFragment {
 	public CoursePageFragment assertOnTitle(String displayName) {
 		By titleBy = By.xpath("//h2[text()[contains(.,'" + displayName + "')]]");
 		OOGraphene.waitElement(titleBy, browser);
+		return this;
+	}
+	
+	public CoursePageFragment assertOnLearnPathNodeDone(String nodeTitle) {
+		return assertOnLearnPathNodeStatus(nodeTitle, "o_lp_done");
+	}
+	
+	public CoursePageFragment assertOnLearnPathNodeReady(String nodeTitle) {
+		return assertOnLearnPathNodeStatus(nodeTitle, "o_lp_ready");
+	}
+	
+	public CoursePageFragment assertOnLearnPathNodeInProgress(String nodeTitle) {
+		return assertOnLearnPathNodeStatus(nodeTitle, "o_lp_in_progress");
+	}
+	
+	public CoursePageFragment assertOnLearnPathNodeNotAccessible(String nodeTitle) {
+		return assertOnLearnPathNodeStatus(nodeTitle, "o_lp_not_accessible");
+	}
+	
+	private CoursePageFragment assertOnLearnPathNodeStatus(String nodeTitle, String statusCssClass) {
+		if(nodeTitle.length() > 20) {
+			nodeTitle = nodeTitle.substring(0, 20);
+		}
+		By nodeDoneBy = By.xpath("//div[contains(@class,'o_lp_tree')]//span[contains(@class,'o_tree_l')]/a[i[contains(@class,'" + statusCssClass + "')]][span[text()[contains(.,'" + nodeTitle + "')]]]");
+		OOGraphene.waitElement(nodeDoneBy, browser);
+		return this;
+	}
+	
+	public CoursePageFragment assertOnLearnPathPercent(int percent) {
+		By percentageBy = By.xpath("//span[contains(@class,'o_progress')]//span[contains(@class,'percentage')]//span[text()[contains(.,'" + percent + "%')]]");
+		OOGraphene.waitElement(percentageBy, browser);
 		return this;
 	}
 	
@@ -133,19 +169,36 @@ public class CoursePageFragment {
 	}
 	
 	/**
-	 * Click the first element of the menu tree
-	 * @return
+	 * Click the first element of the menu tree.
+	 * 
+	 * @return Itself
 	 */
 	public MenuTreePageFragment clickTree() {
 		OOGraphene.waitElement(MenuTreePageFragment.treeBy, browser);
 		MenuTreePageFragment menuTree = new MenuTreePageFragment(browser);
-		menuTree.selectRoot();
-		return menuTree;
+		return menuTree.selectRoot();
 	}
 	
 	/**
-	 * Open the tools drop-down
-	 * @return
+	 * Confirm you have done the course element.
+	 * 
+	 * @return Itself
+	 */
+	public CoursePageFragment confirmNode() {
+		By confirmationBy = By.cssSelector("div.o_course_pagination div.o_confirm a.btn");
+		OOGraphene.waitElement(confirmationBy, browser);
+		browser.findElement(confirmationBy).click();
+		OOGraphene.waitBusy(browser);
+
+		By confirmedBy = By.cssSelector("div.o_course_pagination div.o_confirm a.btn.o_course_pagination_status_done");
+		OOGraphene.waitElement(confirmedBy, browser);
+		return this;
+	}
+	
+	/**
+	 * Open the tools drop-down.
+	 * 
+	 * @return IUtself
 	 */
 	public CoursePageFragment openToolsMenu() {
 		browser.findElement(toolsMenuCaret).click();
@@ -187,8 +240,7 @@ public class CoursePageFragment {
 		}
 		browser.findElement(editCourseBy).click();
 		OOGraphene.waitBusy(browser);
-		OOGraphene.waitElement(By.xpath("//div[contains(@class,'o_edit_mode')]"), 5, browser);
-		OOGraphene.closeBlueMessageWindow(browser);
+		OOGraphene.waitElement(By.xpath("//div[contains(@class,'o_edit_mode')]"), browser);
 		return new CourseEditorPageFragment(browser);
 	}
 	
@@ -203,7 +255,6 @@ public class CoursePageFragment {
 		}
 		browser.findElement(editCourseBy).click();
 		OOGraphene.waitBusy(browser);
-		OOGraphene.closeBlueMessageWindow(browser);
 		return new CourseEditorPageFragment(browser);
 	}
 	
@@ -273,6 +324,11 @@ public class CoursePageFragment {
 		return new BookingPage(browser);
 	}
 	
+	/**
+	 * Set the course status to published.
+	 * 
+	 * @return Itself
+	 */
 	public CoursePageFragment publish() {
 		return changeStatus(RepositoryEntryStatusEnum.published);
 	}

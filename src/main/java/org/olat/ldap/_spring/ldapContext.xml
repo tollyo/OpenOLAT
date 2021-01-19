@@ -39,6 +39,7 @@
 		<property name="coachedGroupAttributeSeparator" value="${ldap.user.coachedGroupAttributeSeparator}"/>
 		<property name="coachRoleAttribute" value="${ldap.coachRoleAttribute}"/>
 		<property name="coachRoleValue" value="${ldap.coachRoleValue}"/>
+		<property name="groupCoachAsParticipant" value="${ldap.groupCoachAsParticipant}"/>
 		
 		<!-- sync authors -->
 		<property name="authorsGroupBase" >
@@ -121,6 +122,7 @@
     			<entry key='${ldap.attributename.email}' value='email' />
     			<entry key='${ldap.attributename.firstName}' value='firstName' />
     			<entry key='${ldap.attributename.lastName}' value='lastName' />
+    			<entry key='${ldap.attributename.nickName}' value='nickName' />
     			
     			<!-- example for another mapping
     			<entry key='description' value='orgUnit' />

@@ -24,6 +24,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
+import org.olat.core.gui.components.date.TimeElement;
 import org.olat.core.gui.components.form.flexible.elements.FormLink;
 import org.olat.core.id.Identity;
 import org.olat.modules.assessment.AssessmentEntry;
@@ -43,7 +44,9 @@ public class AssessedIdentityElementRow extends UserPropertiesRow {
 	private Integer attempts;
 	private Boolean userVisibility;
 	private BigDecimal score;
+	private BigDecimal maxScore;
 	private Boolean passed;
+	private Boolean passedOverriden;
 	private Date lastModified;
 	private Date lastUserModified;
 	private Date lastCoachModified;
@@ -55,12 +58,15 @@ public class AssessedIdentityElementRow extends UserPropertiesRow {
 	private Date initialCourseLaunchDate;
 	
 	private FormLink toolsLink;
+	private TimeElement currentStart;
 	private CompletionItem currentCompletion;
 	
 	public AssessedIdentityElementRow(Identity identity, AssessmentEntry entry, String graderFullName,
-			CompletionItem currentCompletion, FormLink toolsLink, List<UserPropertyHandler> userPropertyHandlers, Locale locale) {
+			TimeElement currentStart, CompletionItem currentCompletion, FormLink toolsLink,
+			List<UserPropertyHandler> userPropertyHandlers, Locale locale) {
 		super(identity, userPropertyHandlers, locale);
 		this.currentCompletion = currentCompletion;
+		this.currentStart = currentStart;
 		this.toolsLink = toolsLink;
 		setAssessmentEntry(entry, graderFullName);
 	}
@@ -70,6 +76,7 @@ public class AssessedIdentityElementRow extends UserPropertiesRow {
 			attempts = entry.getAttempts();
 			score = entry.getScore();
 			passed = entry.getPassed();
+			passedOverriden = Boolean.valueOf(entry.getPassedOverridable().isOverridden());
 			userVisibility = entry.getUserVisibility();
 			lastModified = entry.getLastModified();
 			lastUserModified = entry.getLastUserModified();
@@ -97,8 +104,20 @@ public class AssessedIdentityElementRow extends UserPropertiesRow {
 		return score;
 	}
 
+	public BigDecimal getMaxScore() {
+		return maxScore;
+	}
+
+	public void setMaxScore(BigDecimal maxScore) {
+		this.maxScore = maxScore;
+	}
+
 	public Boolean getPassed() {
 		return passed;
+	}
+
+	public Boolean getPassedOverriden() {
+		return passedOverriden;
 	}
 
 	public Date getInitialCourseLaunchDate() {
@@ -127,6 +146,10 @@ public class AssessedIdentityElementRow extends UserPropertiesRow {
 
 	public AssessmentEntryStatus getAssessmentStatus() {
 		return status;
+	}
+	
+	public TimeElement getCurrentRunStart() {
+		return currentStart;
 	}
 	
 	public CompletionItem getCurrentCompletion() {

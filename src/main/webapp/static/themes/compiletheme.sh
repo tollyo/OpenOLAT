@@ -48,7 +48,7 @@ doCompile () {
 	fi
 	echo "Compiling SASS: $TARGET $STYLE"
 	sass --version
-	sass --style $STYLE --no-cache $UPDATE $TARGET:$TARGET --load-path light light/modules
+	sass --style $STYLE $UPDATE $TARGET:$TARGET --load-path light light/modules
 	echo "sass --style $STYLE $UPDATE $TARGET:$TARGET --load-path light light/modules"
 	echo "done"
 }
@@ -60,7 +60,7 @@ control_c () {
 while getopts ":fhw" opt; do
   case $opt in
     f)
-      UPDATECMD="--update --force"
+      UPDATECMD=""
       ;;
     w)
       UPDATECMD="--watch"

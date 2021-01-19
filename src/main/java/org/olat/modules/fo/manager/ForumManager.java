@@ -50,7 +50,6 @@ import org.olat.core.commons.services.mark.impl.MarkImpl;
 import org.olat.core.commons.services.text.TextService;
 import org.olat.core.id.Identity;
 import org.olat.core.id.OLATResourceable;
-import org.olat.core.logging.AssertException;
 import org.olat.core.logging.Tracing;
 import org.olat.core.util.Encoder;
 import org.olat.core.util.Encoder.Algorithm;
@@ -112,7 +111,7 @@ public class ForumManager {
 	}
 
 	/**
-	 * @param msgid msg id of the topthread
+	 * @param msgid The message id of the top thread
 	 * @return List messages
 	 */
 	public List<Message> getThread(Long msgid) {
@@ -141,24 +140,24 @@ public class ForumManager {
 
 	/**
 	 * 
-	 * @param forum_id
-	 * @return
+	 * @param forumId The forum ID
+	 * @return The number of messages in the specified forum
 	 */
-	public int countThreadsByForumID(Long forum_id) {
-		return countMessagesByForumID(forum_id, true);
+	public int countThreadsByForumID(Long forumId) {
+		return countMessagesByForumID(forumId, true);
 	}
 	
 	/**
 	 * 
-	 * @param forum_id
+	 * @param forumId
 	 * @param start
 	 * @param limit
 	 * @param orderBy
 	 * @param asc
 	 * @return
 	 */
-	public List<Message> getThreadsByForumID(Long forum_id, int firstResult, int maxResults, Message.OrderBy orderBy, boolean asc) {
-		return getMessagesByForumID(forum_id, firstResult, maxResults, true, orderBy, asc);
+	public List<Message> getThreadsByForumID(Long forumId, int firstResult, int maxResults, Message.OrderBy orderBy, boolean asc) {
+		return getMessagesByForumID(forumId, firstResult, maxResults, true, orderBy, asc);
 	}
 	
 	/**
@@ -167,7 +166,7 @@ public class ForumManager {
 	 * @return
 	 */
 	public List<Message> getMessagesByForum(Forum forum){
-		if (forum == null) return new ArrayList<>(0); // fxdiff: while indexing it can somehow occur, that forum is null!
+		if (forum == null) return new ArrayList<>(0); //while indexing it can somehow occur, that forum is null!
 		return getMessagesByForumID(forum.getKey(),  0, -1, false, null, true);
 	}
 	
@@ -745,11 +744,12 @@ public class ForumManager {
 	 */
 	public void deleteForum(Long forumKey) {
 		Forum foToDel = loadForum(forumKey);
-		if (foToDel == null) throw new AssertException("forum to delete was not found: key=" + forumKey);
-		// delete properties, messages and the forum itself
-		doDeleteForum(foToDel);
-		// delete directory for messages with attachments
-		deleteForumContainer(forumKey);
+		if (foToDel != null) {
+			// delete properties, messages and the forum itself
+			doDeleteForum(foToDel);
+			// delete directory for messages with attachments
+			deleteForumContainer(forumKey);
+		}
 	}
 
 	/**
@@ -772,7 +772,12 @@ public class ForumManager {
 					.getResultList();
 		for(Message threadToDelete:threadsToDelete) {
 			deleteMessageTree(forumKey, threadToDelete);
-			dbInstance.getCurrentEntityManager().remove(threadToDelete);
+			
+			Message reloadedMessage = dbInstance.getCurrentEntityManager()
+					.find(MessageImpl.class, threadToDelete.getKey());
+			if(reloadedMessage != null) {
+				dbInstance.getCurrentEntityManager().remove(threadToDelete);
+			}
 		}
 		dbInstance.commit();
 		
@@ -905,9 +910,7 @@ public class ForumManager {
 			markingService.getMarkManager().deleteMarks(ores, m.getKey().toString());
 		}
 		
-		if(log.isDebugEnabled()){
-			log.debug("Deleting message: " + m.getKey());
-		}
+		log.debug("Deleting message: {}", m.getKey());
 	}
 
 	/**
@@ -920,7 +923,7 @@ public class ForumManager {
 				.createQuery(q, Number.class)
 				.setParameter("parentKey", m.getKey())
 				.getResultList();
-		return count == null || count.isEmpty() || count.get(0) == null ? false : count.get(0).longValue() > 0;
+		return count != null && !count.isEmpty() && count.get(0) != null && count.get(0).longValue() > 0;
 	}
 	
 	public int countMessageChildren(Long messageKey ) {
@@ -965,7 +968,7 @@ public class ForumManager {
 		} else if(messageContainer instanceof VFSContainer) {
 			return (VFSContainer)messageContainer;
 		}
-		log.error("The following message container is not a directory: " + messageContainer);
+		log.error("The following message container is not a directory: {}", messageContainer);
 		return null;
 	}
 	
@@ -1005,7 +1008,7 @@ public class ForumManager {
 		} else if(forumContainer instanceof VFSContainer) {
 			return (VFSContainer)forumContainer;
 		}
-		log.error("The following forum container is not a directory: " + forumContainer);
+		log.error("The following forum container is not a directory: {}", forumContainer);
 		return null;
 	}
 	
@@ -1233,6 +1236,7 @@ public class ForumManager {
 		((MessageImpl)message).setCreationDate(oldMessage.getCreationDate());
 		message.setLastModified(oldMessage.getLastModified());
 		message.setModifier(oldMessage.getModifier());
+		message.setModificationDate(oldMessage.getModificationDate());
 		message.setTitle(oldMessage.getTitle());
 		message.setBody(oldMessage.getBody());
 		message.setPseudonym(oldMessage.getPseudonym());

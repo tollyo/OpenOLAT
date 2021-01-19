@@ -31,8 +31,6 @@ import org.olat.selenium.page.graphene.OOGraphene;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
-import org.openqa.selenium.firefox.FirefoxDriver;
-import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.support.ui.Select;
 
 /**
@@ -80,13 +78,12 @@ public class CalendarPage {
 	 * Add an event but don't fill the form.
 	 * 
 	 * @param day
-	 * @param subject
 	 * @return
 	 */
 	public CalendarPage addEvent(int day) {
 		LocalDate date = LocalDate.now().withDayOfMonth(day);
 		String dateString = date.format(formatter);
-		By cellBy = By.xpath("//div[contains(@class,'o_cal')]//td[contains(@data-date,'" + dateString + "')][contains(@class,'fc-day')][contains(@class,'fc-widget-content')]");
+		By cellBy = By.xpath("//div[contains(@class,'o_cal')]//td[contains(@data-date,'" + dateString + "')][contains(@class,'fc-day')]/div");
 		OOGraphene.waitElement(cellBy, browser);
 		browser.findElement(cellBy).click();
 		OOGraphene.waitModalDialog(browser);
@@ -118,7 +115,7 @@ public class CalendarPage {
 		
 		WebElement allDayEl = browser.findElement(locationBy);
 		OOGraphene.scrollTo(locationBy, browser);
-		OOGraphene.check(allDayEl, new Boolean(allDay));
+		OOGraphene.check(allDayEl, Boolean.valueOf(allDay));
 		
 		if(!allDay) {
 			By hourBy = By.xpath("//fieldset[contains(@class,'o_sel_cal_entry_form')]//div[contains(@class,'o_sel_cal_begin')]//input[contains(@id,'o_dch_')]");
@@ -160,7 +157,7 @@ public class CalendarPage {
 		By dayBy = By.xpath("//div[@id='ui-datepicker-div']//td//a[normalize-space(text())='" + day + "']");
 		OOGraphene.waitElement(dayBy, browser);
 		browser.findElement(dayBy).click();
-		OOGraphene.waitElementUntilNotVisible(datePickerBy, 5, browser);
+		OOGraphene.waitElementDisappears(datePickerBy, 5, browser);
 		return this;
 	}
 	
@@ -204,7 +201,7 @@ public class CalendarPage {
 	
 	public CalendarPage confirmDeleteFuturOccurences() {
 		By deleteFutureBy = By.cssSelector("div.modal-dialog a.o_sel_cal_delete_future_events");
-		OOGraphene.waitElement(deleteFutureBy, 5, browser);
+		OOGraphene.waitElement(deleteFutureBy, browser);
 		browser.findElement(deleteFutureBy).click();
 		OOGraphene.waitBusy(browser);
 		return this;
@@ -212,50 +209,46 @@ public class CalendarPage {
 	
 	public CalendarPage confirmDeleteAllOccurences() {
 		By deleteAllBy = By.cssSelector("div.modal-dialog a.o_sel_cal_delete_all");
-		OOGraphene.waitElement(deleteAllBy, 5, browser);
+		OOGraphene.waitElement(deleteAllBy, browser);
 		browser.findElement(deleteAllBy).click();
 		OOGraphene.waitBusy(browser);
 		return this;
 	}
 	
 	public CalendarPage assertOnEvent(String subject) {
-		By titleBy = By.xpath("//div[@class='o_cal']//span[contains(text(),'" + subject + "')]");
-		OOGraphene.waitElement(titleBy, 5, browser);
+		By titleBy = By.xpath("//div[@class='o_cal']//div[contains(@class,'fc-event-title')][contains(text(),'" + subject + "')]");
+		OOGraphene.waitElement(titleBy, browser);
 		Assert.assertNotNull(browser.findElement(titleBy));
 		return this;
 	}
 	
 	public CalendarPage assertOnEvents(String subject, int numOfEvents) {
-		By titleBy = By.xpath("//div[@class='o_cal']//span[contains(text(),'" + subject + "')]");
-		OOGraphene.waitElement(titleBy, 5, browser);
+		By titleBy = By.xpath("//div[@class='o_cal']//div[contains(@class,'fc-event-title')][contains(text(),'" + subject + "')]");
+		OOGraphene.waitElement(titleBy, browser);
 		List<WebElement> eventEls = browser.findElements(titleBy);
 		Assert.assertEquals(numOfEvents, eventEls.size());
 		return this;
 	}
 	
 	public CalendarPage assertOnEventsAt(String subject, int numOfEvents, int atHour) {
-		By titleBy = By.xpath("//div[@class='o_cal']//a[contains(@class,'fc-event')][div/span[contains(text(),'" + atHour + ".00')]]/div/span[contains(text(),'" + subject + "')]");
-		OOGraphene.waitElement(titleBy, 5, browser);
+		By titleBy = By.xpath("//div[@class='o_cal']//a[contains(@class,'fc-event')][descendant::div[contains(text(),'" + atHour + ":00')]][descendant::div[contains(text(),'" + subject + "')]]");
+		OOGraphene.waitElement(titleBy, browser);
 		List<WebElement> eventEls = browser.findElements(titleBy);
 		Assert.assertEquals(numOfEvents, eventEls.size());
 		return this;
 	}
 	
 	public CalendarPage assertZeroEvent() {
-		By eventsBy = By.xpath("//div[@class='fc-event-container']/div");
+		By eventsBy = By.xpath("//div[@class='fc-daygrid-day-events']/div");
 		List<WebElement> eventEls = browser.findElements(eventsBy);
 		Assert.assertEquals(0, eventEls.size());
 		return this;
 	}
 	
 	public CalendarPage openDetails(String subject) {
-		By titleBy = By.xpath("//div[@class='o_cal']//span[contains(text(),'" + subject + "')]");
-		OOGraphene.waitElement(titleBy, 5, browser);
-		if(browser instanceof FirefoxDriver) {
-			new Actions(browser).click(browser.findElement(titleBy)).click().build().perform();
-		} else {
-			browser.findElement(titleBy).click();
-		}
+		By titleBy = By.xpath("//div[@class='o_cal']//a[descendant::div[contains(@class,'fc-event-title')][contains(text(),'" + subject + "')]]");
+		OOGraphene.waitElement(titleBy, browser);
+		browser.findElement(titleBy).click();
 		OOGraphene.waitCallout(browser);
 		return this;
 	}
@@ -264,13 +257,9 @@ public class CalendarPage {
 		LocalDate date = LocalDate.now().withDayOfMonth(day);
 		String dateString = date.format(oocurenceIdFormatter);
 
-		By titleBy = By.xpath("//div[@class='o_cal']//a[contains(@id,'xOccOOccOx_" + dateString + "')][div/span[contains(text(),'" + subject + "')]]");
-		OOGraphene.waitElement(titleBy, 5, browser);
-		if(browser instanceof FirefoxDriver) {
-			new Actions(browser).click(browser.findElement(titleBy)).click().build().perform();
-		} else {
-			browser.findElement(titleBy).click();
-		}
+		By titleBy = By.xpath("//div[@class='o_cal']//a[contains(@id,'xOccOOccOx_" + dateString + "')][descendant::div[contains(@class,'fc-event-title')][contains(text(),'" + subject + "')]]");
+		OOGraphene.waitElement(titleBy, browser);
+		browser.findElement(titleBy).click();
 		OOGraphene.waitCallout(browser);
 		return this;
 	}
@@ -282,7 +271,7 @@ public class CalendarPage {
 	 */
 	public CalendarPage edit() {
 		By editBy = By.cssSelector("div.popover-content div.o_callout_content div.o_cal_tooltip_buttons a.btn.btn-default");
-		OOGraphene.waitElement(editBy, 5, browser);
+		OOGraphene.waitElement(editBy, browser);
 		browser.findElement(editBy).click();
 		OOGraphene.waitModalDialog(browser);
 		return this;

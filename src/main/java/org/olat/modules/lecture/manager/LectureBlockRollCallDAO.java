@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -31,6 +32,7 @@ import java.util.stream.Collectors;
 import javax.persistence.TemporalType;
 import javax.persistence.TypedQuery;
 
+import org.olat.basesecurity.AuthenticationImpl;
 import org.olat.basesecurity.GroupRoles;
 import org.olat.basesecurity.IdentityRef;
 import org.olat.basesecurity.OrganisationRoles;
@@ -120,11 +122,8 @@ public class LectureBlockRollCallDAO {
 			call.setLecturesAbsentList(currentAbsentList);
 			call.setLecturesAbsentNumber(currentAbsentList.size());
 			
-			int numOfLectures = lectureBlock.getEffectiveLecturesNumber();
-			if(numOfLectures <= 0 && lectureBlock.getStatus() != LectureBlockStatus.cancelled) {
-				numOfLectures = lectureBlock.getPlannedLecturesNumber();
-			}
-			
+			int numOfLectures = lectureBlock.getCalculatedLecturesNumber();
+
 			List<Integer> attendedList = new ArrayList<>();
 			for(int i=0; i<numOfLectures; i++) {
 				if(!currentAbsentList.contains(i)) {
@@ -152,10 +151,7 @@ public class LectureBlockRollCallDAO {
 			call.setLecturesAbsentList(currentAbsentList);
 			call.setLecturesAbsentNumber(currentAbsentList.size());
 
-			int numOfLectures = lectureBlock.getEffectiveLecturesNumber();
-			if(numOfLectures <= 0 && lectureBlock.getStatus() != LectureBlockStatus.cancelled) {
-				numOfLectures = lectureBlock.getPlannedLecturesNumber();
-			}
+			int numOfLectures = lectureBlock.getCalculatedLecturesNumber();
 
 			List<Integer> attendedList = new ArrayList<>();
 			for(int i=0; i<numOfLectures; i++) {
@@ -178,7 +174,7 @@ public class LectureBlockRollCallDAO {
 		List<Integer> currentAbsentList = call.getLecturesAbsentList();
 		List<Integer> currentAttendedList = call.getLecturesAttendedList();
 		
-		if((currentAbsentList != null && currentAbsentList.size() > 0) || (currentAttendedList != null && currentAttendedList.size() > 0)) {
+		if((currentAbsentList != null && !currentAbsentList.isEmpty()) || (currentAttendedList != null && !currentAttendedList.isEmpty())) {
 			String before = auditLogDao.toXml(rollCall);
 			
 			int currentLectures = currentAbsentList.size() + currentAttendedList.size();
@@ -417,21 +413,6 @@ public class LectureBlockRollCallDAO {
 				  .append(" and block.rollCallStatusString!='").append(LectureRollCallStatus.autoclosed.name()).append("')");
 			}
 		}
-
-		String fuzzyRef = null;
-		if(StringHelper.containsNonWhitespace(searchParams.getSearchString())) {
-			fuzzyRef = PersistenceHelper.makeFuzzyQueryString(searchParams.getSearchString());
-			sb.and().append("(")
-			  .likeFuzzy("block.title", "fuzzyRef", dbInstance.getDbVendor())
-			  .append(" or ")
-			  .likeFuzzy("block.externalId", "fuzzyRef", dbInstance.getDbVendor())
-			  .append(" or ")
-			  .likeFuzzy("user.firstName", "fuzzyRef", dbInstance.getDbVendor())
-			  .append(" or ")
-			  .likeFuzzy("user.lastName", "fuzzyRef", dbInstance.getDbVendor())
-			  .append(")");
-			//TODO curriculum, course, reasons...
-		}
 		
 		if(searchParams.getStartDate() != null && searchParams.getEndDate() != null) {
 			sb.and().append(" (block.startDate>=:startDate and block.endDate<=:endDate)");
@@ -470,9 +451,6 @@ public class LectureBlockRollCallDAO {
 		}
 		if(searchParams.getEndDate() != null) {
 			query.setParameter("endDate", searchParams.getEndDate(), TemporalType.TIMESTAMP);
-		}
-		if(fuzzyRef != null) {
-			query.setParameter("fuzzyRef", fuzzyRef);
 		}
 		if(searchParams.getEntry() != null) {
 			query.setParameter("entryKey", searchParams.getEntry().getKey());
@@ -608,13 +586,21 @@ public class LectureBlockRollCallDAO {
 		//take in account: firstAddmissionDate and null
 		
 		Date now = new Date();
-
+		Set<Long> rollCallKeys = new HashSet<>();
 		Map<Long,LectureBlockStatistics> stats = new HashMap<>();
 		dbInstance.getCurrentEntityManager()
 				.createQuery(sb.toString(), Object[].class)
 				.setParameter("identityKey", identity.getKey())
 				.getResultStream().forEach(rawObject -> {
-			int pos = 1;//jump roll call key
+			int pos = 0;//jump roll call key
+			Long rollCallKey = PersistenceHelper.extractLong(rawObject, pos++);
+			if(rollCallKey != null) {
+				if(rollCallKeys.contains(rollCallKey)) {
+					return;
+				}
+				rollCallKeys.add(rollCallKey);
+			}
+			
 			Long lecturesAttended = PersistenceHelper.extractLong(rawObject, pos++);
 			Long lecturesAbsent = PersistenceHelper.extractLong(rawObject, pos++);
 			Boolean absenceAuthorized;
@@ -679,6 +665,7 @@ public class LectureBlockRollCallDAO {
 		
 		QueryBuilder sb = new QueryBuilder(2048);
 		sb.append("select ident.key as participantKey, ident.name as participantName,")
+		  .append("  call.key as rollCallKey,")
 		  .append("  call.lecturesAttendedNumber as attendedLectures,")
 		  .append("  call.lecturesAbsentNumber as absentLectures,")
 		  .append("  call.absenceAuthorized as absenceAuthorized,")
@@ -747,12 +734,51 @@ public class LectureBlockRollCallDAO {
 			sb.append(" and re.key in (:repoEntryKeys)");
 		}
 		
+		Long curriculumKey = null;
+		String curriculumRef = null;
+		String curriculumFuzzyRef = null;
+		if(StringHelper.containsNonWhitespace(params.getCurriculumSearchString())) {
+			curriculumRef = params.getCurriculumSearchString();
+			curriculumFuzzyRef = PersistenceHelper.makeFuzzyQueryString(curriculumRef);
+			
+			sb.append(" and exists (select curEl.key from curriculumelement as curEl")
+			  .append("  inner join curEl.curriculum as cur")
+			  .append("  where curEl.group.key=bGroup.key")
+			  .append("  and (")
+			  .append("   cur.externalId=:curriculumRef")
+			  .append("   or")
+			  .likeFuzzy("cur.displayName", "curriculumFuzzyRef", dbInstance.getDbVendor())
+			  .append("   or")
+			  .likeFuzzy("cur.identifier", "curriculumFuzzyRef", dbInstance.getDbVendor())
+			  .append("   or")
+			  .append("   curEl.externalId=:curriculumRef")
+			  .append("   or")
+			  .likeFuzzy("curEl.displayName", "curriculumFuzzyRef", dbInstance.getDbVendor())
+			  .append("   or")
+			  .likeFuzzy("curEl.identifier", "curriculumFuzzyRef", dbInstance.getDbVendor());
+
+			if(StringHelper.isLong(curriculumRef)) {
+				curriculumKey = Long.valueOf(curriculumRef);
+				sb.append(" or cur.key=:curriculumKey").append(" or curEl.key=:curriculumKey");
+			}
+			sb.append(" ))");
+		}
+
 		Map<String,Object> queryParams = new HashMap<>();
 		appendUsersStatisticsSearchParams(params, queryParams, userPropertyHandlers, sb);
 
 		TypedQuery<Object[]> rawQuery = dbInstance.getCurrentEntityManager()
 				.createQuery(sb.toString(), Object[].class)
 				.setParameter("identityKey", identity.getKey());
+		if(curriculumKey != null) {
+			rawQuery.setParameter("curriculumKey", curriculumKey);
+		}
+		if(curriculumRef != null) {
+			rawQuery.setParameter("curriculumRef", curriculumRef);
+		}
+		if(curriculumFuzzyRef != null) {
+			rawQuery.setParameter("curriculumFuzzyRef", curriculumFuzzyRef);
+		}
 		if(StringHelper.containsNonWhitespace(params.getLogin())) {
 			rawQuery.setParameter("login", params.getLogin());
 		}
@@ -778,11 +804,20 @@ public class LectureBlockRollCallDAO {
 		}
 
 		Date now = new Date();
+		Set<Long> rollCallKeySet = new HashSet<>();
 		Map<Membership,LectureBlockIdentityStatistics> stats = new HashMap<>();
 		rawQuery.getResultStream().forEach(rawObject -> {
-			int pos = 0;//jump roll call key
+			int pos = 0;
 			Long identityKey = (Long)rawObject[pos++];
 			String identityName = (String)rawObject[pos++];
+			Long rollCallKey = (Long)rawObject[pos++];
+			if(rollCallKey != null) {
+				if(rollCallKeySet.contains(rollCallKey)) {
+					return;
+				}
+				rollCallKeySet.add(rollCallKey);
+			}
+			
 			Long lecturesAttended = PersistenceHelper.extractLong(rawObject, pos++);
 			Long lecturesAbsent = PersistenceHelper.extractLong(rawObject, pos++);
 			Boolean absenceAuthorized;
@@ -838,6 +873,8 @@ public class LectureBlockRollCallDAO {
 						persoRequiredRate, calculateAttendanceRate, requiredAttendanceRateDefault);
 				stats.put(memberKey, entryStatistics);
 			}
+			
+			long currentAbsences = entryStatistics.getTotalAbsentLectures();
 
 			appendStatistics(entryStatistics, compulsory, status,
 					rollCallEndDate, rollCallStatus,
@@ -845,6 +882,10 @@ public class LectureBlockRollCallDAO {
 					absenceNoticeKey, absenceNoticeAuthorized, absenceDefaultAuthorized,
 					plannedLecturesNumber, effectiveLecturesNumber,
 					firstAdmissionDate, now);
+			
+			if(entryStatistics.getTotalAbsentLectures() > currentAbsences) {
+				entryStatistics.addAbsentLectureBlock(lectureBlockKey);
+			}
 		});
 		
 		List<LectureBlockIdentityStatistics> statisticsList = new ArrayList<>(stats.values());
@@ -856,14 +897,16 @@ public class LectureBlockRollCallDAO {
 			List<UserPropertyHandler> userPropertyHandlers, QueryBuilder sb) {
 		if(StringHelper.containsNonWhitespace(params.getLogin())) {
 			String login = PersistenceHelper.makeFuzzyQueryString(params.getLogin());
-			if (login.contains("_") && dbInstance.isOracle()) {
-				//oracle needs special ESCAPE sequence to search for escaped strings
-				sb.append(" and lower(ident.name) like :login ESCAPE '\\'");
-			} else if (dbInstance.isMySQL()) {
-				sb.append(" and ident.name like :login");
-			} else {
-				sb.append(" and lower(ident.name) like :login");
-			}
+			
+			sb.append(" and (");	
+			PersistenceHelper.appendFuzzyLike(sb, "ident.name", "login", dbInstance.getDbVendor());
+			sb.append(" or ");
+			PersistenceHelper.appendFuzzyLike(sb, "user.nickName", "login", dbInstance.getDbVendor());
+			sb.append(" or exists (select auth from ").append(AuthenticationImpl.class.getName()).append(" as auth")
+			  .append("  where ident.key=auth.identity.key and");
+			PersistenceHelper.appendFuzzyLike(sb, "auth.authusername", "login", dbInstance.getDbVendor());
+			sb.append("))");
+			
 			queryParams.put("login", login);
 		}
 		
@@ -877,7 +920,7 @@ public class LectureBlockRollCallDAO {
 				String qName = "p_" + ++count;
 				
 				UserPropertyHandler handler = userManager.getUserPropertiesConfig().getPropertyHandler(propName);
-				if(handler == null) {// fallback if the haandler is disabled
+				if(handler == null) {// fallback if the handler is disabled
 					for(UserPropertyHandler userPropertyHandler:userPropertyHandlers) {
 						if(propName.equals(userPropertyHandler.getName())) {
 							handler = userPropertyHandler;
@@ -885,14 +928,8 @@ public class LectureBlockRollCallDAO {
 					}
 				}
 				
-				if(dbInstance.isMySQL()) {
-					sb.append(" and user.").append(handler.getName()).append(" like :").append(qName);
-				} else {
-					sb.append(" and lower(user.").append(handler.getName()).append(") like :").append(qName);
-					if(dbInstance.isOracle()) {
-						sb.append(" escape '\\'");
-					}
-				}
+				sb.append(" and ");
+				PersistenceHelper.appendFuzzyLike(sb, "user.".concat(handler.getName()), qName, dbInstance.getDbVendor());
 				queryParams.put(qName, PersistenceHelper.makeFuzzyQueryString(propValue));
 			}
 		}
@@ -915,6 +952,7 @@ public class LectureBlockRollCallDAO {
 		
 		StringBuilder sb = new StringBuilder();
 		sb.append("select ident.key as participantKey, ")
+		  .append("  call.key as rollCallKey,")
 		  .append("  call.lecturesAttendedNumber as attendedLectures,")
 		  .append("  call.lecturesAbsentNumber as absentLectures,")
 		  .append("  call.absenceAuthorized as absenceAuthorized,")
@@ -950,6 +988,7 @@ public class LectureBlockRollCallDAO {
 			repoRequiredRate = null;
 		}
 
+		Set<Long> rollCallKeys = new HashSet<>();
 		Map<Long,LectureBlockStatistics> stats = new HashMap<>();
 		dbInstance.getCurrentEntityManager()
 				.createQuery(sb.toString(), Object[].class)
@@ -957,6 +996,14 @@ public class LectureBlockRollCallDAO {
 				.getResultStream().forEach(rawObject ->  {
 			int pos = 0;//jump roll call key
 			Long identityKey = (Long)rawObject[pos++];
+			Long rollCallKey = (Long)rawObject[pos++];
+			if(rollCallKey != null) {
+				if(rollCallKeys.contains(rollCallKey)) {
+					return;
+				}
+				rollCallKeys.add(rollCallKey);
+			}
+			
 			Long lecturesAttended = PersistenceHelper.extractLong(rawObject, pos++);
 			Long lecturesAbsent = PersistenceHelper.extractLong(rawObject, pos++);
 			Boolean absenceAuthorized;

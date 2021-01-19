@@ -30,8 +30,8 @@ import org.apache.logging.log4j.Logger;
 import org.olat.core.commons.services.doceditor.collabora.CollaboraModule;
 import org.olat.core.commons.services.doceditor.collabora.CollaboraRefreshDiscoveryEvent;
 import org.olat.core.commons.services.doceditor.collabora.CollaboraService;
+import org.olat.core.commons.services.doceditor.discovery.Discovery;
 import org.olat.core.commons.services.doceditor.ui.DocEditorController;
-import org.olat.core.commons.services.doceditor.wopi.Discovery;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.form.flexible.FormItem;
 import org.olat.core.gui.components.form.flexible.FormItemContainer;
@@ -135,13 +135,13 @@ public class CollaboraAdminController extends FormBasicController {
 	
 	@Override
 	protected boolean validateFormLogic(UserRequest ureq) {
-		boolean allOk = true;
+		boolean allOk = super.validateFormLogic(ureq);
 		
 		if (enabledEl.isAtLeastSelected(1)) {
 			allOk &= validateIsMandatory(baseUrlEl);
 		}
 		
-		return allOk & super.validateFormLogic(ureq);
+		return allOk;
 	}
 
 	@Override

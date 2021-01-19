@@ -37,6 +37,7 @@ import org.olat.ims.qti21.ui.components.FlowComponent;
 import org.olat.ims.qti21.ui.statistics.QTI21AssessmentItemStatisticsController;
 import org.olat.ims.qti21.ui.statistics.QTI21StatisticResourceResult;
 import org.olat.ims.qti21.ui.statistics.SeriesFactory;
+import org.olat.ims.qti21.ui.statistics.interactions.ResponseInfos.ExplanationType;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import uk.ac.ed.ph.jqtiplus.node.item.AssessmentItem;
@@ -134,7 +135,7 @@ public class KPrimStatisticsController extends BasicController {
 					mainVC.put(textName, text);
 				}
 			}
-			responseInfos.add(new ResponseInfos(label, text, null, correctRight, survey, true));
+			responseInfos.add(new ResponseInfos(label, text, null, correctRight, survey, ExplanationType.kprim));
 		}
 		
 		List<BarSeries> serieList = new ArrayList<>(3);

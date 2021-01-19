@@ -59,6 +59,7 @@ import org.olat.repository.controllers.EntryChangedEvent;
 import org.olat.repository.controllers.EntryChangedEvent.Change;
 import org.olat.repository.handlers.RepositoryHandler;
 import org.olat.repository.handlers.RepositoryHandlerFactory;
+import org.olat.repository.ui.RepositoyUIFactory;
 import org.olat.repository.ui.author.MediaContainerFilter;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -140,10 +141,9 @@ public class RepositoryEntryInfoController extends FormBasicController {
 				uifactory.addStaticTextElement("cif.externalref", extRef, formLayout);
 			}
 		} else {
-			externalRef = uifactory.addTextElement("cif.externalref", "cif.externalref", 100, extRef, formLayout);
+			externalRef = uifactory.addTextElement("cif.externalref", "cif.externalref", 255, extRef, formLayout);
 			externalRef.setHelpText(translate("cif.externalref.hover"));
 			externalRef.setHelpUrlForManualPage("Set up info page");
-			externalRef.setDisplaySize(30);
 		}
 
 		RepositoryHandler handler = repositoryHandlerFactory.getRepositoryHandler(repositoryEntry);
@@ -169,7 +169,7 @@ public class RepositoryEntryInfoController extends FormBasicController {
 		boolean managed = RepositoryEntryManagedFlag.isManaged(repositoryEntry, RepositoryEntryManagedFlag.details);
 		
 		VFSLeaf img = repositoryManager.getImage(repositoryEntry);
-		fileUpload = uifactory.addFileElement(getWindowControl(), "rentry.pic", "rentry.pic", formLayout);
+		fileUpload = uifactory.addFileElement(getWindowControl(), getIdentity(), "rentry.pic", "rentry.pic", formLayout);
 		fileUpload.setExampleKey("rentry.pic.example", new String[] {RepositoryManager.PICTURE_WIDTH + "x" + (RepositoryManager.PICTURE_HEIGHT)});
 		fileUpload.setMaxUploadSizeKB(picUploadlimitKB, null, null);
 		fileUpload.setPreview(usess, true);
@@ -183,7 +183,7 @@ public class RepositoryEntryInfoController extends FormBasicController {
 		fileUpload.limitToMimeType(imageMimeTypes, "cif.error.mimetype", new String[]{ imageMimeTypes.toString()} );
 
 		VFSLeaf movie = repositoryService.getIntroductionMovie(repositoryEntry);
-		movieUpload = uifactory.addFileElement(getWindowControl(), "rentry.movie", "rentry.movie", formLayout);
+		movieUpload = uifactory.addFileElement(getWindowControl(), getIdentity(), "rentry.movie", "rentry.movie", formLayout);
 		movieUpload.setExampleKey("rentry.movie.example", new String[] {"3:2"});
 		movieUpload.setMaxUploadSizeKB(movieUploadlimitKB, null, null);
 		movieUpload.setPreview(usess, true);
@@ -237,39 +237,14 @@ public class RepositoryEntryInfoController extends FormBasicController {
 	protected boolean validateFormLogic(UserRequest ureq) {
 		boolean allOk = super.validateFormLogic(ureq);
 		
-		// Check for empty display name
-		if (!StringHelper.containsNonWhitespace(displayName.getValue())) {
-			displayName.setErrorKey("cif.error.displayname.empty", new String[] {});
-			allOk = false;
-		} else if (displayName.hasError()) {
-			allOk = false;
-		} else {
-			displayName.clearError();
-		}
-
-		allOk &= validateTextElement(objectives, 2000);
-		allOk &= validateTextElement(requirements, 2000);
-		allOk &= validateTextElement(credits, 2000);
-		allOk &= validateTextElement(externalRef, 58);
+		allOk &= RepositoyUIFactory.validateTextElement(displayName, true, 110);
+		allOk &= RepositoyUIFactory.validateTextElement(description, false, 80000);
+		allOk &= RepositoyUIFactory.validateTextElement(objectives, false, 2000);
+		allOk &= RepositoyUIFactory.validateTextElement(requirements, false, 2000);
+		allOk &= RepositoyUIFactory.validateTextElement(credits, false, 2000);
+		allOk &= RepositoyUIFactory.validateTextElement(externalRef, false, 255);
 
 		return allOk;
-	}
-	
-	private boolean validateTextElement(TextElement el, int maxLength) {
-		boolean ok;
-		if(el == null) {
-			ok = true;
-		} else {
-			String val = el.getValue();
-			el.clearError();
-			if(val != null && val.length() > maxLength) {
-				el.setErrorKey("input.toolong", new String[]{ Integer.toString(maxLength) });
-				ok = false;
-			} else {
-				ok = true;
-			}
-		}
-		return ok;
 	}
 
 	@Override

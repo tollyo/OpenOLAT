@@ -26,6 +26,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.TimeZone;
 
+import javax.naming.NameNotFoundException;
 import javax.naming.NamingEnumeration;
 import javax.naming.NamingException;
 import javax.naming.SizeLimitExceededException;
@@ -41,6 +42,7 @@ import javax.naming.ldap.PagedResultsResponseControl;
 
 import org.apache.logging.log4j.Logger;
 import org.olat.core.logging.Tracing;
+import org.olat.core.util.CodeHelper;
 import org.olat.core.util.StringHelper;
 import org.olat.ldap.LDAPConstants;
 import org.olat.ldap.LDAPLoginModule;
@@ -63,7 +65,7 @@ public class LDAPDAO {
 	
 	private static final Logger log = Tracing.createLoggerFor(LDAPDAO.class);
 	
-	private static final int PAGE_SIZE = 50;
+	private static final int DEFAULT_PAGE_SIZE = 50;
 	private static final TimeZone UTC_TIME_ZONE;
 	private static final String PAGED_RESULT_CONTROL_OID = "1.2.840.113556.1.4.319";
 	
@@ -121,19 +123,21 @@ public class LDAPDAO {
 		ctls.setReturningAttributes(returningAttrs);
 		ctls.setCountLimit(0); // set no limits
 		
-		boolean paging = isPagedResultControlSupported(ctx);
+		final int pageSize = pageSize();
+		final boolean paging = isPagedResultControlSupported(ctx);
 	
 		int counter = 0;
 		try {
 			if(paging) {
 				byte[] cookie = null;
-				ctx.setRequestControls(new Control[] { new PagedResultsControl(PAGE_SIZE, Control.NONCRITICAL) });
+				ctx.setRequestControls(new Control[] { new PagedResultsControl(pageSize, Control.NONCRITICAL) });
 				do {
 					NamingEnumeration<SearchResult> enm = ctx.search(ldapBase, filter, ctls);
 					while (enm.hasMore()) {
 						visitor.visit(enm.next());
 					}
-					cookie = getCookie(ctx);
+					cookie = getCookie(ctx, pageSize);
+					counter++;
 				} while (cookie != null);
 			} else {
 				ctx.setRequestControls(null); // reset on failure, see FXOLAT-299
@@ -144,15 +148,15 @@ public class LDAPDAO {
 				counter++;
 			}
 		} catch (SizeLimitExceededException e) {
-			log.error("SizeLimitExceededException after "
-							+ counter
-							+ " records when getting all users from LDAP, reconfigure your LDAP server, hints: http://www.ldapbrowser.com/forum/viewtopic.php?t=14");
+			log.error("SizeLimitExceededException after {} records when getting all users from LDAP, reconfigure your LDAP server, hints: http://www.ldapbrowser.com/forum/viewtopic.php?t=14", counter);
+		} catch (NameNotFoundException e) {
+			log.warn("Name not found: {} in base: {}", filter, ldapBase);
 		} catch (NamingException e) {
-			log.error("NamingException when trying to search from LDAP using ldapBase::" + ldapBase + " on row::" + counter, e);
+			log.error("NamingException when trying to search from LDAP using ldapBase::{} on row::{}", ldapBase,counter, e);
 		} catch (Exception e) {
-			log.error("Exception when trying to search from LDAP using ldapBase::" + ldapBase + " on row::" + counter, e);
+			log.error("Exception when trying to search from LDAP using ldapBase::{} on row::{}", ldapBase, counter, e);
 		}
-		log.debug("finished search for ldapBase:: " + ldapBase);
+		log.debug("finished search for ldapBase:: {}", ldapBase);
 	}
 	
 	
@@ -161,21 +165,22 @@ public class LDAPDAO {
 		ctls.setSearchScope(SearchControls.SUBTREE_SCOPE);
 		ctls.setReturningAttributes(returningAttrs);
 		ctls.setCountLimit(0); // set no limits
-		
-		boolean paging = isPagedResultControlSupported(ctx);
+
+		final int pageSize = pageSize();
+		final boolean paging = isPagedResultControlSupported(ctx);
 		for (String ldapBase : syncConfiguration.getLdapBases()) {
 			int counter = 0;
 			try {
 				if(paging) {
 					byte[] cookie = null;
-					ctx.setRequestControls(new Control[] { new PagedResultsControl(PAGE_SIZE, Control.NONCRITICAL) });
+					ctx.setRequestControls(new Control[] { new PagedResultsControl(pageSize, Control.NONCRITICAL) });
 					do {
 						NamingEnumeration<SearchResult> enm = ctx.search(ldapBase, filter, ctls);
 						while (enm.hasMore()) {
 							visitor.visit(enm.next());
 							counter++;
 						}
-						cookie = getCookie(ctx);
+						cookie = getCookie(ctx, pageSize);
 					} while (cookie != null);
 				} else {
 					ctx.setRequestControls(null); // reset on failure, see FXOLAT-299
@@ -186,23 +191,21 @@ public class LDAPDAO {
 					}
 				}
 			} catch (SizeLimitExceededException e) {
-				log.error("SizeLimitExceededException after "
-								+ counter
-								+ " records when getting all users from LDAP, reconfigure your LDAP server, hints: http://www.ldapbrowser.com/forum/viewtopic.php?t=14", e);
+				log.error("SizeLimitExceededException after {} records when getting all users from LDAP, reconfigure your LDAP server, hints: http://www.ldapbrowser.com/forum/viewtopic.php?t=14", counter, e);
 			} catch (NamingException e) {
-				log.error("NamingException when trying to search users from LDAP using ldapBase::" + ldapBase + " on row::" + counter, e);
+				log.error("NamingException when trying to search users from LDAP using ldapBase::{} on row::{}", ldapBase, counter, e);
 			} catch (Exception e) {
-				log.error("Exception when trying to search users from LDAP using ldapBase::" + ldapBase + " on row::" + counter, e);
+				log.error("Exception when trying to search users from LDAP using ldapBase::{} on row::{}", ldapBase, counter, e);
 			}
-			log.debug("finished search for ldapBase:: " + ldapBase);
+			log.debug("finished search for ldapBase:: {}", ldapBase);
 		}
 	}
 	
 	public String searchUserForLogin(String login, DirContext ctx) {
 		if(ctx == null) return null;
 		
-		String ldapUserIDAttribute = syncConfiguration.getLdapUserLoginAttribute();
-		String filter = buildSearchUserFilter(ldapUserIDAttribute, login);
+		List<String> ldapUserIDAttributes = syncConfiguration.getLdapUserLoginAttributes();
+		String filter = buildSearchUserFilter(ldapUserIDAttributes, login);
 		return searchUserDN(login, filter, ctx);
 	}
 	
@@ -235,7 +238,7 @@ public class LDAPDAO {
 					break;
 				}
 			} catch (NamingException e) {
-				log.error("NamingException when trying to bind user with username::" + username + " on ldapBase::" + ldapBase, e);
+				log.error("NamingException when trying to bind user with username::{} on ldapBase::{}", username, ldapBase, e);
 			}
 		}
 		
@@ -250,6 +253,34 @@ public class LDAPDAO {
 			filter.append("(&").append(ldapUserFilter);	
 		}
 		filter.append("(").append(attribute).append("=").append(uid).append(")");
+		if (ldapUserFilter != null) {
+			filter.append(")");	
+		}
+		return filter.toString();
+	}
+	
+	protected String buildSearchUserFilter(List<String> attributes, String uid) {
+		if(attributes == null || attributes.isEmpty()) {
+			return null;
+		} else if(attributes.size() == 1) {
+			return buildSearchUserFilter(attributes.get(0), uid);
+		}
+		
+		String ldapUserFilter = syncConfiguration.getLdapUserFilter();
+		StringBuilder filter = new StringBuilder(64);
+		if (ldapUserFilter != null) {
+			// merge preconfigured filter (e.g. object class, group filters) with username using AND rule
+			filter.append("(&").append(ldapUserFilter);	
+		}
+		
+		filter.append("(|");
+		for(int i=0; i<attributes.size(); i++) {
+			String attribute = attributes.get(i);
+			filter.append("(").append(attribute).append("=").append(uid).append(")");
+			
+		}
+		filter.append(")");
+		
 		if (ldapUserFilter != null) {
 			filter.append(")");	
 		}
@@ -282,7 +313,7 @@ public class LDAPDAO {
 		StringBuilder filter = new StringBuilder();
 		if (syncTime == null) {
 			if(debug)  log.debug("LDAP get user attribs since never -> full sync!");
-			if (filter != null) {
+			if (userFilter != null) {
 				filter.append(userFilter);				
 			}
 		} else {
@@ -290,7 +321,7 @@ public class LDAPDAO {
 			SimpleDateFormat generalizedTimeFormatter = new SimpleDateFormat(dateFormat);
 			generalizedTimeFormatter.setTimeZone(UTC_TIME_ZONE);
 			String syncTimeForm = generalizedTimeFormatter.format(syncTime);
-			if(debug) log.debug("LDAP get user attribs since " + syncTime + " -> means search with date restriction-filter: " + syncTimeForm);
+			if(debug) log.debug("LDAP get user attribs since {} -> means search with date restriction-filter: {}", syncTime, syncTimeForm);
 			if (userFilter != null) {
 				// merge user filter with time fileter using and rule
 				filter.append("(&").append(userFilter);				
@@ -307,11 +338,14 @@ public class LDAPDAO {
 
 		String[] userAttrs = getEnhancedUserAttributes();
 		LDAPUserVisitor userVisitor = new LDAPUserVisitor(syncConfiguration);
+		long start = System.nanoTime();
+		log.info("Start loading users from LDAP server");
 		searchInLdap(userVisitor, filter.toString(), userAttrs, ctx);
 		List<LDAPUser> ldapUserList = userVisitor.getLdapUserList();
 		if(debug) {
-			log.debug("attrib search returned " + ldapUserList.size() + " results");
+			log.debug("attrib search returned {} results", ldapUserList.size());
 		}
+		log.info("{} LDAP users retrieved in {}ms", ldapUserList.size(), CodeHelper.nanoToMilliTime(start));
 		return ldapUserList;
 	}
 	
@@ -349,7 +383,7 @@ public class LDAPDAO {
 		return userAttrList.toArray(new String[userAttrList.size()]);
 	}
 	
-	private byte[] getCookie(LdapContext ctx) throws NamingException, IOException {
+	private byte[] getCookie(LdapContext ctx, int pageSize) throws NamingException, IOException {
 		byte[] cookie = null;
 		// Examine the paged results control response
 		Control[] controls = ctx.getResponseControls();
@@ -362,13 +396,13 @@ public class LDAPDAO {
 		  }
 		}
 		// Re-activate paged results
-		ctx.setRequestControls(new Control[] { new PagedResultsControl(PAGE_SIZE, cookie, Control.NONCRITICAL) });
+		ctx.setRequestControls(new Control[] { new PagedResultsControl(pageSize, cookie, Control.NONCRITICAL) });
 		return cookie;
 	}
 	
 	private boolean isPagedResultControlSupported(LdapContext ctx) {
 		// FXOLAT-299, might return false on 2nd execution
-		if (pagingSupportedAlreadyFound == true) return true;
+		if (pagingSupportedAlreadyFound) return true;
 		try {
 			SearchControls ctl = new SearchControls();
 			ctl.setReturningAttributes(new String[]{"supportedControl"});
@@ -398,4 +432,8 @@ public class LDAPDAO {
 		}
 	}
 
+	private int pageSize() {
+		Integer  pageSize = ldapLoginModule.getBatchSize();
+		return pageSize == null ? DEFAULT_PAGE_SIZE : pageSize.intValue();
+	}
 }

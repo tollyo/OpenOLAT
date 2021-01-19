@@ -301,7 +301,7 @@ public class AssignmentEditController extends FormBasicController {
 		filesLayout.setLabel("assignment.document.upload", null);
 		formLayout.add(filesLayout);
 
-		documentUploadEl = uifactory.addFileElement(getWindowControl(), "assignment.document.upload", formLayout);
+		documentUploadEl = uifactory.addFileElement(getWindowControl(), getIdentity(), "assignment.document.upload", formLayout);
 		documentUploadEl.addActionListener(FormEvent.ONCHANGE);
 	}
 	
@@ -549,7 +549,7 @@ public class AssignmentEditController extends FormBasicController {
 
 		if (fileExists) {
 			documentUploadEl.setErrorKey("attachments.error.file.exists", null);
-			documentUploadEl.getUploadFile().delete();
+			FileUtils.deleteFile(documentUploadEl.getUploadFile());
 			documentUploadEl.showError(true);
 		} else {
 			// files got stored in an extra tempFolder, to use the same

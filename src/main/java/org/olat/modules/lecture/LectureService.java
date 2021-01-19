@@ -62,7 +62,7 @@ public interface LectureService {
 	
 	
 	/**
-	 * Get (or create) the configuration object for the specified repossitory
+	 * Get (or create) the configuration object for the specified repository
 	 * entry.
 	 * 
 	 * @param entry
@@ -72,9 +72,8 @@ public interface LectureService {
 	
 	/**
 	 * 
-	 * 
-	 * @param entry
-	 * @return
+	 * @param entry The course
+	 * @return true if the module is enabled and the course has the lectures enabled
 	 */
 	public boolean isRepositoryEntryLectureEnabled(RepositoryEntryRef entry);
 	
@@ -206,6 +205,8 @@ public interface LectureService {
 	 */
 	public LectureBlock getLectureBlock(LectureBlockRef block);
 	
+	public List<LectureBlock> getLectureBlocks(List<Long> keys);
+	
 	/**
 	 * Make a copy of the specified lecture block.
 	 * @param block
@@ -230,8 +231,9 @@ public interface LectureService {
 	public int delete(RepositoryEntry entry);
 	
 	/**
-	 * Returns all configured reasons.
+	 * Returns active/inactive or all configured reasons.
 	 * 
+	 * @param enabled true for enabled, false disabled and null for all
 	 * @return A list of reasons
 	 */
 	public List<Reason> getAllReasons();
@@ -250,7 +252,7 @@ public interface LectureService {
 	 * @param description
 	 * @return
 	 */
-	public Reason createReason(String title, String description);
+	public Reason createReason(String title, String description, boolean enabled);
 	
 	/**
 	 * Updates the reason and return the freshest.
@@ -264,8 +266,13 @@ public interface LectureService {
 	
 	public boolean deleteReason(Reason reason);
 	
-	
-	public List<AbsenceCategory> getAllAbsencesCategories();
+	/**
+	 * Returns active/inactive or all configured absences categories.
+	 * 
+	 * @param enabled true for enabled, false disabled and null for all
+	 * @return A list of absences categories
+	 */
+	public List<AbsenceCategory> getAbsencesCategories(Boolean enabled);
 	
 	/**
 	 * Load a category by its primary key.
@@ -282,7 +289,7 @@ public interface LectureService {
 	 * @param description The description
 	 * @return
 	 */
-	public AbsenceCategory createAbsenceCategory(String title, String description);
+	public AbsenceCategory createAbsenceCategory(String title, String description, boolean enabled);
 	
 	/**
 	 * Updates the category and return the freshest.
@@ -324,7 +331,7 @@ public interface LectureService {
 	/**
 	 * Delete the absence notice and remove the absences from the roll calls.
 	 * 
-	 * @param absenceNotice Absence nnotice to delete
+	 * @param absenceNotice Absence notice to delete
 	 */
 	public void deleteAbsenceNotice(AbsenceNotice absenceNotice, Identity actingIdentity);
 	

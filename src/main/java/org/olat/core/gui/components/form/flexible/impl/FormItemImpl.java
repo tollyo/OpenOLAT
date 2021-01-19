@@ -337,15 +337,19 @@ public abstract class FormItemImpl implements InlineElement {
 	 */
 	@Override
 	public void setExampleKey(String exampleKey, String[] params) {
-		hasExample = true;
-		this.exampleKey = exampleKey;
-		this.exampleParams = params;
-		if (getTranslator() != null) {
-			exampleC = new SimpleExampleText(exampleKey, translate(exampleKey, params));
-			examplePanel.setContent(exampleC);
-		} else if(exampleKey == null) {
+		if(exampleKey == null) {
+			// reset
 			exampleC = null;
 			examplePanel.setContent(exampleC);
+			hasExample = false;
+		} else {
+			hasExample = true;
+			this.exampleKey = exampleKey;
+			this.exampleParams = params;
+			if (getTranslator() != null) {
+				exampleC = new SimpleExampleText(exampleKey, translate(exampleKey, params));
+				examplePanel.setContent(exampleC);
+			} 
 		}
 	}
 	
@@ -386,8 +390,11 @@ public abstract class FormItemImpl implements InlineElement {
 	@Override
 	public void setHelpUrlForManualPage(String manualAliasName) {
 		HelpModule helpModule = CoreSpringFactory.getImpl(HelpModule.class);
-		Locale locale = getTranslator().getLocale();
-		this.helpUrl = helpModule.getHelpProvider().getURL(locale, manualAliasName);
+		
+		if (helpModule.isManualEnabled()) {
+			Locale locale = getTranslator().getLocale();
+			this.helpUrl = helpModule.getManualProvider().getURL(locale, manualAliasName);
+		}
 	}
 
 	/**
@@ -575,6 +582,9 @@ public abstract class FormItemImpl implements InlineElement {
 			case FormEvent.ONCHANGE:
 				getRootForm().fireFormEvent(ureq, new FormEvent("ONCHANGE", this, FormEvent.ONCHANGE));
 				break;
+			case FormEvent.ONKEYUP:
+				getRootForm().fireFormEvent(ureq, new FormEvent("ONCHANGE", this, FormEvent.ONKEYUP));
+				break;
 			default:
 				//nothing to do, default is handled
 		}
@@ -616,9 +626,6 @@ public abstract class FormItemImpl implements InlineElement {
 		//default implementation does nothing
 	}
 	
-	/**
-	 * @see org.olat.core.gui.components.form.flexible.FormComponent#validate(java.util.List, Identity)
-	 */
 	@Override
 	public void validate(List<ValidationStatus> validationResults) {
 		//

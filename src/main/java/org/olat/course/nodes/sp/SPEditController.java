@@ -46,6 +46,7 @@ import org.olat.course.editor.NodeEditController;
 import org.olat.course.folder.CourseContainerOptions;
 import org.olat.course.nodes.SPCourseNode;
 import org.olat.course.run.environment.CourseEnvironment;
+import org.olat.course.run.tools.CourseToolLinkTreeModel;
 import org.olat.course.run.userview.UserCourseEnvironment;
 import org.olat.course.tree.CourseInternalLinkTreeModel;
 import org.olat.modules.ModuleConfiguration;
@@ -123,9 +124,10 @@ public class SPEditController extends ActivateableTabbableDefaultController impl
 		// File create/select controller
 		Long repoKey = course.getCourseEnvironment().getCourseGroupManager().getCourseEntry().getKey();
 		VFSEdusharingProvider edusharingProvider = new LazyRepositoryEdusharingProvider(repoKey);
-		combiLinkCtr = new LinkFileCombiCalloutController(ureq, wControl, courseFolderBaseContainer,
-				relFilePath, relFilPathIsProposal, allowRelativeLinks, false,
-				new CourseInternalLinkTreeModel(course.getEditorTreeModel()), edusharingProvider);
+		combiLinkCtr = new LinkFileCombiCalloutController(ureq, wControl, courseFolderBaseContainer, relFilePath,
+				relFilPathIsProposal, allowRelativeLinks, false,
+				new CourseInternalLinkTreeModel(course.getEditorTreeModel()),
+				new CourseToolLinkTreeModel(course.getCourseConfig(), getLocale()), edusharingProvider);
 		combiLinkCtr.setEditable(hasEditRights(relFilePath));
 		listenTo(combiLinkCtr);
 		myContent.put("combiCtr", combiLinkCtr.getInitialComponent());		
@@ -168,8 +170,12 @@ public class SPEditController extends ActivateableTabbableDefaultController impl
 				combiLinkCtr.setEditable(hasEditRights(relPath));
 				moduleConfiguration.set(CONFIG_KEY_FILE, relPath);
 				fireEvent(urequest, NodeEditController.NODECONFIG_CHANGED_EVENT);
-				if(!myTabbedPane.containsTab(deliveryOptionsCtrl.getInitialComponent())) {
-					myTabbedPane.addTab(translate(PANE_TAB_DELIVERYOPTIONS), deliveryOptionsCtrl.getInitialComponent());
+				if(combiLinkCtr.isHtmlFile()) {
+					if(!myTabbedPane.containsTab(deliveryOptionsCtrl.getInitialComponent())) {
+						myTabbedPane.addTab(translate(PANE_TAB_DELIVERYOPTIONS), deliveryOptionsCtrl.getInitialComponent());
+					}
+				} else {
+					myTabbedPane.removeTab(deliveryOptionsCtrl.getInitialComponent());
 				}
 				myContent.contextPut("editorEnabled", combiLinkCtr.isEditorEnabled());
 			}
@@ -197,7 +203,7 @@ public class SPEditController extends ActivateableTabbableDefaultController impl
 	public void addTabs(TabbedPane tabbedPane) {
 		myTabbedPane = tabbedPane;
 		tabbedPane.addTab(translate(PANE_TAB_SPCONFIG), myContent);
-		if(combiLinkCtr != null && combiLinkCtr.isEditorEnabled()) {
+		if(combiLinkCtr != null && combiLinkCtr.isHtmlFile()) {
 			tabbedPane.addTab(translate(PANE_TAB_DELIVERYOPTIONS), deliveryOptionsCtrl.getInitialComponent());
 		}
 	}

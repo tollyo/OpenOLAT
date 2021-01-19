@@ -34,10 +34,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Stack;
+import java.util.UUID;
+import java.util.function.Predicate;
 
 import javax.servlet.http.HttpSessionBindingEvent;
 import javax.servlet.http.HttpSessionBindingListener;
 
+import org.apache.logging.log4j.Logger;
 import org.olat.core.CoreSpringFactory;
 import org.olat.core.commons.persistence.DBFactory;
 import org.olat.core.gui.UserRequest;
@@ -50,7 +53,6 @@ import org.olat.core.id.context.BusinessControl;
 import org.olat.core.id.context.ContextEntry;
 import org.olat.core.id.context.HistoryPoint;
 import org.olat.core.id.context.HistoryPointImpl;
-import org.apache.logging.log4j.Logger;
 import org.olat.core.logging.Tracing;
 import org.olat.core.logging.activity.ThreadLocalUserActivityLoggerInstaller;
 import org.olat.core.util.coordinate.CoordinatorManager;
@@ -59,6 +61,7 @@ import org.olat.core.util.event.GenericEventListener;
 import org.olat.core.util.prefs.Preferences;
 import org.olat.core.util.prefs.PreferencesFactory;
 import org.olat.core.util.resource.OresHelper;
+import org.olat.core.util.resource.WindowedResourceableList;
 import org.olat.core.util.session.UserSessionManager;
 import org.olat.course.assessment.model.TransientAssessmentMode;
 
@@ -82,21 +85,31 @@ public class UserSession implements HttpSessionBindingListener, GenericEventList
 	private TransientAssessmentMode lockMode;
 	private List<TransientAssessmentMode> assessmentModes;
 	
+	private transient WindowedResourceableList resourceList = new WindowedResourceableList();
+	
 	private transient Map<String,Object> store;
 	/**
 	 * things to put into that should not be clear when signing on (e.g. remember url for a direct jump)
 	 */
 	private transient Map<String,Object> nonClearedStore = new HashMap<>();
-	private String lockStores = "";
+	private transient Object lockStores = new Object();
 	private boolean authenticated = false;
 	private boolean savedSession = false;
 	private transient Preferences guiPreferences;
 	private transient EventBus singleUserSystemBus;
 	private List<String> chats;
-	private Stack<HistoryPoint> history = new Stack<>();
+	private final Stack<HistoryPoint> history = new Stack<>();
+	
+	private String csrfToken;
 
 	public UserSession() {
 		init();
+		csrfToken = UUID.randomUUID().toString();
+	}
+	
+	public UserSession(String csrfToken) {
+		init();
+		this.csrfToken = csrfToken;
 	}
 
 	public void init() {
@@ -107,9 +120,11 @@ public class UserSession implements HttpSessionBindingListener, GenericEventList
 		sessionInfo = null;
 	}
 	
-	private Object readResolve() {
+	protected Object readResolve() {
 		store = new HashMap<>(4);
 		nonClearedStore = new HashMap<>();
+		lockStores = new Object();
+		resourceList = new WindowedResourceableList();
 		singleUserSystemBus = CoordinatorManager.getInstance().getCoordinator().createSingleUserInstance();
 		savedSession = true;
 		authenticated = false;//reset authentication
@@ -133,6 +148,10 @@ public class UserSession implements HttpSessionBindingListener, GenericEventList
 
 	public void setSavedSession(boolean savedSession) {
 		this.savedSession = savedSession;
+	}
+	
+	public String getCsrfToken() {
+		return csrfToken;
 	}
 
 	public List<Object> getStoreValues() {
@@ -381,6 +400,20 @@ public class UserSession implements HttpSessionBindingListener, GenericEventList
 		return history.lastElement();
 	}
 	
+	public HistoryPoint getLastHistoryPoint(Predicate<HistoryPoint> accept) {
+		if(history.isEmpty()) {
+			return null;
+		}
+		
+		for(int i=history.size(); i-->0; ) {
+			HistoryPoint point = history.get(i);
+			if(accept.test(point)) {
+				return point;
+			}
+		}
+		return null;
+	}
+	
 	public HistoryPoint getHistoryPoint(String id) {
 		if(history.isEmpty()) {
 			return null;
@@ -439,11 +472,15 @@ public class UserSession implements HttpSessionBindingListener, GenericEventList
 			}
 		}
 	}
+	
+	public WindowedResourceableList getResourceList() {
+		return resourceList;
+	}
 
 	@Override
 	public void valueBound(HttpSessionBindingEvent be) {
 		if (log.isDebugEnabled()) {
-			log.debug("Opened UserSession:" + toString());
+			log.debug("Opened UserSession: {}", this);
 		}
 	}
 
@@ -459,9 +496,7 @@ public class UserSession implements HttpSessionBindingListener, GenericEventList
 			// (no user was authenticated yet but a tomcat session was created)
 			Identity ident = identityEnvironment.getIdentity();
 			CoreSpringFactory.getImpl(UserSessionManager.class).signOffAndClear(this);
-			if (log.isDebugEnabled()) {
-				log.debug("Closed UserSession: identity = " + (ident == null ? "n/a" : ident.getKey()));
-			}
+			log.debug("Closed UserSession: identity = {}", (ident == null ? "n/a" : ident.getKey()));
 			//we do not have a request in the null case (app. server triggered) and user not yet logged in
 			//-> in this case we use the special empty activity logger
 			if (ident == null) {
@@ -482,15 +517,11 @@ public class UserSession implements HttpSessionBindingListener, GenericEventList
 	 */
 	@Override
 	public void event(Event event) {
-		//fxdiff FXOLAT-231: event on GUI Preferences extern changes
 		if("preferences.changed".equals(event.getCommand())) {
 			reloadPreferences();
 		}
 	}
 
-	/**
-	 * @see java.lang.Object#toString()
-	 */
 	@Override
 	public String toString() {
 		return "Session of " + identityEnvironment + ", " + super.toString();

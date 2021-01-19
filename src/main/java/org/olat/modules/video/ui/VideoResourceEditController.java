@@ -20,7 +20,6 @@
 package org.olat.modules.video.ui;
 
 import java.io.File;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -62,11 +61,7 @@ import org.springframework.beans.factory.annotation.Autowired;
  */
 public class VideoResourceEditController extends FormBasicController {
 
-	private static final Set<String> videoMimeTypes = new HashSet<>();
-	static {
-		videoMimeTypes.add("video/quicktime");
-		videoMimeTypes.add("video/mp4");
-	}
+	private static final Set<String> videoMimeTypes = Set.of("video/quicktime", "video/mp4");
 	private static final String VIDEO_RESOURCE = "video.mp4";
 	
 	private VideoMeta meta;
@@ -113,7 +108,7 @@ public class VideoResourceEditController extends FormBasicController {
 		if(StringHelper.containsNonWhitespace(meta.getUrl())) {
 			urlEl = uifactory.addTextElement("video.config.url", 512, meta.getUrl(), formLayout);
 		} else {
-			uploadFileEl = uifactory.addFileElement(getWindowControl(), "upload", "video.replace.upload", formLayout);
+			uploadFileEl = uifactory.addFileElement(getWindowControl(), getIdentity(), "upload", "video.replace.upload", formLayout);
 			uploadFileEl.addActionListener(FormEvent.ONCHANGE);
 			uploadFileEl.limitToMimeType(videoMimeTypes, "video.mime.type.error", null);
 		}
@@ -123,7 +118,6 @@ public class VideoResourceEditController extends FormBasicController {
 		FormLayoutContainer buttonGroupLayout = FormLayoutContainer.createButtonLayout("buttons", getTranslator());
 		formLayout.add(buttonGroupLayout);
 		uifactory.addFormSubmitButton("submit", "tab.video.exchange", buttonGroupLayout);
-
 	}
 	
 	private void doReplaceURLAndUpdateMetadata() {
@@ -146,24 +140,31 @@ public class VideoResourceEditController extends FormBasicController {
 		VFSLeaf video = (VFSLeaf) vfsContainer.resolve(VIDEO_RESOURCE);		
 		File uploadFile = uploadFileEl.getUploadFile();
 		meta = videoManager.getVideoMetadata(videoResource);
-		if (uploadFileEl.getUploadSize() > 0 && uploadFile.exists()){
+		if (uploadFileEl.getUploadSize() > 0 && uploadFile.exists()) {
 			video.delete();
 			VFSLeaf uploadVideo = vfsContainer.createChildLeaf(VIDEO_RESOURCE);
-			VFSManager.copyContent(uploadFile, uploadVideo);
+			VFSManager.copyContent(uploadFile, uploadVideo, getIdentity());
 			//update video dimensions
 			Size dimensions = movieService.getSize(uploadVideo, VideoManagerImpl.FILETYPE_MP4);
 			// update video duration
 			long duration = movieService.getDuration(uploadVideo, VideoTranscoding.FORMAT_MP4);
 			// exchange poster
 			videoManager.exchangePoster(videoResource);
+
+			meta.setSize(uploadFile.length());
+			meta.setVideoFormat(VideoFormat.valueOfFilename(uploadVideo.getName()));
+			String length = null;
 			if (duration != -1) {
-				String length = Formatter.formatTimecode(duration);
-				entry.setExpenditureOfWork(length);
-				meta.setSize(uploadFile.length());
+				length = Formatter.formatTimecode(duration);
+				meta.setLength(length);
+			}
+			if(dimensions != null && dimensions.getWidth() > 0) {
 				meta.setWidth(dimensions.getWidth());
 				meta.setHeight(dimensions.getHeight());
-				meta.setVideoFormat(VideoFormat.valueOfFilename(uploadVideo.getName()));
-				meta.setLength(length);
+			}
+			meta = videoManager.updateVideoMetadata(meta);
+			if(length != null) {
+				repositoryManager.setExpenditureOfWork(entry, length);
 			}
 		} 
 		return meta.getHeight();

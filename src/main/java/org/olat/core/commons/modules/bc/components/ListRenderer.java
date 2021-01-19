@@ -39,9 +39,7 @@ import org.olat.core.commons.modules.bc.FileSelection;
 import org.olat.core.commons.modules.bc.FolderLicenseHandler;
 import org.olat.core.commons.modules.bc.FolderManager;
 import org.olat.core.commons.services.doceditor.DocEditor.Mode;
-import org.olat.core.commons.services.doceditor.DocEditorSecurityCallback;
-import org.olat.core.commons.services.doceditor.DocEditorSecurityCallbackBuilder;
-import org.olat.core.commons.services.doceditor.DocumentEditorService;
+import org.olat.core.commons.services.doceditor.DocEditorService;
 import org.olat.core.commons.services.license.License;
 import org.olat.core.commons.services.license.LicenseHandler;
 import org.olat.core.commons.services.license.LicenseModule;
@@ -100,7 +98,7 @@ public class ListRenderer {
 	private VFSRepositoryService vfsRepositoryService;
 	private VFSVersionModule vfsVersionModule;
 	private VFSLockManager lockManager;
-	private DocumentEditorService docEditorService;
+	private DocEditorService docEditorService;
 	private UserManager userManager;
 	boolean licensesEnabled ;
  	
@@ -135,7 +133,7 @@ public class ListRenderer {
 			vfsVersionModule = CoreSpringFactory.getImpl(VFSVersionModule.class);
 		}
 		if (docEditorService == null) {
-			docEditorService = CoreSpringFactory.getImpl(DocumentEditorService.class);
+			docEditorService = CoreSpringFactory.getImpl(DocEditorService.class);
 		}
 		
 		LicenseModule licenseModule = CoreSpringFactory.getImpl(LicenseModule.class);
@@ -161,27 +159,28 @@ public class ListRenderer {
 		  .append("<thead><tr><th><a class='o_orderby ").append(sortCss,FolderComponent.SORT_NAME.equals(sortOrder)).append("' ");
 		ubu.buildHrefAndOnclick(sb, null, iframePostEnabled, false, false, new NameValuePair(PARAM_SORTID, FolderComponent.SORT_NAME))
 		   .append(">").append(translator.translate("header.Name")).append("</a>").append("</th>");
+		
 		sb.append("<th><a class='o_orderby ").append(sortCss,FolderComponent.SORT_SIZE.equals(sortOrder)).append("' ");
 		ubu.buildHrefAndOnclick(sb, null, iframePostEnabled, false, false, new NameValuePair(PARAM_SORTID, FolderComponent.SORT_SIZE))
 		   .append(">").append(translator.translate("header.Size")).append("</a>")
 		   .append("</th><th><a class='o_orderby ").append(sortCss,FolderComponent.SORT_DATE.equals(sortOrder)).append("' ");	
 		ubu.buildHrefAndOnclick(sb, null, iframePostEnabled, false, false, new NameValuePair(PARAM_SORTID, FolderComponent.SORT_DATE))
-		   .append(">").append(translator.translate("header.Modified")).append("</a>");
+		   .append(">").append(translator.translate("header.Modified")).append("</a></th>");
 		if (licensesEnabled) {
 			sb.append("<th>").append(translator.translate("header.license")).append("</th>");
 		}
 		if(canVersion) {
-			sb.append("</th><th><a class='o_orderby ").append(sortCss,FolderComponent.SORT_REV.equals(sortOrder)).append("' ");		
+			sb.append("<th><a class='o_orderby ").append(sortCss,FolderComponent.SORT_REV.equals(sortOrder)).append("' ");		
 			ubu.buildHrefAndOnclick(sb, null, iframePostEnabled, false, false, new NameValuePair(PARAM_SORTID, FolderComponent.SORT_REV))																																					// file size column
 			   .append("><i class=\"o_icon o_icon_version  o_icon-lg\" title=\"")
-			   .append(translator.translate("versions")).append("\"></i></a>");
+			   .append(translator.translate("versions")).append("\"></i></a></th>");
 		}
 
 		// lock
-		sb.append("</th><th><a class='o_orderby ").append(sortCss,FolderComponent.SORT_LOCK.equals(sortOrder)).append("' ");
+		sb.append("<th><a class='o_orderby ").append(sortCss,FolderComponent.SORT_LOCK.equals(sortOrder)).append("' ");
 		ubu.buildHrefAndOnclick(sb, null, iframePostEnabled, false, false, new NameValuePair(PARAM_SORTID, FolderComponent.SORT_LOCK));
 		sb.append("><i class=\"o_icon o_icon_locked  o_icon-lg\" title=\"");
-		sb.append(translator.translate("lock.title")).append("\"></i></a>");
+		sb.append(translator.translate("lock.title")).append("\"></i></a></th>");
 		
 		// open
 		sb.append("<th>");
@@ -191,7 +190,7 @@ public class ListRenderer {
 		sb.append("</th>");
 		
 		// meta data column
-		sb.append("</th><th><i class=\"o_icon o_icon_edit_metadata o_icon-lg\" title=\"")
+		sb.append("<th><i class=\"o_icon o_icon_edit_metadata o_icon-lg\" title=\"")
 		  .append(translator.translate("mf.edit")).append("\"></i></th></tr></thead>");
 				
 		// render directory contents
@@ -276,7 +275,7 @@ public class ListRenderer {
 		if(xssErrors) {
 			sb.append("<i class='o_icon o_icon-fw o_icon_banned'> </i> ");
 			sb.append(StringHelper.escapeHtml(name));
-			log.error("XSS Scan found something suspicious in: " + child);
+			log.error("XSS Scan found something suspicious in: {}", child);
 		} else {
 			sb.append("<a id='o_sel_doc_").append(pos).append("'");
 		
@@ -362,18 +361,16 @@ public class ListRenderer {
 			if (hasMeta) {
 				// render tooltip only when it contains something
 				sb.append("<script>")
-			      .append("/* <![CDATA[ */")
 				  .append("jQuery(function() {\n")
 				  .append("  jQuery('#o_sel_doc_").append(pos).append("').tooltip({\n")
-				  .append("	   html: true,\n")
-				  .append("	   container: 'body',\n")
+				  .append("    html: true,\n")
+				  .append("    container: 'body',\n")
 				  .append("    title: function(){ return jQuery('#o_sel_doc_tooltip_").append(pos).append("').html(); }\n")
 				  .append("  });\n")
 				  .append("  jQuery('#o_sel_doc_").append(pos).append("').on('click', function(){\n")
-				  .append("	   jQuery('#o_sel_doc_").append(pos).append("').tooltip('hide');\n")
+				  .append("   jQuery('#o_sel_doc_").append(pos).append("').tooltip('hide');\n")
 				  .append("  });\n")
 				  .append("});")
-				  .append("/* ]]> */")
 				  .append("</script>");
 			}
 		}
@@ -413,7 +410,7 @@ public class ListRenderer {
 		}
 
 		if(canContainerVersion) {
-			if (canVersion && revisionNr > 1) {
+			if (metadata != null && canVersion && revisionNr > 1) {
 				sb.append("<span class='text-muted small'>")
 				  .append(metadata.getRevisionNr())
 				  .append("</span>");
@@ -454,7 +451,7 @@ public class ListRenderer {
 			if (openIcon != null) {
 				sb.append("<a ");
 				ubu.buildHrefAndOnclick(sb, null, iframePostEnabled, false, false,
-						new NameValuePair(PARAM_CONTENT_EDIT_ID, pos));
+						new NameValuePair(PARAM_CONTENT_EDIT_ID, pos), new NameValuePair("oo-opennewwindow-oo", "true"));
 				sb.append(" title=\"").append(StringHelper.escapeHtml(translator.translate("mf.open")));
 				sb.append("\"><i class=\"o_icon o_icon-fw ").append(openIcon).append("\"></i></a>");
 			}
@@ -501,11 +498,9 @@ public class ListRenderer {
 
 				sb.append("</ul></div>")
 				  .append("<script>")
-			      .append("/* <![CDATA[ */")
 				  .append("jQuery(function() {\n")
 				  .append("  o_popover('o_sel_actions_").append(pos).append("','o_sel_actions_pop_").append(pos).append("','left');\n")
 				  .append("});")
-				  .append("/* ]]> */")
 				  .append("</script>");
 			}
 		}
@@ -516,15 +511,9 @@ public class ListRenderer {
 	private String getOpenIconCss(VFSItem child, VFSMetadata metadata, boolean canWrite, Identity identity, Roles roles) {
 		if (child instanceof VFSLeaf) {
 			VFSLeaf vfsLeaf = (VFSLeaf) child;
-			boolean hasMeta = vfsLeaf.canMeta() == VFSConstants.YES;
-			DocEditorSecurityCallbackBuilder secCallbackBuilder = DocEditorSecurityCallbackBuilder.builder()
-					.withVersionControlled(true)
-					.withHasMeta(hasMeta);
-			DocEditorSecurityCallback editSecCallback = secCallbackBuilder.withMode(Mode.EDIT).build();
-			DocEditorSecurityCallback viewSecCallback = secCallbackBuilder.withMode(Mode.VIEW).build();
-			if (canWrite && docEditorService.hasEditor(identity, roles, vfsLeaf, metadata, editSecCallback)) {
+			if (canWrite && docEditorService.hasEditor(identity, roles, vfsLeaf, metadata, Mode.EDIT)) {
 				return "o_icon_edit";
-			} else if (docEditorService.hasEditor(identity, roles, vfsLeaf, metadata, viewSecCallback)) {
+			} else if (docEditorService.hasEditor(identity, roles, vfsLeaf, metadata, Mode.VIEW)) {
 				return "o_icon_preview";
 			}
 		}

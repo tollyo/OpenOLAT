@@ -33,7 +33,6 @@ import org.apache.http.Header;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.util.EntityUtils;
 import org.apache.logging.log4j.Logger;
@@ -274,8 +273,11 @@ public class AdobeConnectManagerImpl implements AdobeConnectManager, DeletableGr
 			AdobeConnectErrors errors) {
 		List<AdobeConnectMeeting> currentMeetings = getMeetings(entry, subIdent, businessGroup);	
 		if(currentMeetings != null && !currentMeetings.isEmpty()) {
-			AdobeConnectMeeting meeting = currentMeetings.get(0);
-			return getAdapter().getScoMeeting(meeting, errors);
+			for (AdobeConnectMeeting meeting:currentMeetings) {
+				if (StringHelper.containsNonWhitespace(meeting.getScoId())) {
+					return getAdapter().getScoMeeting(meeting, errors);
+				}
+			}
 		}
 		return null;
 	}
@@ -285,7 +287,7 @@ public class AdobeConnectManagerImpl implements AdobeConnectManager, DeletableGr
 		List<AdobeConnectMeeting> currentMeetings = getMeetings(entry, subIdent, businessGroup);
 		if(currentMeetings != null && !currentMeetings.isEmpty()) {
 			for(AdobeConnectMeeting meeting:currentMeetings) {
-				if(meeting.isPermanent()) {
+				if(meeting.isPermanent() && StringHelper.containsNonWhitespace(meeting.getScoId())) {
 					return getAdapter().getScoMeeting(meeting, errors);
 				}
 			}
@@ -386,24 +388,26 @@ public class AdobeConnectManagerImpl implements AdobeConnectManager, DeletableGr
 			}
 			
 			AdobeConnectSco sco = getAdapter().getScoMeeting(meeting, errors);
-			String urlPath = sco.getUrlPath();
-			UriBuilder builder = adobeConnectModule
-					.getAdobeConnectHostUriBuilder()
-					.path(urlPath);
-
-			BreezeSession session = null;
-			Authentication authentication = securityManager.findAuthentication(identity, ACONNECT_PROVIDER);
-			if(authentication != null) {
-				session = getAdapter().commonInfo(authentication, errors);
+			if(sco != null) {
+				String urlPath = sco.getUrlPath();
+				UriBuilder builder = adobeConnectModule
+						.getAdobeConnectHostUriBuilder()
+						.path(urlPath);
+	
+				BreezeSession session = null;
+				Authentication authentication = securityManager.findAuthentication(identity, ACONNECT_PROVIDER);
+				if(authentication != null) {
+					session = getAdapter().commonInfo(authentication, errors);
+				}
+	
+				if(session != null && StringHelper.containsNonWhitespace(session.getSession())) {
+					builder.queryParam("session", session.getSession());
+				} else {
+					String fullName = userManager.getUserDisplayName(identity);
+					builder.queryParam("guestName", fullName).build();
+				}
+				return builder.build().toString();
 			}
-
-			if(session != null && StringHelper.containsNonWhitespace(session.getSession())) {
-				builder.queryParam("session", session.getSession());
-			} else {
-				String fullName = userManager.getUserDisplayName(identity);
-				builder.queryParam("guestName", fullName).build();
-			}
-			return builder.build().toString();
 		}
 		return null;
 	}
@@ -581,13 +585,15 @@ public class AdobeConnectManagerImpl implements AdobeConnectManager, DeletableGr
 
 	@Override
 	public boolean checkConnection(String url, String login, String password, AdobeConnectErrors error) {
+		dbInstance.commit();
+		
 		boolean allOk = false;
 		
 		String common = buildUrl(url, null) + "?action=common-info";
 		
 		BreezeSession session = null;
 		HttpGet commonGet = new HttpGet(common);
-		try(CloseableHttpClient httpClient = HttpClientBuilder.create().build();
+		try(CloseableHttpClient httpClient = adobeConnectModule.httpClientBuilder().build();
 			CloseableHttpResponse response = httpClient.execute(commonGet)) {
 			int statusCode = response.getStatusLine().getStatusCode();
 			if(statusCode == 200) {
@@ -607,7 +613,7 @@ public class AdobeConnectManagerImpl implements AdobeConnectManager, DeletableGr
 			request += "&session" + session.getSession();
 			get.setHeader(new BasicHeader("Cookie", AbstractAdobeConnectProvider.COOKIE + session.getSession()));
 		}
-		try(CloseableHttpClient httpClient = HttpClientBuilder.create().build();
+		try(CloseableHttpClient httpClient = adobeConnectModule.httpClientBuilder().build();
 			CloseableHttpResponse response = httpClient.execute(get)) {
 			int statusCode = response.getStatusLine().getStatusCode();
 			if(statusCode == 200 && AdobeConnectUtils.isStatusOk(response.getEntity())) {

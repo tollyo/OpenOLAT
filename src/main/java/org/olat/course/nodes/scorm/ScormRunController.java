@@ -246,7 +246,7 @@ public class ScormRunController extends BasicController implements ScormAPICallb
 			startPage.contextPut("hasPassedValue", (scoreEval.getPassed() == null ? Boolean.FALSE : Boolean.TRUE));
 			startPage.contextPut("passed", scoreEval.getPassed());
 			boolean resultsVisible = scoreEval.getUserVisible() == null || scoreEval.getUserVisible().booleanValue();
-			startPage.contextPut("resultsVisible", resultsVisible);
+			startPage.contextPut("resultsVisible", Boolean.valueOf(resultsVisible));
 			AssessmentConfig assessmentConfig = courseAssessmentService.getAssessmentConfig(scormNode);
 			if(resultsVisible && assessmentConfig.hasComment()) {
 				StringBuilder comment = Formatter
@@ -369,8 +369,8 @@ public class ScormRunController extends BasicController implements ScormAPICallb
 
 	@Override
 	public void lmsFinish(String olatSahsId, Properties scoreProp, Properties lessonStatusProp) {
+		doStartPage(null);
 		if (config.getBooleanSafe(ScormEditController.CONFIG_CLOSE_ON_FINISH, false)) {
-			doStartPage(null);
 			scormDispC.close();
 		}
 	}

@@ -118,15 +118,19 @@
 		</property>
 	</bean>
 	
-		<!-- Cleaning job for WOPI access -->
-	<bean id="wopiDeleteExpiredAccessJob" class="org.springframework.scheduling.quartz.CronTriggerFactoryBean">
-		<property name="jobDetail">
-		<bean class="org.springframework.scheduling.quartz.JobDetailFactoryBean">
-					<property name="jobClass" value="org.olat.core.commons.services.doceditor.wopi.manager.WopiDeleteExpiredAccessJob" />
-				</bean>
-			</property>
-			<property name="cronExpression" value="0 23 4 * * ?"/>
-			<property name="startDelay" value="45000" />
+		<!-- Cleaning job for document editor access -->
+	<bean id="documentAccessDeletionTrigger" class="org.springframework.scheduling.quartz.CronTriggerFactoryBean">
+		<property name="jobDetail" ref="documentAccessDeletionJob.${cluster.singleton.services}" />
+		<property name="cronExpression" value="* 24 * * * ?" /> <!-- Every hour at xx:24:00 -->
+		<property name="startDelay" value="10000" />
+	</bean>
+
+	<bean id="documentAccessDeletionJob.enabled" class="org.springframework.scheduling.quartz.JobDetailFactoryBean" lazy-init="true">
+		<property name="jobClass" value="org.olat.core.commons.services.doceditor.manager.ExpiredDocumentAccessDeletionJob" />
+	</bean>
+	
+	<bean id="documentAccessDeletionJob.disabled" class="org.springframework.scheduling.quartz.JobDetailFactoryBean" lazy-init="true">
+		<property name="jobClass" value="org.olat.core.commons.services.scheduler.DummyJob" />
 	</bean>
 	
 	<!-- Cleaning job for CSP reports -->

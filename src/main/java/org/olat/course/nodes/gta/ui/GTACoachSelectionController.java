@@ -107,6 +107,7 @@ public class GTACoachSelectionController extends BasicController implements Acti
 		
 		downloadButton = LinkFactory.createButton("bulk.download.title", mainVC, this);
 		downloadButton.setTranslator(getTranslator());
+		downloadButton.setVisible(isDownloadAvailable());
 		
 		PublisherData publisherData = gtaManager.getPublisherData(courseEnv, gtaNode, markedOnly);
 		SubscriptionContext subsContext = gtaManager.getSubscriptionContext(courseEnv, gtaNode, markedOnly);
@@ -126,12 +127,12 @@ public class GTACoachSelectionController extends BasicController implements Acti
 			
 			groups = gtaManager.filterBusinessGroups(groups, gtaNode);
 			
+			groupListCtrl = new GTACoachedGroupListController(ureq, getWindowControl(), null, coachCourseEnv, gtaNode, groups);
+			listenTo(groupListCtrl);
+			mainVC.put("list", groupListCtrl.getInitialComponent());
+			
 			if(groups.size() == 1) {
 				doSelectBusinessGroup(ureq, groups.get(0));
-			} else {
-				groupListCtrl = new GTACoachedGroupListController(ureq, getWindowControl(), null, coachCourseEnv, gtaNode, groups);
-				listenTo(groupListCtrl);
-				mainVC.put("list", groupListCtrl.getInitialComponent());
 			}	
 		} else {
 			participantListCtrl = new GTACoachedParticipantListController(ureq, getWindowControl(), coachCourseEnv, gtaNode, markedOnly);
@@ -140,6 +141,14 @@ public class GTACoachSelectionController extends BasicController implements Acti
 		}
 		
 		putInitialPanel(mainVC);
+	}
+	
+	private boolean isDownloadAvailable() {
+		ModuleConfiguration config = gtaNode.getModuleConfiguration();
+		return config.getBooleanSafe(GTACourseNode.GTASK_SUBMIT)
+				|| config.getBooleanSafe(GTACourseNode.GTASK_REVIEW_AND_CORRECTION)
+				|| config.getBooleanSafe(GTACourseNode.GTASK_REVISION_PERIOD)
+				|| config.getBooleanSafe(GTACourseNode.GTASK_GRADING);
 	}
 
 	@Override

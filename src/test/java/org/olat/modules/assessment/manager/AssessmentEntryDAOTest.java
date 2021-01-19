@@ -20,6 +20,7 @@
 package org.olat.modules.assessment.manager;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.offset;
 import static org.assertj.core.api.Assertions.within;
 import static org.olat.test.JunitTestHelper.random;
 
@@ -34,6 +35,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.assertj.core.api.SoftAssertions;
 import org.junit.Assert;
 import org.junit.Test;
 import org.olat.basesecurity.GroupRoles;
@@ -46,10 +48,12 @@ import org.olat.group.manager.BusinessGroupDAO;
 import org.olat.group.manager.BusinessGroupRelationDAO;
 import org.olat.modules.assessment.AssessmentEntry;
 import org.olat.modules.assessment.AssessmentEntryCompletion;
+import org.olat.modules.assessment.AssessmentEntryScoring;
 import org.olat.modules.assessment.Overridable;
 import org.olat.modules.assessment.model.AssessmentEntryImpl;
 import org.olat.modules.assessment.model.AssessmentEntryStatus;
 import org.olat.modules.assessment.model.AssessmentObligation;
+import org.olat.modules.assessment.model.AssessmentRunStatus;
 import org.olat.modules.curriculum.Curriculum;
 import org.olat.modules.curriculum.CurriculumCalendars;
 import org.olat.modules.curriculum.CurriculumElement;
@@ -239,7 +243,8 @@ public class AssessmentEntryDAOTest extends OlatTestCase {
 		Assert.assertNull(resetedAssessmentRef.getPassedOverridable().getOriginal());
 		Assert.assertNull(resetedAssessmentRef.getPassedOverridable().getModBy());
 		Assert.assertNull(resetedAssessmentRef.getPassedOverridable().getModDate());
-		Assert.assertEquals(new Integer(0), resetedAssessmentRef.getAttempts());
+		Assert.assertEquals(Integer.valueOf(0), resetedAssessmentRef.getAttempts());
+		Assert.assertNull(resetedAssessmentRef.getLastAttempt());
 		Assert.assertNull(resetedAssessmentRef.getCompletion());
 		
 		// double check by reloading the entry
@@ -256,6 +261,53 @@ public class AssessmentEntryDAOTest extends OlatTestCase {
 		Assert.assertNull(reloadedAssessmentRef.getPassedOverridable().getModDate());
 		Assert.assertEquals(new Integer(0), reloadedAssessmentRef.getAttempts());
 		Assert.assertNull(reloadedAssessmentRef.getCompletion());
+	}
+	
+	@Test
+	public void shouldUpdateScore() {
+		Identity assessedIdentity = JunitTestHelper.createAndPersistIdentityAsRndUser("as-node-6");
+		RepositoryEntry entry = JunitTestHelper.createAndPersistRepositoryEntry();
+		RepositoryEntry refEntry = JunitTestHelper.createAndPersistRepositoryEntry();
+		String subIdent = UUID.randomUUID().toString();
+		AssessmentEntry ae = assessmentEntryDao.createAssessmentEntry(assessedIdentity, null, entry, subIdent, null,
+				refEntry);
+		dbInstance.commitAndCloseSession();
+
+		Date lastCoachModified = new GregorianCalendar(2919, 5, 1, 10, 10, 0).getTime();
+		ae.setLastCoachModified(lastCoachModified);
+		Date lastUserModified = new GregorianCalendar(2919, 5, 1, 11, 10, 0).getTime();
+		ae.setLastUserModified(lastUserModified);
+		ae.setAttempts(Integer.valueOf(3));
+		Date lastAttempt = new GregorianCalendar(2020, 5, 1).getTime();
+		ae.setLastAttempt(lastAttempt);
+		ae.setScore(BigDecimal.valueOf(2.0));
+		ae.setPassed(Boolean.TRUE);
+		ae.setUserVisibility(Boolean.TRUE);
+		ae.setCompletion(Double.valueOf(0.5));
+		ae.setCurrentRunCompletion(Double.valueOf(0.3));
+		ae.setCurrentRunStatus(AssessmentRunStatus.running);
+		ae.setNumberOfAssessmentDocuments(10);
+		ae.setComment("very good");
+		ae.setCoachComment("coach comment");
+		assessmentEntryDao.updateAssessmentEntry(ae);
+		dbInstance.commitAndCloseSession();
+		
+		AssessmentEntry reloaded = assessmentEntryDao.loadAssessmentEntryById(ae.getKey());
+		SoftAssertions softly = new SoftAssertions();
+		softly.assertThat(reloaded.getLastCoachModified()).isCloseTo(lastCoachModified, within(2, ChronoUnit.SECONDS).getValue());
+		softly.assertThat(reloaded.getLastUserModified()).isCloseTo(lastUserModified, within(2, ChronoUnit.SECONDS).getValue());
+		softly.assertThat(reloaded.getAttempts()).isEqualTo(3);
+		softly.assertThat(reloaded.getLastAttempt()).isCloseTo(lastAttempt, within(2, ChronoUnit.SECONDS).getValue());
+		softly.assertThat(reloaded.getScore()).isEqualByComparingTo(BigDecimal.valueOf(2.0));
+		softly.assertThat(reloaded.getPassed()).isTrue();
+		softly.assertThat(reloaded.getUserVisibility()).isTrue();
+		softly.assertThat(reloaded.getCompletion()).isEqualTo(0.5d);
+		softly.assertThat(reloaded.getCurrentRunCompletion()).isEqualTo(0.3d, offset(0.001d));
+		softly.assertThat(reloaded.getCurrentRunStatus()).isEqualTo(AssessmentRunStatus.running);
+		softly.assertThat(reloaded.getNumberOfAssessmentDocuments()).isEqualTo(10);
+		softly.assertThat(reloaded.getComment()).isEqualTo("very good");
+		softly.assertThat(reloaded.getCoachComment()).isEqualTo("coach comment");
+		softly.assertAll();
 	}
 	
 	@Test
@@ -447,7 +499,88 @@ public class AssessmentEntryDAOTest extends OlatTestCase {
 		dbInstance.commitAndCloseSession();
 		Assert.assertNull(nodeAssessment.getFullyAssessedDate());
 	}
-
+	
+	@Test
+	public void shouldResetAllRootPassed() {
+		Identity coach = JunitTestHelper.createAndPersistIdentityAsRndUser("coach");
+		Identity assessedIdentity1 = JunitTestHelper.createAndPersistIdentityAsRndUser("as-node-6a");
+		Identity assessedIdentity2 = JunitTestHelper.createAndPersistIdentityAsRndUser("as-node-6b");
+		RepositoryEntry entry = JunitTestHelper.createAndPersistRepositoryEntry();
+		// Assessment entry
+		AssessmentEntry ae = assessmentEntryDao.createAssessmentEntry(assessedIdentity1, null, entry,
+				null, Boolean.TRUE, null);
+		ae.setPassed(Boolean.FALSE);
+		ae = assessmentEntryDao.updateAssessmentEntry(ae);
+		// Overriden
+		AssessmentEntry aeOverriden = assessmentEntryDao.createAssessmentEntry(assessedIdentity2, null, entry,
+				null, Boolean.TRUE, null);
+		aeOverriden.setPassed(Boolean.FALSE);
+		aeOverriden = assessmentEntryDao.updateAssessmentEntry(aeOverriden);
+		aeOverriden.getPassedOverridable().override(Boolean.TRUE, coach, new Date());
+		aeOverriden = assessmentEntryDao.updateAssessmentEntry(aeOverriden);
+		// Do not change assessment entries of other repository entries
+		RepositoryEntry entryOther = JunitTestHelper.createAndPersistRepositoryEntry();
+		AssessmentEntry aeOther = assessmentEntryDao.createAssessmentEntry(assessedIdentity1, null, entryOther,
+				null, Boolean.TRUE, null);
+		aeOther.setPassed(Boolean.FALSE);
+		aeOther = assessmentEntryDao.updateAssessmentEntry(aeOther);
+		dbInstance.commitAndCloseSession();
+		
+		assessmentEntryDao.resetAllRootPassed(entry);
+		dbInstance.commitAndCloseSession();
+		
+		SoftAssertions softly = new SoftAssertions();
+		ae = assessmentEntryDao.loadAssessmentEntryById(ae.getKey());
+		softly.assertThat(ae.getPassed()).isNull();
+		softly.assertThat(ae.getPassedOverridable().getCurrent()).isNull();
+		aeOverriden = assessmentEntryDao.loadAssessmentEntryById(aeOverriden.getKey());
+		softly.assertThat(aeOverriden.getPassedOverridable().getCurrent()).isEqualTo(Boolean.TRUE);
+		softly.assertThat(aeOverriden.getPassedOverridable().getOriginal()).isNull();
+		softly.assertThat(aeOverriden.getPassedOverridable().getModBy()).isNotNull();
+		softly.assertThat(aeOverriden.getPassedOverridable().getModDate()).isNotNull();
+		aeOther = assessmentEntryDao.loadAssessmentEntryById(aeOther.getKey());
+		softly.assertThat(aeOther.getPassed()).isNotNull();
+		softly.assertThat(aeOther.getPassedOverridable().getCurrent()).isNotNull();
+		softly.assertAll();
+	}
+	
+	@Test
+	public void shouldResetOverridenAllRootPassed() {
+		Identity coach = JunitTestHelper.createAndPersistIdentityAsRndUser("coach");
+		Identity assessedIdentity1 = JunitTestHelper.createAndPersistIdentityAsRndUser("as-node-6a");
+		RepositoryEntry entry = JunitTestHelper.createAndPersistRepositoryEntry();
+		AssessmentEntry ae1 = assessmentEntryDao.createAssessmentEntry(assessedIdentity1, null, entry,
+				null, Boolean.TRUE, null);
+		ae1.setPassed(Boolean.FALSE);
+		ae1 = assessmentEntryDao.updateAssessmentEntry(ae1);
+		ae1.getPassedOverridable().override(Boolean.TRUE, coach, new Date());
+		ae1 = assessmentEntryDao.updateAssessmentEntry(ae1);
+		// Do not change assessment entries of other repository entries
+		RepositoryEntry entryOther = JunitTestHelper.createAndPersistRepositoryEntry();
+		AssessmentEntry aeOther = assessmentEntryDao.createAssessmentEntry(assessedIdentity1, null, entryOther,
+				null, Boolean.TRUE, null);
+		aeOther.setPassed(Boolean.FALSE);
+		aeOther = assessmentEntryDao.updateAssessmentEntry(aeOther);
+		aeOther.getPassedOverridable().override(Boolean.TRUE, coach, new Date());
+		aeOther = assessmentEntryDao.updateAssessmentEntry(aeOther);
+		dbInstance.commitAndCloseSession();
+		
+		assessmentEntryDao.resetAllOverridenRootPassed(entry);
+		dbInstance.commitAndCloseSession();
+		
+		SoftAssertions softly = new SoftAssertions();
+		ae1 = assessmentEntryDao.loadAssessmentEntryById(ae1.getKey());
+		softly.assertThat(ae1.getPassedOverridable().getCurrent()).isEqualTo(Boolean.FALSE);
+		softly.assertThat(ae1.getPassedOverridable().getOriginal()).isNull();
+		softly.assertThat(ae1.getPassedOverridable().getModBy()).isNull();
+		softly.assertThat(ae1.getPassedOverridable().getModDate()).isNull();
+		aeOther = assessmentEntryDao.loadAssessmentEntryById(aeOther.getKey());
+		softly.assertThat(aeOther.getPassedOverridable().getCurrent()).isEqualTo(Boolean.TRUE);
+		softly.assertThat(aeOther.getPassedOverridable().getOriginal()).isNotNull();
+		softly.assertThat(aeOther.getPassedOverridable().getModBy()).isNotNull();
+		softly.assertThat(aeOther.getPassedOverridable().getModDate()).isNotNull();
+		softly.assertAll();
+	}
 	
 	@Test
 	public void loadAssessmentEntries_subIdent() {
@@ -622,11 +755,11 @@ public class AssessmentEntryDAOTest extends OlatTestCase {
 		dbInstance.commitAndCloseSession();
 		
 		List<Long> entryKeys = Arrays.asList(entry1.getKey(), entry2.getKey());
-		List<AssessmentEntry> assessmentEnries = assessmentEntryDao.loadRootAssessmentEntriesByAssessedIdentity(assessedIdentity, entryKeys);
+		List<AssessmentEntryScoring> assessmentEnries = assessmentEntryDao.loadRootAssessmentEntriesByAssessedIdentity(assessedIdentity, entryKeys);
 		
 		Assert.assertEquals(2, assessmentEnries.size());
-		Map<Long, AssessmentEntry> keysToCompletion = assessmentEnries.stream()
-				.collect(Collectors.toMap(ae -> ae.getRepositoryEntry().getKey(), Function.identity()));
+		Map<Long, AssessmentEntryScoring> keysToCompletion = assessmentEnries.stream()
+				.collect(Collectors.toMap(ae -> ae.getRepositoryEntryKey(), Function.identity()));
 		Assert.assertEquals(1, keysToCompletion.get(entry1.getKey()).getCompletion().intValue());
 		Assert.assertEquals(0, keysToCompletion.get(entry2.getKey()).getCompletion().intValue());
 	}

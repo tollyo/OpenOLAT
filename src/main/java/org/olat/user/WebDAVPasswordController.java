@@ -46,9 +46,11 @@ import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.Util;
+import org.olat.ldap.ui.LDAPAuthenticationController;
 import org.olat.login.auth.OLATAuthManager;
 import org.olat.login.validation.SyntaxValidator;
 import org.olat.login.validation.ValidationResult;
+import org.olat.shibboleth.ShibbolethDispatcher;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
@@ -70,8 +72,6 @@ public class WebDAVPasswordController extends FormBasicController {
 	private TextElement confirmPasswordEl;
 	private StaticTextElement usernamesStaticEl;
 	private StaticTextElement passwordStaticEl;
-	private FormLayoutContainer accessDataFlc;
-	private FormLayoutContainer buttonGroupLayout;
 	
 	private final SyntaxValidator syntaxValidator;
 	
@@ -82,11 +82,13 @@ public class WebDAVPasswordController extends FormBasicController {
 	@Autowired
 	private OLATAuthManager olatAuthManager;
 	@Autowired
+	private BaseSecurityModule securityModule;
+	@Autowired
 	private WebDAVAuthManager webDAVAuthManager;
 	
 	public WebDAVPasswordController(UserRequest ureq, WindowControl wControl) {
 		super(ureq, wControl, "pwdav", Util.createPackageTranslator(FolderRunController.class, ureq.getLocale()));
-		this.syntaxValidator = olatAuthManager.createPasswordSytaxValidator();
+		syntaxValidator = olatAuthManager.createPasswordSytaxValidator();
 		initForm(ureq);
 	}
 	
@@ -99,12 +101,12 @@ public class WebDAVPasswordController extends FormBasicController {
 			layoutContainer.contextPut("webdavhttp", FolderManager.getWebDAVHttp());
 			layoutContainer.contextPut("webdavhttps", FolderManager.getWebDAVHttps());
 			
-			accessDataFlc = FormLayoutContainer.createDefaultFormLayout("flc_access_data", getTranslator());
+			FormLayoutContainer accessDataFlc = FormLayoutContainer.createDefaultFormLayout("flc_access_data", getTranslator());
 			layoutContainer.add(accessDataFlc);
 
 			boolean hasOlatToken = false;
 			boolean hasWebDAVToken = false;
-			List<Authentication> authentications = securityManager.getAuthentications(ureq.getIdentity());
+			List<Authentication> authentications = securityManager.getAuthentications(getIdentity());
 			for(Authentication auth : authentications) {
 				if(BaseSecurityModule.getDefaultAuthProviderIdentifier().equals(auth.getProvider())) {
 					hasOlatToken = true;
@@ -141,7 +143,7 @@ public class WebDAVPasswordController extends FormBasicController {
 				confirmPasswordEl.setVisible(false);
 				confirmPasswordEl.setMandatory(true);
 
-				buttonGroupLayout = FormLayoutContainer.createButtonLayout("buttonGroupLayout", getTranslator());
+				FormLayoutContainer buttonGroupLayout = FormLayoutContainer.createButtonLayout("buttonGroupLayout", getTranslator());
 				buttonGroupLayout.setRootForm(mainForm);
 				accessDataFlc.add(buttonGroupLayout);
 				
@@ -161,17 +163,7 @@ public class WebDAVPasswordController extends FormBasicController {
 	}
 	
 	private String getUsernames(List<Authentication> authentications) {
-		StringBuilder sb = new StringBuilder();
-		sb.append(getIdentity().getName());
-		if(userModule.isEmailUnique()) {
-			if(StringHelper.containsNonWhitespace(getIdentity().getUser().getEmail())) {
-				sb.append(", ").append(getIdentity().getUser().getEmail());
-			}
-			if(StringHelper.containsNonWhitespace(getIdentity().getUser().getInstitutionalEmail())) {
-				sb.append(", ").append(getIdentity().getUser().getInstitutionalEmail());
-			}
-		}
-
+		StringBuilder sb = new StringBuilder(64);
 		for(Authentication auth : authentications) {
 			if(WebDAVAuthManager.PROVIDER_WEBDAV.equals(auth.getProvider())
 					|| WebDAVAuthManager.PROVIDER_WEBDAV_EMAIL.equals(auth.getProvider())
@@ -179,14 +171,32 @@ public class WebDAVPasswordController extends FormBasicController {
 					|| WebDAVAuthManager.PROVIDER_HA1.equals(auth.getProvider())
 					|| WebDAVAuthManager.PROVIDER_HA1_EMAIL.equals(auth.getProvider())
 					|| WebDAVAuthManager.PROVIDER_HA1_INSTITUTIONAL_EMAIL.equals(auth.getProvider())) {
-				String authUsername = auth.getAuthusername();
-				if(sb.indexOf(authUsername) < 0) {
-					sb.append(", ").append(authUsername);
+				appendUsername(auth.getAuthusername(), sb);
+			} else if(BaseSecurityModule.getDefaultAuthProviderIdentifier().equals(auth.getProvider())) {
+				appendUsername(auth.getAuthusername(), sb);
+				if(userModule.isEmailUnique()) {
+					appendUsername(getIdentity().getUser().getEmail(), sb);
+					appendUsername(getIdentity().getUser().getInstitutionalEmail(), sb);
 				}
 			}
 		}
 		
+		if(sb.length() == 0) {
+			String nextAuthUsername = getLogin(authentications);
+			appendUsername(nextAuthUsername, sb);
+			if(userModule.isEmailUnique()) {
+				appendUsername(getIdentity().getUser().getEmail(), sb);
+				appendUsername(getIdentity().getUser().getInstitutionalEmail(), sb);
+			}
+		}
 		return sb.toString();
+	}
+	
+	private void appendUsername(String authUsername, StringBuilder sb) {
+		if(StringHelper.containsNonWhitespace(authUsername) && sb.indexOf(authUsername) < 0) {
+			if(sb.length() > 0) sb.append(", ");
+			sb.append(authUsername);
+		}
 	}
 	
 	@Override
@@ -222,13 +232,53 @@ public class WebDAVPasswordController extends FormBasicController {
 	protected void formOK(UserRequest ureq) {
 		if(passwordEl != null && passwordEl.isVisible()) {
 			String newPassword = passwordEl.getValue();
-			if(webDAVAuthManager.changePassword(ureq.getIdentity(), ureq.getIdentity(), newPassword)) {
+			String login = getLogin();
+			if(StringHelper.containsNonWhitespace(login)
+					&& webDAVAuthManager.changePassword(getIdentity(), getIdentity(), login, newPassword)) {
 				showInfo("pwdav.password.successful");
 				toogleChangePassword(ureq);
 			} else {
 				showError("pwdav.password.failed");
 			}
 		}
+	}
+	
+	private String getLogin() {
+		List<Authentication> authentications = securityManager.getAuthentications(getIdentity());
+		return getLogin(authentications);
+	}
+	
+	private String getLogin(List<Authentication> authentications) {
+		// 1) The WebDAV authentication user name
+		for(Authentication auth : authentications) {
+			if(WebDAVAuthManager.PROVIDER_WEBDAV.equals(auth.getProvider()) || WebDAVAuthManager.PROVIDER_HA1.equals(auth.getProvider())) {
+				return auth.getAuthusername();
+			}
+		}
+		
+		// 2) Classic known authentication user name, preferred to OAuth which has cryptic user name
+		for(Authentication auth : authentications) {
+			if("OLAT".equals(auth.getProvider()) || LDAPAuthenticationController.PROVIDER_LDAP.equals(auth.getProvider())
+					|| ShibbolethDispatcher.PROVIDER_SHIB.equals(auth.getProvider())) {
+				return auth.getAuthusername();
+			}
+		}
+		
+		// 3) All but emails ones
+		for(Authentication auth : authentications) {
+			if(!WebDAVAuthManager.PROVIDER_WEBDAV_EMAIL.equals(auth.getProvider())
+					&& !WebDAVAuthManager.PROVIDER_WEBDAV_INSTITUTIONAL_EMAIL.equals(auth.getProvider())
+					&& !WebDAVAuthManager.PROVIDER_HA1_EMAIL.equals(auth.getProvider())
+					&& !WebDAVAuthManager.PROVIDER_HA1_INSTITUTIONAL_EMAIL.equals(auth.getProvider())) {
+				return auth.getAuthusername();
+			}
+		}
+		
+		if(securityModule.isIdentityNameAutoGenerated()
+				&& StringHelper.containsNonWhitespace(getIdentity().getUser().getNickName())) {
+			return getIdentity().getUser().getNickName();
+		}
+		return getIdentity().getName();
 	}
 
 	@Override

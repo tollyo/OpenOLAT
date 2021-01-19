@@ -28,6 +28,7 @@ import java.io.OutputStream;
 import java.io.StringReader;
 import java.math.BigDecimal;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -106,9 +107,13 @@ import org.olat.ims.qti21.model.audit.CandidateTestEventType;
 import org.olat.ims.qti21.model.jpa.AssessmentTestSessionStatistics;
 import org.olat.ims.qti21.model.xml.ManifestBuilder;
 import org.olat.ims.qti21.model.xml.ManifestMetadataBuilder;
+import org.olat.ims.qti21.model.xml.QtiNodesExtractor;
+import org.olat.ims.qti21.ui.event.DeleteAssessmentTestSessionEvent;
 import org.olat.ims.qti21.ui.event.RetrieveAssessmentTestSessionEvent;
 import org.olat.modules.assessment.AssessmentEntry;
 import org.olat.modules.assessment.manager.AssessmentEntryDAO;
+import org.olat.modules.grading.GradingAssignment;
+import org.olat.modules.grading.GradingService;
 import org.olat.repository.RepositoryEntry;
 import org.olat.repository.RepositoryEntryRef;
 import org.olat.user.UserDataDeletable;
@@ -145,6 +150,7 @@ import uk.ac.ed.ph.jqtiplus.reading.QtiXmlReader;
 import uk.ac.ed.ph.jqtiplus.resolution.ResolvedAssessmentItem;
 import uk.ac.ed.ph.jqtiplus.resolution.ResolvedAssessmentObject;
 import uk.ac.ed.ph.jqtiplus.resolution.ResolvedAssessmentTest;
+import uk.ac.ed.ph.jqtiplus.running.TestSessionController;
 import uk.ac.ed.ph.jqtiplus.serialization.QtiSerializer;
 import uk.ac.ed.ph.jqtiplus.serialization.SaxFiringOptions;
 import uk.ac.ed.ph.jqtiplus.state.AssessmentSectionSessionState;
@@ -201,6 +207,8 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 	@Autowired
 	private DB dbInstance;
 	@Autowired
+	private GradingService gradingService;
+	@Autowired
 	private AssessmentTestSessionDAO testSessionDao;
 	@Autowired
 	private AssessmentItemSessionDAO itemSessionDao;
@@ -223,6 +231,7 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 	private InfinispanXsltStylesheetCache xsltStylesheetCache;
 	private CacheWrapper<File,ResolvedAssessmentTest> assessmentTestsCache;
 	private CacheWrapper<File,ResolvedAssessmentItem> assessmentItemsCache;
+	private CacheWrapper<AssessmentTestSession,TestSessionController> testSessionControllersCache;
 	
 	private final ConcurrentMap<String,URI> resourceToTestURI = new ConcurrentHashMap<>();
 	
@@ -249,6 +258,7 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
         Cacher cacher = coordinatorManager.getInstance().getCoordinator().getCacher();
         assessmentTestsCache = cacher.getCache("QTIWorks", "assessmentTests");
         assessmentItemsCache = cacher.getCache("QTIWorks", "assessmentItems");
+        testSessionControllersCache = cacher.getCache("QTIWorks", "testSessionControllers");
 	}
 
     @Override
@@ -306,9 +316,7 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 		File reFolder = frm.getFileResourceRoot(testEntry.getOlatResource());
 		File configXml = new File(reFolder, PACKAGE_CONFIG_FILE_NAME);
 		if(options == null) {
-			if(configXml.exists()) {
-				configXml.delete();
-			}
+			FileUtils.deleteFile(configXml);
 		} else {
 			try (OutputStream out = new FileOutputStream(configXml)) {
 				configXstream.toXML(options, out);
@@ -324,6 +332,14 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 	}
 
 	@Override
+	public void touchCachedResolveAssessmentTest(File resourceDirectory) {
+		URI assessmentObjectSystemId = createAssessmentTestUri(resourceDirectory);
+		if(assessmentObjectSystemId != null) {
+			assessmentTestsCache.get(resourceDirectory);
+        }
+	}
+
+	@Override
 	public ResolvedAssessmentTest loadAndResolveAssessmentTest(File resourceDirectory, boolean replace, boolean debugInfo) {
         URI assessmentObjectSystemId = createAssessmentTestUri(resourceDirectory);
         if(assessmentObjectSystemId == null) {
@@ -335,9 +351,8 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 			assessmentTestsCache.replace(resourceFile, resolvedAssessmentTest);
 			return resolvedAssessmentTest;
 		}
-		return assessmentTestsCache.computeIfAbsent(resourceFile, file -> {
-	        return internalLoadAndResolveAssessmentTest(resourceDirectory, assessmentObjectSystemId);
-		});
+		return assessmentTestsCache.computeIfAbsent(resourceFile, file ->
+	        internalLoadAndResolveAssessmentTest(resourceDirectory, assessmentObjectSystemId));
 	}
 	
 	private ResolvedAssessmentTest internalLoadAndResolveAssessmentTest(File resourceDirectory, URI assessmentObjectSystemId) {
@@ -352,9 +367,8 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 	@Override
 	public ResolvedAssessmentItem loadAndResolveAssessmentItem(URI assessmentObjectSystemId, File resourceDirectory) {
 		File resourceFile = new File(assessmentObjectSystemId);
-		return assessmentItemsCache.computeIfAbsent(resourceFile, (file) -> {
-	       	return loadAndResolveAssessmentItemForCopy(assessmentObjectSystemId, resourceDirectory);
-		});
+		return assessmentItemsCache.computeIfAbsent(resourceFile, file -> 
+	       	loadAndResolveAssessmentItemForCopy(assessmentObjectSystemId, resourceDirectory));
 	}
 	
 	@Override
@@ -410,7 +424,7 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 	public URI createAssessmentTestUri(final File resourceDirectory) {
 		final String key = resourceDirectory.getAbsolutePath();
 		try {
-			return resourceToTestURI.computeIfAbsent(key, (directoryAbsolutPath) -> {
+			return resourceToTestURI.computeIfAbsent(key, directoryAbsolutPath -> {
 				File manifestPath = new File(resourceDirectory, "imsmanifest.xml");
 				QTI21ContentPackage	cp = new QTI21ContentPackage(manifestPath.toPath());
 				try {
@@ -435,7 +449,7 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 
 	@Override
 	public void deleteUserData(Identity identity, String newDeletedUserName) {
-		List<AssessmentTestSession> sessions = testSessionDao.getUserTestSessions(identity);
+		List<AssessmentTestSession> sessions = testSessionDao.getAllUserTestSessions(identity);
 		for(AssessmentTestSession session:sessions) {
 			testSessionDao.deleteTestSession(session);
 		}
@@ -443,6 +457,9 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 
 	@Override
 	public boolean deleteAssessmentTestSession(List<Identity> identities, RepositoryEntryRef testEntry, RepositoryEntryRef entry, String subIdent) {
+		log.info(Tracing.M_AUDIT, "Delete assessment sessions for test: {} in course: {} element: {}", testEntry, entry, subIdent);
+
+		boolean gradingEnabled = gradingService.isGradingEnabled(testEntry, null);
 		Set<AssessmentEntry> entries = new HashSet<>();
 		for(Identity identity:identities) {
 			List<AssessmentTestSession> sessions = testSessionDao.getTestSessions(testEntry, entry, subIdent, identity);
@@ -453,13 +470,27 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 				File fileStorage = testSessionDao.getSessionStorage(session);
 				testSessionDao.deleteTestSession(session);
 				FileUtils.deleteDirsAndFiles(fileStorage, true, true);
+				
+				OLATResourceable sessionOres = OresHelper.createOLATResourceableInstance(AssessmentTestSession.class, session.getKey());
+				coordinatorManager.getCoordinator().getEventBus()
+					.fireEventToListenersOf(new DeleteAssessmentTestSessionEvent(session.getKey()), sessionOres);
 			}
 		}
 		
 		for(AssessmentEntry assessmentEntry:entries) {
 			assessmentEntryDao.resetAssessmentEntry(assessmentEntry);
+			if(gradingEnabled) {
+				deactivateGradingAssignment(testEntry, assessmentEntry);
+			}
 		}
 		return true;
+	}
+	
+	private void deactivateGradingAssignment(RepositoryEntryRef testEntry, AssessmentEntry assessmentEntry) {
+		GradingAssignment assignment = gradingService.getGradingAssignment(testEntry, assessmentEntry);
+		if(assignment != null) {
+			gradingService.deactivateAssignment(assignment);
+		}
 	}
 
 	@Override
@@ -470,6 +501,10 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 			File fileStorage = testSessionDao.getSessionStorage(session);
 			testSessionDao.deleteTestSession(session);
 			FileUtils.deleteDirsAndFiles(fileStorage, true, true);
+			
+			OLATResourceable sessionOres = OresHelper.createOLATResourceableInstance(AssessmentTestSession.class, session.getKey());
+			coordinatorManager.getCoordinator().getEventBus()
+				.fireEventToListenersOf(new DeleteAssessmentTestSessionEvent(session.getKey()), sessionOres);
 		}
 		dbInstance.commit();// make sure it's flushed on the database 
 		return true;
@@ -519,8 +554,9 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 	@Override
 	public AssessmentTestSession createAssessmentTestSession(Identity identity, String anonymousIdentifier,
 			AssessmentEntry assessmentEntry,  RepositoryEntry entry, String subIdent, RepositoryEntry testEntry,
-			boolean authorMode) {
-		return testSessionDao.createAndPersistTestSession(testEntry, entry, subIdent, assessmentEntry, identity, anonymousIdentifier, authorMode);
+			Integer compensationExtraTime, boolean authorMode) {
+		return testSessionDao.createAndPersistTestSession(testEntry, entry, subIdent, assessmentEntry,
+				identity, anonymousIdentifier, compensationExtraTime, authorMode);
 	}
 
 	@Override
@@ -558,6 +594,8 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 
 	@Override
 	public AssessmentTestSession reloadAssessmentTestSession(AssessmentTestSession session) {
+		if(session == null) return null;
+		if(session.getKey() == null) return session;
 		return testSessionDao.loadByKey(session.getKey());
 	}
 
@@ -594,13 +632,15 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 	}
 
 	@Override
-	public List<AssessmentTestSession> getAssessmentTestSessions(RepositoryEntryRef courseEntry, String subIdent, IdentityRef identity) {
-		return testSessionDao.getUserTestSessions(courseEntry, subIdent, identity);
+	public List<AssessmentTestSession> getAssessmentTestSessions(RepositoryEntryRef courseEntry, String subIdent,
+			IdentityRef identity, boolean onlyValid) {
+		return testSessionDao.getUserTestSessions(courseEntry, subIdent, identity, onlyValid);
 	}
 
 	@Override
-	public List<AssessmentTestSessionStatistics> getAssessmentTestSessionsStatistics(RepositoryEntryRef courseEntry, String subIdent, IdentityRef identity) {
-		return testSessionDao.getUserTestSessionsStatistics(courseEntry, subIdent, identity);
+	public List<AssessmentTestSessionStatistics> getAssessmentTestSessionsStatistics(RepositoryEntryRef courseEntry, String subIdent,
+			IdentityRef identity, boolean onlyValid) {
+		return testSessionDao.getUserTestSessionsStatistics(courseEntry, subIdent, identity, onlyValid);
 	}
 	
 	@Override
@@ -618,9 +658,14 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 	public boolean isRunningAssessmentTestSession(RepositoryEntry entry, String subIdent, RepositoryEntry testEntry, List<? extends IdentityRef> identities) {
 		return testSessionDao.hasRunningTestSessions(entry, subIdent, testEntry, identities);
 	}
+	
+	@Override
+	public boolean isRunningAssessmentTestSession(RepositoryEntry entry, List<String> subIdents, List<? extends IdentityRef> identities) {
+		return testSessionDao.hasRunningTestSessions(entry, subIdents, identities);
+	}
 
 	@Override
-	public List<AssessmentTestSession> getRunningAssessmentTestSession(RepositoryEntry entry, String subIdent, RepositoryEntry testEntry) {
+	public List<AssessmentTestSession> getRunningAssessmentTestSession(RepositoryEntryRef entry, String subIdent, RepositoryEntry testEntry) {
 		return testSessionDao.getRunningTestSessions(entry, subIdent, testEntry);
 	}
 
@@ -660,7 +705,7 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 
 	private Document loadFilteredStateDocument(File sessionFile) {
     		try(InputStream in = new FileInputStream(sessionFile)) {
-    			String xmlContent = IOUtils.toString(in, "UTF-8");
+    			String xmlContent = IOUtils.toString(in, StandardCharsets.UTF_8);
     			String filteredContent = FilterFactory.getXMLValidEntityFilter().filter(xmlContent);
 	        DocumentBuilder documentBuilder = XmlFactories.newDocumentBuilder();
             return documentBuilder.parse(new InputSource(new StringReader(filteredContent)));
@@ -774,7 +819,7 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 	
 	@Override
 	public void signAssessmentResult(AssessmentTestSession candidateSession, DigitalSignatureOptions signatureOptions, Identity assessedIdentity) {
-		if(!qtiModule.isDigitalSignatureEnabled() || !signatureOptions.isDigitalSignature()) return;//nothing to do
+		if(!qtiModule.isDigitalSignatureEnabled() || signatureOptions == null || !signatureOptions.isDigitalSignature()) return;//nothing to do
 		
 		try {
 			File resultFile = getAssessmentResultFile(candidateSession);
@@ -862,7 +907,7 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 				return new DigitalSignatureValidation(DigitalSignatureValidation.Message.sessionNotFound, false);
 			}
 			String testSessionKey = uri.substring(start + 1, end);
-			AssessmentTestSession testSession = getAssessmentTestSession(new Long(testSessionKey));
+			AssessmentTestSession testSession = getAssessmentTestSession(Long.valueOf(testSessionKey));
 			if(testSession == null) {
 				return new DigitalSignatureValidation(DigitalSignatureValidation.Message.sessionNotFound, false);
 			}
@@ -930,104 +975,26 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 		testSessionDao.extraTime(session, extraTime);
 		dbInstance.commit();//commit before event
 		
-
 		AssessmentSessionAuditLogger candidateAuditLogger = getAssessmentSessionAuditLogger(session, false);
-		candidateAuditLogger.logTestExtend(session, extraTime, actor);
+		candidateAuditLogger.logTestExtend(session, extraTime, false, actor);
 		
 		RetrieveAssessmentTestSessionEvent event = new RetrieveAssessmentTestSessionEvent(session.getKey());
 		OLATResourceable sessionOres = OresHelper.createOLATResourceableInstance(AssessmentTestSession.class, session.getKey());
 		coordinatorManager.getCoordinator().getEventBus().fireEventToListenersOf(event, sessionOres);
 	}
-	/*
+	
 	@Override
-	public AssessmentTestSession reopenAssessmentTestSession(AssessmentTestSession session, Identity actor) {
-		// update test session on the database
-		AssessmentTestSession reloadedSession = testSessionDao.loadByKey(session.getKey());
-
-		//update the XMl test session state
-		TestSessionState testSessionState = loadTestSessionState(reloadedSession);
-		testSessionState.setEndTime(null);
-		testSessionState.setExitTime(null);
-		for(TestPartSessionState testPartSessionState:testSessionState.getTestPartSessionStates().values()) {
-			testPartSessionState.setEndTime(null);
-			testPartSessionState.setExitTime(null);
-		}
-		for(AssessmentSectionSessionState sessionState:testSessionState.getAssessmentSectionSessionStates().values()) {
-			sessionState.setEndTime(null);
-			sessionState.setExitTime(null);
-		}
+	public void compensationExtraTimeAssessmentTestSession(AssessmentTestSession session, int extraTime, Identity actor) {
+		testSessionDao.compensationExtraTime(session, extraTime);
+		dbInstance.commit();//commit before event
 		
-		TestPlanNodeKey lastEntryItemKey = null;
-		ItemSessionState lastEntryItemSessionState = null;
-		for(Map.Entry<TestPlanNodeKey, ItemSessionState> entry:testSessionState.getItemSessionStates().entrySet()) {
-			ItemSessionState itemSessionState = entry.getValue();
-			itemSessionState.setEndTime(null);
-			itemSessionState.setExitTime(null);
-			if(itemSessionState.getEntryTime() != null &&
-					(lastEntryItemSessionState == null || itemSessionState.getEntryTime().after(lastEntryItemSessionState.getEntryTime()))) {
-				lastEntryItemKey = entry.getKey();
-				lastEntryItemSessionState = itemSessionState;
-			}
-		}
+		AssessmentSessionAuditLogger candidateAuditLogger = getAssessmentSessionAuditLogger(session, false);
+		candidateAuditLogger.logTestExtend(session, extraTime, true, actor);
 		
-		if(lastEntryItemKey != null) {
-			Date now = new Date();
-			TestPlan plan = testSessionState.getTestPlan();
-			TestPlanNodeKey currentTestPartKey = null;
-			for(TestPlanNode currentNode = plan.getNode(lastEntryItemKey); currentNode != null; currentNode = currentNode.getParent()) {
-				TestNodeType type = currentNode.getTestNodeType();
-				TestPlanNodeKey currentNodeKey = currentNode.getKey();
-				switch(type) {
-					case TEST_PART: {
-						currentTestPartKey = currentNodeKey;
-						TestPartSessionState state = testSessionState.getTestPartSessionStates().get(currentNodeKey);
-						if(state != null) {
-							state.setDurationIntervalStartTime(now);
-						}
-						break;
-					}
-					case ASSESSMENT_SECTION: {
-						AssessmentSectionSessionState sessionState = testSessionState.getAssessmentSectionSessionStates().get(currentNodeKey);
-						if(sessionState != null) {
-							sessionState.setDurationIntervalStartTime(now);
-						}
-						break;
-					}
-					case ASSESSMENT_ITEM_REF: {
-						ItemSessionState itemState = testSessionState.getItemSessionStates().get(currentNodeKey);
-						if(itemState != null) {
-							itemState.setDurationIntervalStartTime(now);
-						}
-						break;
-					}
-					default: {
-						//root doesn't match any session state
-						break;
-					}
-				}
-			}
-			
-			//if all the elements are started again, allow to reopen the test
-			if(currentTestPartKey != null) {
-				testSessionState.setCurrentTestPartKey(currentTestPartKey);
-				testSessionState.setCurrentItemKey(lastEntryItemKey);
-				storeTestSessionState(reloadedSession, testSessionState);
-				
-				reloadedSession.setFinishTime(null);
-				reloadedSession.setTerminationTime(null);
-				reloadedSession = testSessionDao.update(reloadedSession);
-				
-				AssessmentSessionAuditLogger candidateAuditLogger = getAssessmentSessionAuditLogger(session, false);
-				candidateAuditLogger.logTestReopen(session, actor);
-				
-				RetrieveAssessmentTestSessionEvent event = new RetrieveAssessmentTestSessionEvent(session.getKey());
-				OLATResourceable sessionOres = OresHelper.createOLATResourceableInstance(AssessmentTestSession.class, session.getKey());
-				coordinatorManager.getCoordinator().getEventBus().fireEventToListenersOf(event, sessionOres);
-				return reloadedSession;
-			}
-		}
-		return null;
-	}*/
+		RetrieveAssessmentTestSessionEvent event = new RetrieveAssessmentTestSessionEvent(session.getKey());
+		OLATResourceable sessionOres = OresHelper.createOLATResourceableInstance(AssessmentTestSession.class, session.getKey());
+		coordinatorManager.getCoordinator().getEventBus().fireEventToListenersOf(event, sessionOres);
+	}
 
 	@Override
 	public AssessmentTestSession reopenAssessmentTestSession(AssessmentTestSession session, Identity actor) {
@@ -1072,6 +1039,10 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 				RetrieveAssessmentTestSessionEvent event = new RetrieveAssessmentTestSessionEvent(session.getKey());
 				OLATResourceable sessionOres = OresHelper.createOLATResourceableInstance(AssessmentTestSession.class, session.getKey());
 				coordinatorManager.getCoordinator().getEventBus().fireEventToListenersOf(event, sessionOres);
+				
+				// remove session controllers from multi-window cache
+				testSessionControllersCache.remove(reloadedSession);
+				
 				return reloadedSession;
 			}
 		}
@@ -1184,18 +1155,48 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 	 * 
 	 */
 	@Override
-	public void cancelTestSession(AssessmentTestSession candidateSession, TestSessionState testSessionState) {
+	public void deleteTestSession(AssessmentTestSession candidateSession, TestSessionState testSessionState) {
 		final File myStore = testSessionDao.getSessionStorage(candidateSession);
         final File sessionState = new File(myStore, "testSessionState.xml");
         final File resultFile = getAssessmentResultFile(candidateSession);
 
 		testSessionDao.deleteTestSession(candidateSession);
-		if(sessionState != null && sessionState.exists()) {
-			sessionState.delete();
+		FileUtils.deleteFile(sessionState);
+		if(resultFile != null) {
+			FileUtils.deleteFile(resultFile);
 		}
-		if(resultFile != null && resultFile.exists()) {
-			resultFile.delete();
+	}
+	
+	@Override
+	public AssessmentEntry updateAssessmentEntry(AssessmentTestSession candidateSession, boolean pushScoring) {
+		Identity assessedIdentity = candidateSession.getIdentity();
+		RepositoryEntry testEntry = candidateSession.getTestEntry();
+
+		AssessmentEntry assessmentEntry = assessmentEntryDao.loadAssessmentEntry(assessedIdentity, testEntry, null, testEntry);
+		assessmentEntry.setAssessmentId(candidateSession.getKey());
+		
+		if(pushScoring) {
+			File unzippedDirRoot = FileResourceManager.getInstance().unzipFileResource(testEntry.getOlatResource());
+			ResolvedAssessmentTest resolvedAssessmentTest = loadAndResolveAssessmentTest(unzippedDirRoot, false, false);
+			AssessmentTest assessmentTest = resolvedAssessmentTest.getRootNodeLookup().extractIfSuccessful();
+			
+			BigDecimal finalScore = candidateSession.getFinalScore();
+			assessmentEntry.setScore(finalScore);
+	
+			Double cutValue = QtiNodesExtractor.extractCutValue(assessmentTest);
+			
+			Boolean passed = assessmentEntry.getPassed();
+			if(candidateSession.getManualScore() != null && finalScore != null && cutValue != null) {
+				boolean calculated = finalScore.compareTo(BigDecimal.valueOf(cutValue.doubleValue())) >= 0;
+				passed = Boolean.valueOf(calculated);
+			} else if(candidateSession.getPassed() != null) {
+				passed = candidateSession.getPassed();
+			}
+			assessmentEntry.setPassed(passed);
 		}
+		
+		assessmentEntry = assessmentEntryDao.updateAssessmentEntry(assessmentEntry);
+		return assessmentEntry;
 	}
 	
 	@Override
@@ -1246,7 +1247,7 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 		try {
 			Value computedValue = outcomeVariable.getComputedValue();
 			if (QtiConstants.VARIABLE_DURATION_IDENTIFIER.equals(identifier)) {
-				log.info(Tracing.M_AUDIT, candidateSession.getKey() + " :: " + outcomeVariable.getIdentifier() + " - " + stringifyQtiValue(computedValue));
+				log.info(Tracing.M_AUDIT, "{} :: {} - {}", candidateSession.getKey(), outcomeVariable.getIdentifier(), stringifyQtiValue(computedValue));
 			} else if (QTI21Constants.SCORE_IDENTIFIER.equals(identifier)) {
 				if (computedValue instanceof NumberValue) {
 					double score = ((NumberValue) computedValue).doubleValue();
@@ -1441,6 +1442,18 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 			auditLogger.logCandidateOutcomes(candidateSession, outcomes);
 		}
 	}
+	
+	@Override
+	public File getAssessmentDocumentsDirectory(AssessmentTestSession candidateSession) {
+		File myStore = testSessionDao.getSessionStorage(candidateSession);
+        return new File(myStore, "assessmentdocs");
+	}
+	
+	@Override
+	public File getAssessmentDocumentsDirectory(AssessmentTestSession candidateSession, AssessmentItemSession itemSession) {
+        File assessmentDocsDir = getAssessmentDocumentsDirectory(candidateSession);
+        return new File(assessmentDocsDir, itemSession.getKey().toString());
+	}
 
 	@Override
 	public File getSubmissionDirectory(AssessmentTestSession candidateSession) {
@@ -1546,5 +1559,19 @@ public class QTI21ServiceImpl implements QTI21Service, UserDataDeletable, Initia
 		}
 		
 		return Long.valueOf(timeInMinutes * 60l);
+	}
+
+	@Override
+	public void putCachedTestSessionController(AssessmentTestSession testSession, TestSessionController testSessionController) {
+		if(testSession == null || testSessionController == null) return;
+		testSessionControllersCache.put(testSession, testSessionController);
+	}
+
+	@Override
+	public TestSessionController getCachedTestSessionController(AssessmentTestSession testSession, TestSessionController testSessionController) {
+		if(testSession == null) return null;
+		
+		TestSessionController result = testSessionControllersCache.get(testSession);
+		return result == null ? testSessionController : result;
 	}
 }

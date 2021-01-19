@@ -19,9 +19,11 @@
  */
 package org.olat.core.commons.services.doceditor.onlyoffice.ui;
 
+import org.apache.logging.log4j.Logger;
+import org.olat.core.commons.services.doceditor.Access;
 import org.olat.core.commons.services.doceditor.DocEditor.Mode;
-import org.olat.core.commons.services.doceditor.DocEditorSecurityCallback;
-import org.olat.core.commons.services.doceditor.DocEditorSecurityCallbackBuilder;
+import org.olat.core.commons.services.doceditor.DocEditorConfigs;
+import org.olat.core.commons.services.doceditor.DocEditorService;
 import org.olat.core.commons.services.doceditor.onlyoffice.ApiConfig;
 import org.olat.core.commons.services.doceditor.onlyoffice.OnlyOfficeModule;
 import org.olat.core.commons.services.doceditor.onlyoffice.OnlyOfficeService;
@@ -32,10 +34,11 @@ import org.olat.core.gui.components.velocity.VelocityContainer;
 import org.olat.core.gui.control.Event;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.control.controller.BasicController;
-import org.apache.logging.log4j.Logger;
+import org.olat.core.helpers.Settings;
 import org.olat.core.logging.Tracing;
 import org.olat.core.util.CodeHelper;
 import org.olat.core.util.vfs.VFSLeaf;
+import org.olat.core.util.vfs.VFSMediaMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
@@ -48,22 +51,29 @@ public class OnlyOfficeEditorController extends BasicController {
 
 	private static final Logger log = Tracing.createLoggerFor(OnlyOfficeEditorController.class);
 	
+	private Access access;
+	private Long openVfsMetadataKey;
+	
 	@Autowired
 	private OnlyOfficeModule onlyOfficeModule;
 	@Autowired
 	private OnlyOfficeService onlyOfficeService;
+	@Autowired
+	private DocEditorService docEditorService;
 
 	public OnlyOfficeEditorController(UserRequest ureq, WindowControl wControl, VFSLeaf vfsLeaf,
-			final DocEditorSecurityCallback securityCallback) {
+			final DocEditorConfigs configs, Access runAccess) {
 		super(ureq, wControl);
-
-		DocEditorSecurityCallback secCallback = securityCallback;
+		access = runAccess;
 		
-		if (onlyOfficeService.isLockNeeded(secCallback.getMode())) {
+		if (Mode.EDIT == access.getMode() && !onlyOfficeService.isEditLicenseAvailable()) {
+			access = docEditorService.updateMode(access, Mode.VIEW);
+			showWarning("editor.warning.no.edit.license");
+		}
+		
+		if (onlyOfficeService.isLockNeeded(access.getMode())) {
 			if (onlyOfficeService.isLockedForMe(vfsLeaf, getIdentity())) {
-				secCallback = DocEditorSecurityCallbackBuilder.clone(secCallback)
-						.withMode(Mode.VIEW)
-						.build();
+				access = docEditorService.updateMode(access, Mode.VIEW);
 				showWarning("editor.warning.locked");
 			} else {
 				onlyOfficeService.lock(vfsLeaf, getIdentity());
@@ -75,9 +85,14 @@ public class OnlyOfficeEditorController extends BasicController {
 		if (vfsMetadata == null) {
 			mainVC.contextPut("warning", translate("editor.warning.no.metadata"));
 		} else {
-			ApiConfig apiConfig = onlyOfficeService.getApiConfig(vfsMetadata, getIdentity(), secCallback);
+			String mediaUrl = null;
+			if (configs.isDownloadEnabled() && Mode.EMBEDDED == access.getMode()) {
+				mediaUrl = Settings.createServerURI() + registerMapper(ureq, new VFSMediaMapper(configs.getVfsLeaf()));
+			}
+			ApiConfig apiConfig = onlyOfficeService.getApiConfig(vfsMetadata, getIdentity(), access.getMode(),
+					access.isDownload(), configs.isVersionControlled(),  mediaUrl);
 			String apiConfigJson = onlyOfficeService.toJson(apiConfig);
-			log.debug("OnlyOffice ApiConfig: " + apiConfigJson);
+			log.debug("OnlyOffice ApiConfig: {}", apiConfigJson);
 			
 			if (apiConfig == null) {
 				mainVC.contextPut("warning", translate("editor.warning.no.api.configs"));
@@ -85,6 +100,12 @@ public class OnlyOfficeEditorController extends BasicController {
 				mainVC.contextPut("id", "o_" + CodeHelper.getRAMUniqueID());
 				mainVC.contextPut("apiUrl", onlyOfficeModule.getApiUrl());
 				mainVC.contextPut("apiConfig", apiConfigJson);
+				mainVC.contextPut("mobileEnabled", onlyOfficeModule.getMobileModes().contains(access.getMode()));
+				mainVC.contextPut("mobileQuery", onlyOfficeModule.getMobileQuery());
+				
+				openVfsMetadataKey = vfsMetadata.getKey();
+				log.info("Document (key={}) opened with ONLYOFFICE ({}) by {}", openVfsMetadataKey, access.getMode(),
+						getIdentity());
 			}
 		}
 		
@@ -98,7 +119,14 @@ public class OnlyOfficeEditorController extends BasicController {
 
 	@Override
 	protected void doDispose() {
-		//
+		deleteAccess();
 	}
-
+	
+	private void deleteAccess() {
+		if (access != null) {
+			log.info("Document (key={}) closed with ONLYOFFICE ({}) by {}", openVfsMetadataKey, access.getMode(),
+					getIdentity());
+			docEditorService.deleteAccess(access);
+		}
+	}
 }

@@ -33,6 +33,7 @@ import org.olat.core.logging.Tracing;
 import org.olat.group.BusinessGroup;
 import org.olat.modules.assessment.AssessmentEntry;
 import org.olat.modules.assessment.AssessmentEntryCompletion;
+import org.olat.modules.assessment.AssessmentEntryScoring;
 import org.olat.modules.assessment.AssessmentService;
 import org.olat.modules.assessment.model.AssessmentEntryStatus;
 import org.olat.modules.curriculum.CurriculumElement;
@@ -96,6 +97,18 @@ public class AssessmentServiceImpl implements AssessmentService, UserDataDeletab
 	public AssessmentEntry updateAssessmentEntry(AssessmentEntry entry) {
 		return assessmentEntryDao.updateAssessmentEntry(entry);
 	}
+	
+	@Override
+	public void resetAllRootPassed(RepositoryEntry entry) {
+		assessmentEntryDao.resetAllRootPassed(entry);
+		dbInstance.commit();
+	}
+	
+	@Override
+	public void resetAllOverridenRootPassed(RepositoryEntry entry) {
+		assessmentEntryDao.resetAllOverridenRootPassed(entry);
+		dbInstance.commit();
+	}
 
 	@Override
 	public List<AssessmentEntry> loadAssessmentEntriesBySubIdent(RepositoryEntry entry, String subIdent) {
@@ -119,7 +132,7 @@ public class AssessmentServiceImpl implements AssessmentService, UserDataDeletab
 	}
 
 	@Override
-	public List<AssessmentEntry> loadRootAssessmentEntriesByAssessedIdentity(Identity assessedIdentity, Collection<Long> entryKeys) {
+	public List<AssessmentEntryScoring> loadRootAssessmentEntriesByAssessedIdentity(Identity assessedIdentity, Collection<Long> entryKeys) {
 		return assessmentEntryDao.loadRootAssessmentEntriesByAssessedIdentity(assessedIdentity, entryKeys);
 	}
 	

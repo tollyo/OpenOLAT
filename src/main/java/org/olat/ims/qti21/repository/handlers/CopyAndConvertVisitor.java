@@ -37,9 +37,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.UUID;
 
-import javax.xml.XMLConstants;
 import javax.xml.parsers.SAXParser;
-import javax.xml.parsers.SAXParserFactory;
 import javax.xml.stream.FactoryConfigurationError;
 import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLStreamWriter;
@@ -47,7 +45,9 @@ import javax.xml.stream.XMLStreamWriter;
 import org.apache.logging.log4j.Logger;
 import org.olat.core.CoreSpringFactory;
 import org.olat.core.logging.Tracing;
+import org.olat.core.util.FileUtils;
 import org.olat.core.util.WebappHelper;
+import org.olat.core.util.xml.XMLFactories;
 import org.olat.fileresource.types.ImsQTI21Resource;
 import org.olat.fileresource.types.ImsQTI21Resource.PathResourceLocator;
 import org.olat.ims.qti21.QTI21Service;
@@ -150,13 +150,10 @@ class CopyAndConvertVisitor extends SimpleFileVisitor<Path> {
 				fileInfos.setVersion(infos.getVersion());
 			}
 			if(onyx38Family(fileInfos)) {
-				validated = convertXmlFile(inputFile, outputFile, fileInfos.getType(), xtw -> {
-					return new Onyx38ToQtiWorksHandler(xtw);
-				});
+				validated = convertXmlFile(inputFile, outputFile, fileInfos.getType(), Onyx38ToQtiWorksHandler::new);
 			} else if(onyxWebFamily(fileInfos)) {
-				validated = convertXmlFile(inputFile, outputFile, fileInfos.getType(), xtw -> {
-					return new OnyxToQtiWorksHandler(xtw, infos);
-				});
+				validated = convertXmlFile(inputFile, outputFile, fileInfos.getType(), xtw ->
+					 new OnyxToQtiWorksHandler(xtw, infos));
 				
 				if(validated && fileInfos.getType() == InputType.assessmentItem) {
 					//check templateVariables
@@ -187,9 +184,7 @@ class CopyAndConvertVisitor extends SimpleFileVisitor<Path> {
 	private QTI21Infos scanFile(Path inputFile) {
 		QTI21ExplorerHandler infosHandler = new QTI21ExplorerHandler();
 		try(InputStream in = Files.newInputStream(inputFile)) {
-			SAXParserFactory factory = SAXParserFactory.newInstance();
-			factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-			SAXParser saxParser = factory.newSAXParser();
+			SAXParser saxParser = XMLFactories.newSAXParser();
 			saxParser.setProperty("http://xml.org/sax/properties/lexical-handler", infosHandler);
 			saxParser.parse(in, infosHandler);
 		} catch(Exception e1) {
@@ -204,10 +199,7 @@ class CopyAndConvertVisitor extends SimpleFileVisitor<Path> {
 				Writer out = Files.newBufferedWriter(tmpFile.toPath(), StandardCharsets.UTF_8)) {
 			XMLOutputFactory xof = XMLOutputFactory.newInstance();
 	        XMLStreamWriter xtw = xof.createXMLStreamWriter(out);
-
-			SAXParserFactory factory = SAXParserFactory.newInstance();
-			factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-			SAXParser saxParser = factory.newSAXParser();
+			SAXParser saxParser = XMLFactories.newSAXParser();
 			DefaultHandler myHandler = provider.create(xtw);
 			saxParser.setProperty("http://xml.org/sax/properties/lexical-handler", myHandler);
 			saxParser.parse(in, myHandler);
@@ -224,9 +216,7 @@ class CopyAndConvertVisitor extends SimpleFileVisitor<Path> {
 			log.error("", e1);
 			return false;
 		} finally {
-			if(tmpFile.exists()) {
-				tmpFile.delete();
-			}
+			FileUtils.deleteFile(tmpFile);
 		}
 	}
 	

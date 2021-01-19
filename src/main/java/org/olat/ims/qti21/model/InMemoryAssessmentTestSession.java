@@ -42,16 +42,19 @@ public class InMemoryAssessmentTestSession implements AssessmentTestSession {
     private Date finishTime;
     private Date terminationTime;
     private Integer extraTime;
+    private Integer compensationExtraTime;
    
     private Long duration;
     private Boolean passed;
     private BigDecimal score;
     private BigDecimal manualScore;
+    private BigDecimal maxScore;
 	
 	private Integer numOfQuestions;
 	private Integer numOfAnsweredQuestions;
     
     private boolean exploded;
+    private boolean cancelled;
     
     private Identity identity;
     private String anonymousIdentifier;
@@ -87,8 +90,19 @@ public class InMemoryAssessmentTestSession implements AssessmentTestSession {
 		return exploded;
 	}
 
+	@Override
 	public void setExploded(boolean exploded) {
 		this.exploded = exploded;
+	}
+	
+	@Override
+	public boolean isCancelled() {
+		return cancelled;
+	}
+
+	@Override
+	public void setCancelled(boolean cancelled) {
+		this.cancelled = cancelled;
 	}
 
 	@Override
@@ -130,6 +144,15 @@ public class InMemoryAssessmentTestSession implements AssessmentTestSession {
 	}
 
 	@Override
+	public Integer getCompensationExtraTime() {
+		return compensationExtraTime;
+	}
+
+	public void setCompensationExtraTime(Integer compensationExtraTime) {
+		this.compensationExtraTime = compensationExtraTime;
+	}
+
+	@Override
 	public Boolean getPassed() {
 		return passed;
 	}
@@ -157,6 +180,16 @@ public class InMemoryAssessmentTestSession implements AssessmentTestSession {
 	@Override
 	public void setManualScore(BigDecimal manualScore) {
 		this.manualScore = manualScore;
+	}
+
+	@Override
+	public BigDecimal getMaxScore() {
+		return maxScore;
+	}
+
+	@Override
+	public void setMaxScore(BigDecimal maxScore) {
+		this.maxScore = maxScore;
 	}
 
 	@Override

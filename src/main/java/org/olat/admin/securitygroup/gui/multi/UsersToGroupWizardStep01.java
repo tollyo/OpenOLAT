@@ -24,9 +24,11 @@ import org.olat.core.gui.components.form.flexible.impl.Form;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.control.generic.wizard.BasicStep;
 import org.olat.core.gui.control.generic.wizard.PrevNextFinishConfig;
+import org.olat.core.gui.control.generic.wizard.Step;
 import org.olat.core.gui.control.generic.wizard.StepFormController;
 import org.olat.core.gui.control.generic.wizard.StepsRunContext;
 import org.olat.core.util.mail.MailTemplate;
+import org.olat.course.member.wizard.ImportMemberByUsernamesController;
 import org.olat.course.member.wizard.ImportMemberOverviewIdentitiesController;
 
 /**
@@ -47,7 +49,7 @@ public class UsersToGroupWizardStep01 extends BasicStep {
 		setI18nTitleAndDescr("import.title.select", null);
 		
 		if(mailDefaultTemplate == null) {
-			setNextStep(BasicStep.NOSTEP);
+			setNextStep(Step.NOSTEP);
 		} else {
 			setNextStep(new UsersToGroupWizardStep02(ureq));
 		}
@@ -64,6 +66,6 @@ public class UsersToGroupWizardStep01 extends BasicStep {
 
 	@Override
 	public StepFormController getStepController(UserRequest ureq, WindowControl wControl, StepsRunContext stepsRunContext, Form form) {
-		return new ImportMemberOverviewIdentitiesController(ureq, wControl, form, stepsRunContext);
+		return new ImportMemberOverviewIdentitiesController(ureq, wControl, form, stepsRunContext, ImportMemberByUsernamesController.RUN_CONTEXT_KEY, null);
 	}
 }

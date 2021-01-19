@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 import javax.persistence.LockModeType;
 import javax.persistence.Query;
@@ -94,6 +95,7 @@ import org.olat.course.run.userview.UserCourseEnvironment;
 import org.olat.group.BusinessGroup;
 import org.olat.group.BusinessGroupRef;
 import org.olat.group.BusinessGroupService;
+import org.olat.group.DeletableGroupData;
 import org.olat.group.area.BGAreaManager;
 import org.olat.group.manager.BusinessGroupRelationDAO;
 import org.olat.group.model.BusinessGroupRefImpl;
@@ -121,7 +123,7 @@ import com.thoughtworks.xstream.XStream;
  *
  */
 @Service
-public class GTAManagerImpl implements GTAManager {
+public class GTAManagerImpl implements GTAManager, DeletableGroupData {
 	
 	private static final Logger log = Tracing.createLoggerFor(GTAManagerImpl.class);
 	
@@ -189,16 +191,13 @@ public class GTAManagerImpl implements GTAManager {
 				taskDefinitions.addAll(taskDefinitionsList.getTasks());
 			}
 		} else {
-			syncWithTaskList(courseEnv, cNode, new TaskListSynched() {
-				@Override
-				public void sync() {
-					ModuleConfiguration config = cNode.getModuleConfiguration();
-					TaskDefinitionList tasks = (TaskDefinitionList)config.get(GTACourseNode.GTASK_TASKS);
-					if(tasks != null) {
-						taskDefinitions.addAll(tasks.getTasks());
-					}
-					storeTaskDefinitions(taskDefinitions, courseEnv, cNode);
+			syncWithTaskList(courseEnv, cNode, () -> {
+				ModuleConfiguration config = cNode.getModuleConfiguration();
+				TaskDefinitionList tasks = (TaskDefinitionList)config.get(GTACourseNode.GTASK_TASKS);
+				if(tasks != null) {
+					taskDefinitions.addAll(tasks.getTasks());
 				}
+				storeTaskDefinitions(taskDefinitions, courseEnv, cNode);
 			});
 		}
 		return	taskDefinitions;
@@ -206,43 +205,40 @@ public class GTAManagerImpl implements GTAManager {
 
 	@Override
 	public void addTaskDefinition(TaskDefinition newTask, CourseEnvironment courseEnv, GTACourseNode cNode) {
-		syncWithTaskList( courseEnv, cNode, new TaskListSynched() {
-			@Override
-			public void sync() {
-				List<TaskDefinition> taskDefinitions = getTaskDefinitions(courseEnv, cNode);
-				taskDefinitions.add(newTask);
-				storeTaskDefinitions(taskDefinitions, courseEnv, cNode);
-			}
+		syncWithTaskList(courseEnv, cNode, () -> {
+			List<TaskDefinition> taskDefinitions = getTaskDefinitions(courseEnv, cNode);
+			taskDefinitions.add(newTask);
+			storeTaskDefinitions(taskDefinitions, courseEnv, cNode);
 		});
 	}
 
 	@Override
 	public void removeTaskDefinition(TaskDefinition removedTask, CourseEnvironment courseEnv, GTACourseNode cNode) {
-		syncWithTaskList( courseEnv, cNode, new TaskListSynched() {
-			@Override
-			public void sync() {
-				List<TaskDefinition> taskDefinitions = getTaskDefinitions(courseEnv, cNode);
-				boolean deleteFile = true;
-				for(int i=taskDefinitions.size(); i-->0; ) {
-					if(taskDefinitions.get(i).getTitle().equals(removedTask.getTitle())) {
-						taskDefinitions.remove(i);
-					} else if(taskDefinitions.get(i).getFilename().equals(removedTask.getFilename())) {
-						deleteFile = false;
-					}
+		syncWithTaskList(courseEnv, cNode, () -> {
+			List<TaskDefinition> taskDefinitions = getTaskDefinitions(courseEnv, cNode);
+			boolean deleteFile = true;
+			for(int i=taskDefinitions.size(); i-->0; ) {
+				if(taskDefinitions.get(i).equals(removedTask)) {
+					taskDefinitions.remove(i);
 				}
-				
-				if(deleteFile) {
-					VFSContainer tasksContainer = getTasksContainer(courseEnv, cNode);
-					VFSItem item = tasksContainer.resolve(removedTask.getFilename());
-					deleteEdusharingUsages(courseEnv, item);
-					if(item != null) {
-						item.delete();
-					}
-				}
-				storeTaskDefinitions(taskDefinitions, courseEnv, cNode);
 			}
+
+			for(int i=taskDefinitions.size(); i-->0; ) {
+				if(taskDefinitions.get(i).getFilename().equals(removedTask.getFilename())) {
+					deleteFile = false;
+				}
+			}
+
+			if(deleteFile) {
+				VFSContainer tasksContainer = getTasksContainer(courseEnv, cNode);
+				VFSItem item = tasksContainer.resolve(removedTask.getFilename());
+				if(item != null) {
+					deleteEdusharingUsages(courseEnv, item);
+					item.delete();
+				}
+			}
+			storeTaskDefinitions(taskDefinitions, courseEnv, cNode);
 		});
-		
 	}
 	
 	private void deleteEdusharingUsages(CourseEnvironment courseEnv, VFSItem item) {
@@ -254,19 +250,16 @@ public class GTAManagerImpl implements GTAManager {
 
 	@Override
 	public void updateTaskDefinition(String currentFilename, TaskDefinition task, CourseEnvironment courseEnv, GTACourseNode cNode) {
-		syncWithTaskList( courseEnv, cNode, new TaskListSynched() {
-			@Override
-			public void sync() {
-				String filename = currentFilename == null ? task.getFilename() : currentFilename;
-				List<TaskDefinition> taskDefinitions = getTaskDefinitions(courseEnv, cNode);
-				for(int i=taskDefinitions.size(); i-->0; ) {
-					if(taskDefinitions.get(i).getFilename().equals(filename)) {
-						taskDefinitions.set(i, task);
-						break;
-					}
+		syncWithTaskList( courseEnv, cNode, () -> {
+			String filename = currentFilename == null ? task.getFilename() : currentFilename;
+			List<TaskDefinition> taskDefinitions = getTaskDefinitions(courseEnv, cNode);
+			for(int i=taskDefinitions.size(); i-->0; ) {
+				if(taskDefinitions.get(i).getFilename().equals(filename)) {
+					taskDefinitions.set(i, task);
+					break;
 				}
-				storeTaskDefinitions(taskDefinitions, courseEnv, cNode);
 			}
+			storeTaskDefinitions(taskDefinitions, courseEnv, cNode);
 		});
 	}
 	
@@ -307,16 +300,13 @@ public class GTAManagerImpl implements GTAManager {
 				solutionsDefinitions.addAll(solutionDefinitionsList.getSolutions());
 			}
 		} else {
-			syncWithTaskList( courseEnv, cNode, new TaskListSynched() {
-				@Override
-				public void sync() {
-					ModuleConfiguration config = cNode.getModuleConfiguration();
-					SolutionList solutions = (SolutionList)config.get(GTACourseNode.GTASK_SOLUTIONS);
-					if(solutions != null && solutions.getSolutions() != null) {
-						solutionsDefinitions.addAll(solutions.getSolutions());
-					}
-					storeSolutions(solutionsDefinitions, courseEnv, cNode);
+			syncWithTaskList(courseEnv, cNode, () -> {
+				ModuleConfiguration config = cNode.getModuleConfiguration();
+				SolutionList solutions = (SolutionList)config.get(GTACourseNode.GTASK_SOLUTIONS);
+				if(solutions != null && solutions.getSolutions() != null) {
+					solutionsDefinitions.addAll(solutions.getSolutions());
 				}
+				storeSolutions(solutionsDefinitions, courseEnv, cNode);
 			});
 		}
 		return solutionsDefinitions;
@@ -324,48 +314,39 @@ public class GTAManagerImpl implements GTAManager {
 
 	@Override
 	public void addSolution(Solution newSolution, CourseEnvironment courseEnv, GTACourseNode cNode) {
-		syncWithTaskList( courseEnv, cNode, new TaskListSynched() {
-			@Override
-			public void sync() {
-				List<Solution> solutions = getSolutions(courseEnv, cNode);
-				solutions.add(newSolution);
-				storeSolutions(solutions, courseEnv, cNode);
-			}
+		syncWithTaskList( courseEnv, cNode, () -> {
+			List<Solution> solutions = getSolutions(courseEnv, cNode);
+			solutions.add(newSolution);
+			storeSolutions(solutions, courseEnv, cNode);
 		});
 	}
 
 	@Override
 	public void removeSolution(Solution removedSolution, CourseEnvironment courseEnv, GTACourseNode cNode) {
-		syncWithTaskList( courseEnv, cNode, new TaskListSynched() {
-			@Override
-			public void sync() {
-				List<Solution> solutions = getSolutions(courseEnv, cNode);
-				for(int i=solutions.size(); i-->0; ) {
-					if(solutions.get(i).getFilename().equals(removedSolution.getFilename())) {
-						solutions.remove(i);
-						break;
-					}
+		syncWithTaskList( courseEnv, cNode, () -> {
+			List<Solution> solutions = getSolutions(courseEnv, cNode);
+			for(int i=solutions.size(); i-->0; ) {
+				if(solutions.get(i).getFilename().equals(removedSolution.getFilename())) {
+					solutions.remove(i);
+					break;
 				}
-				storeSolutions(solutions, courseEnv, cNode);
 			}
+			storeSolutions(solutions, courseEnv, cNode);
 		});
 	}
 	
 	@Override
 	public void updateSolution(String currentFilename, Solution solution, CourseEnvironment courseEnv, GTACourseNode cNode) {
-		syncWithTaskList( courseEnv, cNode, new TaskListSynched() {
-			@Override
-			public void sync() {
-				String filename = currentFilename == null ? solution.getFilename() : currentFilename;
-				List<Solution> solutions = getSolutions(courseEnv, cNode);
-				for(int i=solutions.size(); i-->0; ) {
-					if(solutions.get(i).getFilename().equals(filename)) {
-						solutions.set(i, solution);
-						break;
-					}
+		syncWithTaskList( courseEnv, cNode, () -> {
+			String filename = currentFilename == null ? solution.getFilename() : currentFilename;
+			List<Solution> solutions = getSolutions(courseEnv, cNode);
+			for(int i=solutions.size(); i-->0; ) {
+				if(solutions.get(i).getFilename().equals(filename)) {
+					solutions.set(i, solution);
+					break;
 				}
-				storeSolutions(solutions, courseEnv, cNode);
 			}
+			storeSolutions(solutions, courseEnv, cNode);
 		});
 	}
 	
@@ -611,7 +592,7 @@ public class GTAManagerImpl implements GTAManager {
 	
 	private List<BusinessGroup> getBusinessGroups(IdentityRef identity, List<Long> groupKeys, List<Long> areaKeys, GroupRoles role) {
 		List<Long> consolidatedGroupKeys = new ArrayList<>();
-		if(groupKeys != null && groupKeys.size() > 0) {
+		if(groupKeys != null && !groupKeys.isEmpty()) {
 			consolidatedGroupKeys.addAll(groupKeys);
 		}
 		consolidatedGroupKeys.addAll(areaManager.findBusinessGroupKeysOfAreaKeys(areaKeys));
@@ -628,7 +609,7 @@ public class GTAManagerImpl implements GTAManager {
 			List<Long> areaKeys = config.getList(GTACourseNode.GTASK_AREAS, Long.class);
 			
 			List<Long> consolidatedGroupKeys = new ArrayList<>();
-			if(groupKeys != null && groupKeys.size() > 0) {
+			if(groupKeys != null && !groupKeys.isEmpty()) {
 				consolidatedGroupKeys.addAll(groupKeys);
 			}
 			consolidatedGroupKeys.addAll(areaManager.findBusinessGroupKeysOfAreaKeys(areaKeys));
@@ -649,7 +630,7 @@ public class GTAManagerImpl implements GTAManager {
 			List<Long> areaKeys = config.getList(GTACourseNode.GTASK_AREAS, Long.class);
 
 			List<Long> consolidatedGroupKeys = new ArrayList<>();
-			if(groupKeys != null && groupKeys.size() > 0) {
+			if(groupKeys != null && !groupKeys.isEmpty()) {
 				consolidatedGroupKeys.addAll(groupKeys);
 			}
 			consolidatedGroupKeys.addAll(areaManager.findBusinessGroupKeysOfAreaKeys(areaKeys));
@@ -721,7 +702,7 @@ public class GTAManagerImpl implements GTAManager {
 				.setParameter("entryKey", entry.getKey())
 				.setParameter("courseNodeIdent", cNode.getIdent())
 				.getResultList();
-		return numOfTasks != null && !numOfTasks.isEmpty() && numOfTasks.get(0) != null && numOfTasks.get(0).intValue() > 0;
+		return numOfTasks != null && !numOfTasks.isEmpty() && numOfTasks.get(0) != null && numOfTasks.get(0).longValue() > 0;
 	}
 
 	@Override
@@ -732,7 +713,7 @@ public class GTAManagerImpl implements GTAManager {
 				.setParameter("courseNodeIdent", cNode.getIdent())
 				.setParameter("taskName", taskName)
 				.getResultList();
-		return numOfTasks != null && !numOfTasks.isEmpty() && numOfTasks.get(0) != null && numOfTasks.get(0).intValue() > 0;
+		return numOfTasks != null && !numOfTasks.isEmpty() && numOfTasks.get(0) != null && numOfTasks.get(0).longValue() > 0;
 	}
 
 	@Override
@@ -801,6 +782,14 @@ public class GTAManagerImpl implements GTAManager {
 				.setParameter("taskListKey", taskList.getKey())
 				.executeUpdate();
 			
+			StringBuilder taskSb = new StringBuilder(128);
+			taskSb.append("delete from gtataskrevision as taskrev where taskrev.task.key in (")
+			      .append("  select task.key from gtatask as task where task.taskList.key=:taskListKey)");
+			numOfDeletedObjects += dbInstance.getCurrentEntityManager()
+				.createQuery(taskSb.toString())
+				.setParameter("taskListKey", taskList.getKey())
+				.executeUpdate();
+			
 			String deleteTasks = "delete from gtatask as task where task.taskList.key=:taskListKey";
 			numOfDeletedObjects += dbInstance.getCurrentEntityManager().createQuery(deleteTasks)
 				.setParameter("taskListKey", taskList.getKey())
@@ -836,6 +825,40 @@ public class GTAManagerImpl implements GTAManager {
 				.setParameter("entryKey", entry.getKey())
 				.executeUpdate();
 		return numOfDeletedObjects;	
+	}
+
+	@Override
+	public boolean deleteGroupDataFor(BusinessGroup group) {
+		
+		List<Task> groupTasks = getTasks(group);
+		List<Long> taskKeys = groupTasks.stream()
+				.map(Task::getKey)
+				.collect(Collectors.toList());
+		
+		StringBuilder sb = new StringBuilder(128);
+		sb.append("delete from gtataskrevisiondate as taskrev where taskrev.task.key in (:taskKeys)");
+		int numOfDeletedObjects = dbInstance.getCurrentEntityManager()
+			.createQuery(sb.toString())
+			.setParameter("taskKeys", taskKeys)
+			.executeUpdate();
+		
+		StringBuilder taskSb = new StringBuilder(128);
+		taskSb.append("delete from gtataskrevision as taskrev where taskrev.task.key in (:taskKeys)");
+		numOfDeletedObjects += dbInstance.getCurrentEntityManager()
+			.createQuery(taskSb.toString())
+			.setParameter("taskKeys", taskKeys)
+			.executeUpdate();
+		
+		numOfDeletedObjects += gtaMarkDao.deleteMark(taskKeys);
+		
+		String deleteTasks = "delete from gtatask as task where task.key in (:taskKeys)";
+		numOfDeletedObjects += dbInstance.getCurrentEntityManager().createQuery(deleteTasks)
+			.setParameter("taskKeys", taskKeys)
+			.executeUpdate();
+		
+		dbInstance.commit();
+
+		return numOfDeletedObjects > 0;
 	}
 
 	@Override
@@ -942,6 +965,13 @@ public class GTAManagerImpl implements GTAManager {
 
 		return tasks.isEmpty() ? null : tasks.get(0);
 	}
+	
+	public List<Task> getTasks(BusinessGroupRef businessGroup) {
+		String q = "select task from gtatask task where task.businessGroup.key=:businessGroupKey";
+		return dbInstance.getCurrentEntityManager().createQuery(q, Task.class)
+			.setParameter("businessGroupKey", businessGroup.getKey())
+			.getResultList();
+	}
 
 	@Override
 	public List<TaskRevisionDate> getTaskRevisionsDate(Task task) {
@@ -1032,7 +1062,7 @@ public class GTAManagerImpl implements GTAManager {
 					task = dbInstance.getCurrentEntityManager().merge(task);
 				}	
 				dbInstance.commit();
-				syncAssessmentEntry(task, cNode, doerIdentity, Role.user);
+				syncAssessmentEntry(task, cNode, null, false, doerIdentity, Role.user);
 				response = new AssignmentResponse(task, Status.ok);
 			}
 		} else {
@@ -1040,7 +1070,7 @@ public class GTAManagerImpl implements GTAManager {
 				((TaskImpl)currentTask).setTaskStatus(TaskProcess.submit);
 			}
 			currentTask = dbInstance.getCurrentEntityManager().merge(currentTask);
-			syncAssessmentEntry((TaskImpl)currentTask, cNode, doerIdentity, Role.user);
+			syncAssessmentEntry(currentTask, cNode, null, false, doerIdentity, Role.user);
 			response = new AssignmentResponse(currentTask, Status.ok);
 		}
 		
@@ -1163,7 +1193,7 @@ public class GTAManagerImpl implements GTAManager {
 				TaskImpl task = createTask(taskName, reloadedTasks, nextStep, businessGroup, identity, cNode);
 				task.setAssignmentDate(new Date());
 				dbInstance.getCurrentEntityManager().persist(task);
-				syncAssessmentEntry(task, cNode, doerIdentity, Role.user);
+				syncAssessmentEntry(task, cNode, null, false, doerIdentity, Role.user);
 				response = new AssignmentResponse(task, Status.ok);
 			}
 			dbInstance.commit();
@@ -1176,7 +1206,7 @@ public class GTAManagerImpl implements GTAManager {
 				}
 			}
 			currentTask = dbInstance.getCurrentEntityManager().merge(currentTask);
-			syncAssessmentEntry((TaskImpl)currentTask, cNode, doerIdentity, Role.user);
+			syncAssessmentEntry(currentTask, cNode, null, false, doerIdentity, Role.user);
 			response = new AssignmentResponse(currentTask, Status.ok);
 		}
 		return response;
@@ -1428,7 +1458,7 @@ public class GTAManagerImpl implements GTAManager {
 		taskImpl.setTaskStatus(nextStep);
 		TaskImpl mergedTask = dbInstance.getCurrentEntityManager().merge(taskImpl);
 		dbInstance.commit();//make the thing definitive
-		syncAssessmentEntry(mergedTask, cNode, doerIdentity, by);
+		syncAssessmentEntry(mergedTask, cNode, null, incrementUserAttempts, doerIdentity, by);
 		return mergedTask;
 	}
 	
@@ -1657,7 +1687,7 @@ public class GTAManagerImpl implements GTAManager {
 		taskImpl.setTaskStatus(newStatus);
 		syncDates(taskImpl, newStatus);
 		taskImpl = dbInstance.getCurrentEntityManager().merge(taskImpl);
-		syncAssessmentEntry(taskImpl, cNode, doerIdentity, by);
+		syncAssessmentEntry(taskImpl, cNode, null, incrementUserAttempts, doerIdentity, by);
 		
 		// mark the publishers
 		OLATResource resource = taskImpl.getTaskList().getEntry().getOlatResource();
@@ -1708,7 +1738,7 @@ public class GTAManagerImpl implements GTAManager {
 		taskImpl = dbInstance.getCurrentEntityManager().merge(taskImpl);
 		//log date
 		createAndPersistTaskRevisionDate(taskImpl, iteration, newStatus);
-		syncAssessmentEntry(taskImpl, cNode, doerIdentity, by);
+		syncAssessmentEntry(taskImpl, cNode, null, incrementUserAttempts, doerIdentity, by);
 		return taskImpl;
 	}
 
@@ -1741,45 +1771,80 @@ public class GTAManagerImpl implements GTAManager {
 	}
 
 	@Override
-	public AssessmentEntryStatus convertToAssessmentEntrystatus(Task task, GTACourseNode cNode) {
+	public AssessmentEntryStatus convertToAssessmentEntryStatus(Task task, GTACourseNode cNode) {
 		TaskProcess status = task.getTaskStatus();
 		TaskProcess firstStep = firstStep(cNode);
 		
 		AssessmentEntryStatus assessmentStatus;
 		if(status == firstStep) {
-			assessmentStatus = AssessmentEntryStatus.notStarted;
+			if(status == TaskProcess.grading) {
+				assessmentStatus = AssessmentEntryStatus.inProgress;
+			} else if(status == TaskProcess.solution) {
+				if(cNode.getModuleConfiguration().getBooleanSafe(GTACourseNode.GTASK_GRADING)) {
+					assessmentStatus = AssessmentEntryStatus.inProgress;
+				} else {
+					assessmentStatus = AssessmentEntryStatus.done;
+				}
+			} else {
+				assessmentStatus = AssessmentEntryStatus.notStarted;
+			}
 		} else if(status == TaskProcess.review || status == TaskProcess.correction || status == TaskProcess.grading) {
 			assessmentStatus = AssessmentEntryStatus.inReview;
 		} else if(status == TaskProcess.graded) {
 			assessmentStatus = AssessmentEntryStatus.done;
+		} else if(status == TaskProcess.solution) {
+			if(cNode.getModuleConfiguration().getBooleanSafe(GTACourseNode.GTASK_GRADING)) {
+				assessmentStatus = AssessmentEntryStatus.inProgress;
+			} else {
+				assessmentStatus = AssessmentEntryStatus.done;
+			}
 		} else {
 			assessmentStatus = AssessmentEntryStatus.inProgress;
 		}
 		return assessmentStatus;
 	}
-	
-	private void syncAssessmentEntry(TaskImpl taskImpl, GTACourseNode cNode, Identity doerIdentity, Role by) {
-		if(taskImpl == null || taskImpl.getTaskStatus() == null || cNode == null) return;
+
+	@Override
+	public boolean syncAssessmentEntry(Task taskImpl, GTACourseNode cNode,
+			UserCourseEnvironment assessedUserCourseEnv, boolean incrementUserAttempts, Identity doerIdentity, Role by) {
+		if(taskImpl == null || taskImpl.getTaskStatus() == null || cNode == null) return false;
 		
 		TaskList taskList = getTaskList(taskImpl);
 		RepositoryEntry courseRepoEntry = taskList.getEntry();
 		ICourse course = CourseFactory.loadCourse(courseRepoEntry);
-		AssessmentEntryStatus assessmentStatus = convertToAssessmentEntrystatus(taskImpl, cNode);
+		AssessmentEntryStatus assessmentStatus = convertToAssessmentEntryStatus(taskImpl, cNode);
+		AssessmentEntryStatus currentAssessmentStatus = null;
 		if(GTAType.group.name().equals(cNode.getModuleConfiguration().getStringValue(GTACourseNode.GTASK_TYPE))) {
 			List<Identity> assessedIdentities = businessGroupRelationDao.getMembers(taskImpl.getBusinessGroup(), GroupRoles.participant.name());
 			for(Identity assessedIdentity:assessedIdentities) {
-				UserCourseEnvironment userCourseEnv = AssessmentHelper.createAndInitUserCourseEnvironment(assessedIdentity, course);
+				UserCourseEnvironment userCourseEnv;
+				if(assessedUserCourseEnv != null && assessedUserCourseEnv.getIdentityEnvironment().getIdentity().equals(assessedIdentity)) {
+					userCourseEnv = assessedUserCourseEnv;
+				} else {
+					userCourseEnv = AssessmentHelper.createAndInitUserCourseEnvironment(assessedIdentity, course);
+				}
 				AssessmentEvaluation scoreEvaluation = courseAssessmentService.getAssessmentEvaluation(cNode, userCourseEnv);
 				AssessmentEvaluation newScoreEvaluation = new AssessmentEvaluation(scoreEvaluation, assessmentStatus);
-	 			courseAssessmentService.saveScoreEvaluation(cNode, doerIdentity, newScoreEvaluation, userCourseEnv, false, by);
+	 			courseAssessmentService.saveScoreEvaluation(cNode, doerIdentity, newScoreEvaluation, userCourseEnv, incrementUserAttempts, by);
+	 			if(doerIdentity != null && doerIdentity.equals(assessedIdentity)) {
+	 				currentAssessmentStatus = scoreEvaluation.getAssessmentStatus();
+	 			}
 			}
 		} else {
 			Identity assessedIdentity = taskImpl.getIdentity();
-			UserCourseEnvironment userCourseEnv = AssessmentHelper.createAndInitUserCourseEnvironment(assessedIdentity, course);
+			
+			UserCourseEnvironment userCourseEnv;
+			if(assessedUserCourseEnv != null && assessedUserCourseEnv.getIdentityEnvironment().getIdentity().equals(assessedIdentity)) {
+				userCourseEnv = assessedUserCourseEnv;
+			} else {
+				userCourseEnv = AssessmentHelper.createAndInitUserCourseEnvironment(assessedIdentity, course);
+			}
 			AssessmentEvaluation scoreEvaluation = courseAssessmentService.getAssessmentEvaluation(cNode, userCourseEnv);
+			currentAssessmentStatus = scoreEvaluation.getAssessmentStatus();
 			AssessmentEvaluation newScoreEvaluation = new AssessmentEvaluation(scoreEvaluation, assessmentStatus);
- 			courseAssessmentService.saveScoreEvaluation(cNode, doerIdentity, newScoreEvaluation, userCourseEnv, false, by);
+ 			courseAssessmentService.saveScoreEvaluation(cNode, doerIdentity, newScoreEvaluation, userCourseEnv, incrementUserAttempts, by);
 		}
+		return currentAssessmentStatus != assessmentStatus;
 	}
 
 	private TaskList loadForUpdate(TaskList tasks) {
@@ -1819,7 +1884,7 @@ public class GTAManagerImpl implements GTAManager {
 		String taskName = taskToString(assignedTask);
 		String msg = step + " of " + taskName + ": " + operation + " " + file;
 		if(GTAType.group.name().equals(cNode.getModuleConfiguration().getStringValue(GTACourseNode.GTASK_TYPE))) {
-			log.info(Tracing.M_AUDIT, "{} to business group: {}",msg , assessedGroup.getName());
+			log.info(Tracing.M_AUDIT, "{} to business group: {}", msg, assessedGroup.getName());
 			courseEnv.getAuditManager()
 				.appendToUserNodeLog(cNode, actor, assessedGroup, msg, by);
 		} else {

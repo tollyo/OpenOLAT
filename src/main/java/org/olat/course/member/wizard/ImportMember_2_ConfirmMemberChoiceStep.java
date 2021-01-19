@@ -26,9 +26,6 @@ import org.olat.core.gui.control.generic.wizard.BasicStep;
 import org.olat.core.gui.control.generic.wizard.PrevNextFinishConfig;
 import org.olat.core.gui.control.generic.wizard.StepFormController;
 import org.olat.core.gui.control.generic.wizard.StepsRunContext;
-import org.olat.group.BusinessGroup;
-import org.olat.modules.curriculum.Curriculum;
-import org.olat.repository.RepositoryEntry;
 
 /**
  * 
@@ -36,10 +33,9 @@ import org.olat.repository.RepositoryEntry;
  */
 public class ImportMember_2_ConfirmMemberChoiceStep extends BasicStep {
 	
-	public ImportMember_2_ConfirmMemberChoiceStep(UserRequest ureq, RepositoryEntry repoEntry, BusinessGroup group,
-			Curriculum curriculum, boolean overrideManaged) {
+	public ImportMember_2_ConfirmMemberChoiceStep(UserRequest ureq, MembersContext membersContext) {
 		super(ureq);
-		setNextStep(new ImportMember_3_ChoosePermissionStep(ureq, repoEntry, group, curriculum, overrideManaged));
+		setNextStep(new ImportMember_3_ChoosePermissionStep(ureq, membersContext));
 		setI18nTitleAndDescr("import.confirm.title", "import.confirm.title");
 	}
 
@@ -50,6 +46,6 @@ public class ImportMember_2_ConfirmMemberChoiceStep extends BasicStep {
 
 	@Override
 	public StepFormController getStepController(UserRequest ureq, WindowControl wControl, StepsRunContext runContext, Form form) {
-		return new ImportMemberOverviewIdentitiesController(ureq, wControl, form, runContext);
+		return new ImportMemberOverviewIdentitiesController(ureq, wControl, form, runContext, ImportMemberByUsernamesController.RUN_CONTEXT_KEY, null);
 	}
 }

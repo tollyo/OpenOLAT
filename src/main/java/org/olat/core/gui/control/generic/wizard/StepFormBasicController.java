@@ -25,6 +25,9 @@
 */
 package org.olat.core.gui.control.generic.wizard;
 
+import java.util.List;
+import java.util.function.Supplier;
+
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
 import org.olat.core.gui.components.form.flexible.FormItem;
@@ -62,48 +65,60 @@ public abstract class StepFormBasicController extends FormBasicController implem
 		this.runContext = runContext;
 	}
 	
-	/**
-	 * @param ureq
-	 * @param wControl
-	 * @param pageName
-	 */
 	public StepFormBasicController(UserRequest ureq, WindowControl wControl, String pageName) {
 		super(ureq, wControl, pageName);
 		usedInStepWizzard = false;
 		runContext = null;
 	}
 	
-	/**
-	 * @param ureq
-	 * @param wControl
-	 * @param pageName
-	 */
 	public StepFormBasicController(UserRequest ureq, WindowControl wControl, int layout) {
 		super(ureq, wControl, layout);
 		usedInStepWizzard = false;
 		runContext = null;
 	}
 
-	/**
-	 * @param ureq
-	 * @param wControl
-	 */
 	public StepFormBasicController(UserRequest ureq, WindowControl wControl) {
 		super(ureq, wControl);
 		usedInStepWizzard = false;
 		runContext = null;
 	}
+	
+	public StepFormBasicController(UserRequest ureq, WindowControl wControl, int layoutCustom, String customLayoutPageName,
+			Form rootForm) {
+		super(ureq, wControl, layoutCustom, customLayoutPageName, rootForm);
+	}
 
-	protected void addToRunContext(String key, Object value){
+	protected void addToRunContext(String key, Object value) {
 		runContext.put(key, value);
 	}
-	protected boolean containsRunContextKey(String key){
+	
+	protected void removeFromRunContext(String key) {
+		runContext.remove(key);
+	}
+	
+	protected boolean containsRunContextKey(String key) {
 		return runContext.containsKey(key);
 	}
-	protected Object getFromRunContext(String key){
+	
+	protected Object getFromRunContext(String key) {
 		return runContext.get(key);
 	}
 	
+	protected Object getOrCreateFromRunContext(String key, Supplier<Object> creator) {
+		Object object = getFromRunContext(key);
+		if (object == null) {
+			object = creator.get();
+			addToRunContext(key, object);
+		}
+		return object;
+	}
+
+	@SuppressWarnings({ "unused", "unchecked" })
+	protected <T> List<T> getListFromRunContext(String key, Class<T> resultClass) {
+		return (List<T>)runContext.get(key);
+	}
+	
+	@Override
 	public void back() {
 		
 	}
@@ -145,26 +160,23 @@ public abstract class StepFormBasicController extends FormBasicController implem
 		}
 	}
 	
+	@Override
 	abstract protected void doDispose();
 
+	@Override
 	abstract protected void formOK(UserRequest ureq);
 
-	/**
-	 * @return Returns the usedInStepWizzard.
-	 */
 	public boolean isUsedInStepWizzard() {
 		return usedInStepWizzard;
 	}
 
+	@Override
 	abstract protected void initForm(FormItemContainer formLayout, Controller listener,
 			UserRequest ureq);
 
-	/* (non-Javadoc)
-	 * @see org.olat.core.gui.control.generic.wizard.StepFormController#getStepFormItem()
-	 */
+	@Override
 	public FormItem getStepFormItem() {
 		return flc;
 	}
-
 
 }

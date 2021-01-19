@@ -24,11 +24,13 @@ import java.util.Locale;
 import org.olat.admin.user.tools.UserTool;
 import org.olat.core.commons.services.help.ConfluenceHelper;
 import org.olat.core.commons.services.help.HelpLinkSPI;
+import org.olat.core.commons.services.help.HelpModule;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
 import org.olat.core.gui.components.link.ExternalLink;
 import org.olat.core.gui.components.velocity.VelocityContainer;
 import org.olat.core.gui.control.WindowControl;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -43,22 +45,28 @@ import org.springframework.stereotype.Service;
  */
 @Service("ooConfluenceLinkHelp")
 public class ConfluenceLinkSPI implements HelpLinkSPI {
+
+	private static final String PLUGIN_NAME = "manual";
+	
+	@Autowired
+	HelpModule helpModule;
+	
 	@Override
 	public UserTool getHelpUserTool(WindowControl wControl) {
 		return new ConfluenceUserTool();
 	}
-
+	
 	public class ConfluenceUserTool implements UserTool {
 
 		@Override
 		public Component getMenuComponent(UserRequest ureq, VelocityContainer container) {
-			ExternalLink helpLink = new ExternalLink("topnav.help");
-			container.put("topnav.help", helpLink);
-			helpLink.setIconLeftCSS("o_icon o_icon_help o_icon-lg");
-			helpLink.setName(container.getTranslator().translate("topnav.help"));
-			helpLink.setTooltip(container.getTranslator().translate("topnav.help.alt"));
+			ExternalLink helpLink = new ExternalLink("help.confluence");
+			helpLink.setIconLeftCSS("o_icon o_icon-fw " + helpModule.getConfluenceIcon());
+			helpLink.setName(container.getTranslator().translate("help.confluence"));
+			helpLink.setTooltip(container.getTranslator().translate("help.confluence"));
 			helpLink.setTarget("oohelp");
 			helpLink.setUrl(getURL(ureq.getLocale(), null));
+			container.put("help.confluence", helpLink);
 			return helpLink;
 		}
 
@@ -79,5 +87,10 @@ public class ConfluenceLinkSPI implements HelpLinkSPI {
 			String page) {
 		// delegate to helper
 		return ConfluenceHelper.createHelpPageLink(ureq, title, tooltip, iconCSS, elementCSS, page);
+	}
+	
+	@Override
+	public String getPluginName() {
+		return PLUGIN_NAME;
 	}
 }

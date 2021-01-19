@@ -60,6 +60,7 @@ import org.olat.core.id.Identity;
 import org.olat.core.id.Roles;
 import org.olat.core.util.Formatter;
 import org.olat.core.util.Util;
+import org.olat.modules.lecture.AbsenceNotice;
 import org.olat.modules.lecture.DailyRollCall;
 import org.olat.modules.lecture.LectureBlock;
 import org.olat.modules.lecture.LectureBlockRollCall;
@@ -103,7 +104,6 @@ public class DailyLectureBlockOverviewController extends FormBasicController {
 	private int counter = 0;
 	private Date currentDate;
 	private final Formatter formatter;
-	private final boolean isAdministrativeUser;
 	private final boolean authorizedAbsenceEnabled;
 	private final boolean dailyRecordingEnabled;
 	private final Identity profiledIdentity;
@@ -132,8 +132,6 @@ public class DailyLectureBlockOverviewController extends FormBasicController {
 		rollCallSecCallback = new RollCallSecurityCallbackImpl(false, secCallback.viewAs() == LectureRoles.teacher, null, lectureModule);
 		this.profiledIdentity = profiledIdentity;
 		formatter = Formatter.getInstance(getLocale());
-		Roles roles = ureq.getUserSession().getRoles();
-		isAdministrativeUser = securityModule.isUserAllowedAdminProps(roles);
 		authorizedAbsenceEnabled = lectureModule.isAuthorizedAbsenceEnabled();
 		dailyRecordingEnabled = lectureModule.getDailyRollCall() == DailyRollCall.daily;
 		
@@ -197,7 +195,7 @@ public class DailyLectureBlockOverviewController extends FormBasicController {
 		tableEl.setCustomizeColumns(false);
 		tableEl.setNumOfRowsEnabled(false);
 		tableEl.setEmtpyTableMessageKey("cockpit.lectures.day.list");
-		tableEl.setAndLoadPersistedPreferences(ureq, "daily-lecture-blocks-overview");
+		tableEl.setAndLoadPersistedPreferences(ureq, "daily-lecture-blocks-overview-v2");
 		
 		initCloseButton(formLayout);
 	}
@@ -434,6 +432,8 @@ public class DailyLectureBlockOverviewController extends FormBasicController {
 	private void doExportLectureBlock(UserRequest ureq, LectureBlock block) {
 		LectureBlock lectureBlock = lectureService.getLectureBlock(block);
 		List<Identity> teachers = lectureService.getTeachers(lectureBlock);
+		Roles roles = ureq.getUserSession().getRoles();
+		boolean isAdministrativeUser = securityModule.isUserAllowedAdminProps(roles);
 		LectureBlockExport export = new LectureBlockExport(lectureBlock, teachers, isAdministrativeUser, authorizedAbsenceEnabled, getTranslator());
 		ureq.getDispatchResult().setResultingMediaResource(export);
 	}
@@ -461,10 +461,11 @@ public class DailyLectureBlockOverviewController extends FormBasicController {
 			Collections.sort(participants, new IdentityComparator(getLocale()));
 		}
 		List<LectureBlockRollCall> rollCalls = lectureService.getRollCalls(block);
+		List<AbsenceNotice> notices = lectureService.getAbsenceNoticeRelatedTo(lectureBlock);
 		try {
 			LecturesBlockPDFExport export = new LecturesBlockPDFExport(lectureBlock, authorizedAbsenceEnabled, getTranslator());
 			export.setTeacher(userManager.getUserDisplayName(getIdentity()));
-			export.create(participants, rollCalls);
+			export.create(participants, rollCalls, notices);
 			ureq.getDispatchResult().setResultingMediaResource(export);
 		} catch (IOException | TransformerException e) {
 			logError("", e);

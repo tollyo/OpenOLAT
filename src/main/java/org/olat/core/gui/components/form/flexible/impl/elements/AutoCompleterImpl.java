@@ -72,6 +72,11 @@ public class AutoCompleterImpl extends AbstractTextElement implements AutoComple
 		mapper = new AutoCompleterMapper(provider);
 		mapperKey = CoreSpringFactory.getImpl(MapperService.class).register(usess, mapper);
 	}
+	
+	@Override
+	public int getMaxEntries() {
+		return mapper.getMaxEntries();
+	}
 
 	@Override
 	public String getMapperUri() {
@@ -96,12 +101,25 @@ public class AutoCompleterImpl extends AbstractTextElement implements AutoComple
 		}
 	}
 
+	@Override
 	public int getMinLength() {
 		return minLength;
 	}
 
+	@Override
 	public void setMinLength(int minLength) {
 		this.minLength = minLength;
+	}
+
+	@Override
+	public void dispatchFormRequest(UserRequest ureq) {
+		String cmd = ureq.getParameter("cid");
+		if("select".equals(cmd)) {
+			String uKey = ureq.getParameter("key");
+			setKey(uKey);
+			setValue(ureq.getParameter("value"));
+			getRootForm().fireFormEvent(ureq, new AutoCompleteFormEvent(AutoCompleteEvent.SELECT_EVENT, this, uKey));
+		}
 	}
 
 	@Override
@@ -138,6 +156,10 @@ public class AutoCompleterImpl extends AbstractTextElement implements AutoComple
 		public AutoCompleterMapper(ListProvider provider) {
 			this.provider = provider;
 		}
+		
+		public int getMaxEntries() {
+			return provider.getMaxEntries();
+		}
 
 		@Override
 		public MediaResource handle(String relPath, HttpServletRequest request) {
@@ -154,4 +176,5 @@ public class AutoCompleterImpl extends AbstractTextElement implements AutoComple
 			return new JSONMediaResource(result, "UTF-8");
 		}
 	}
+
 }

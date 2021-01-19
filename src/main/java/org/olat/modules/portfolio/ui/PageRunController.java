@@ -30,7 +30,7 @@ import org.olat.core.commons.services.commentAndRating.ReadOnlyCommentsSecurityC
 import org.olat.core.commons.services.commentAndRating.ui.UserCommentsAndRatingsController;
 import org.olat.core.commons.services.doceditor.DocEditor.Mode;
 import org.olat.core.commons.services.doceditor.DocTemplate;
-import org.olat.core.commons.services.doceditor.DocumentEditorService;
+import org.olat.core.commons.services.doceditor.DocEditorService;
 import org.olat.core.commons.services.pdf.PdfModule;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
@@ -77,7 +77,7 @@ import org.olat.modules.ceditor.SimpleAddPageElementHandler;
 import org.olat.modules.ceditor.ui.AddElementInfos;
 import org.olat.modules.ceditor.ui.FullEditorSecurityCallback;
 import org.olat.modules.ceditor.ui.PageController;
-import org.olat.modules.ceditor.ui.PageEditorController;
+import org.olat.modules.ceditor.ui.PageEditorV2Controller;
 import org.olat.modules.ceditor.ui.ValidationMessage;
 import org.olat.modules.portfolio.Assignment;
 import org.olat.modules.portfolio.Binder;
@@ -134,7 +134,7 @@ public class PageRunController extends BasicController implements TooledControll
 	private CloseableModalController cmc;
 	private PageMetadataController pageMetaCtrl;
 	private PageController pageCtrl;
-	private PageEditorController pageEditCtrl;
+	private PageEditorV2Controller pageEditCtrl;
 	private RestorePageController restorePageCtrl;
 	private ConfirmClosePageController confirmDonePageCtrl;
 	private DialogBoxController confirmPublishCtrl, confirmRevisionCtrl, confirmCloseCtrl,
@@ -159,19 +159,20 @@ public class PageRunController extends BasicController implements TooledControll
 	@Autowired
 	private PortfolioService portfolioService;
 	@Autowired
-	private DocumentEditorService vfsRepositoryService;
+	private DocEditorService docEditorService;
 	
 	public PageRunController(UserRequest ureq, WindowControl wControl, TooledStackedPanel stackPanel,
 			BinderSecurityCallback secCallback, Page page, boolean openEditMode) {
 		super(ureq, wControl);
 		this.page = page;
 		this.stackPanel = stackPanel;
+		
 		this.secCallback = secCallback;
 		lockOres = OresHelper.createOLATResourceableInstance("Page", page.getKey());
 		userSession = ureq.getUserSession();
 		
 		if(openEditMode && page.isEditable()) {
-			lockEntry = coordinator.getCoordinator().getLocker().acquireLock(lockOres, getIdentity(), "");
+			lockEntry = coordinator.getCoordinator().getLocker().acquireLock(lockOres, getIdentity(), "", getWindow());
 		}
 		this.openInEditMode = openEditMode && page.isEditable() && (lockEntry != null && lockEntry.isSuccess());
 		coordinator.getCoordinator().getEventBus().registerFor(this, getIdentity(), lockOres);
@@ -200,7 +201,7 @@ public class PageRunController extends BasicController implements TooledControll
 		putInitialPanel(mainVC);
 		
 		if(openInEditMode) {
-			pageEditCtrl = new PageEditorController(ureq, getWindowControl(),
+			pageEditCtrl = new PageEditorV2Controller(ureq, getWindowControl(),
 					new PortfolioPageEditorProvider(ureq.getUserSession().getRoles()), new FullEditorSecurityCallback(),
 					getTranslator());
 			listenTo(pageEditCtrl);
@@ -354,6 +355,9 @@ public class PageRunController extends BasicController implements TooledControll
 	
 	@Override
 	protected void doDispose() {
+		if(stackPanel != null) {
+			stackPanel.removeListener(this);
+		}
 		if (lockEntry != null && lockEntry.isSuccess()) {
 			// release lock
 			coordinator.getCoordinator().getLocker().releaseLock(lockEntry);
@@ -649,9 +653,9 @@ public class PageRunController extends BasicController implements TooledControll
 				mainVC.put("comments", commentsCtrl.getInitialComponent());
 			}
 		} else {
-			lockEntry = coordinator.getCoordinator().getLocker().acquireLock(lockOres, getIdentity(), "");
+			lockEntry = coordinator.getCoordinator().getLocker().acquireLock(lockOres, getIdentity(), "", getWindow());
 			if(lockEntry.isSuccess()) {
-				pageEditCtrl = new PageEditorController(ureq, getWindowControl(),
+				pageEditCtrl = new PageEditorV2Controller(ureq, getWindowControl(),
 						new PortfolioPageEditorProvider(ureq.getUserSession().getRoles()),
 						new FullEditorSecurityCallback(), getTranslator());
 				listenTo(pageEditCtrl);
@@ -664,7 +668,8 @@ public class PageRunController extends BasicController implements TooledControll
 				}
 			} else {
 				removeAsListenerAndDispose(alreadyLockedDialogController);
-				alreadyLockedDialogController = DialogBoxUIFactory.createResourceLockedMessage(ureq, getWindowControl(), lockEntry, "warning.page.locked", getTranslator());
+				String i18nMsg = lockEntry.isDifferentWindows() ? "warning.page.locked.same.user" : "warning.page.locked";
+				alreadyLockedDialogController = DialogBoxUIFactory.createResourceLockedMessage(ureq, getWindowControl(), lockEntry, i18nMsg, getTranslator());
 				listenTo(alreadyLockedDialogController);
 				alreadyLockedDialogController.activate();
 			}
@@ -809,7 +814,7 @@ public class PageRunController extends BasicController implements TooledControll
 		private boolean isCreateFilePossible(Roles roles) {
 			List<DocTemplate> editableTemplates = CreateFileHandler.getEditableTemplates(getIdentity(), roles, getLocale()).getTemplates();
 			for (DocTemplate docTemplate: editableTemplates) {
-				if (vfsRepositoryService.hasEditor(getIdentity(), roles,  docTemplate.getSuffix(), Mode.EDIT, true)) {
+				if (docEditorService.hasEditor(getIdentity(), roles,  docTemplate.getSuffix(), Mode.EDIT, true, false)) {
 					return true;
 				}
 			}

@@ -24,7 +24,6 @@ import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.List;
 
-import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.transform.stream.StreamResult;
@@ -34,6 +33,7 @@ import org.olat.core.gui.render.StringOutput;
 import org.olat.core.logging.Tracing;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.filter.impl.HtmlFilter;
+import org.olat.core.util.xml.XMLFactories;
 import org.w3c.dom.Attr;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -68,6 +68,7 @@ import uk.ac.ed.ph.jqtiplus.xmlutils.xslt.XsltSerializationOptions;
 public class AssessmentHtmlBuilder {
 	
 	private static final Logger log = Tracing.createLoggerFor(AssessmentHtmlBuilder.class);
+	private static final String SPACE = " ";
 	
 	private final QtiSerializer qtiSerializer;
 	
@@ -224,8 +225,7 @@ public class AssessmentHtmlBuilder {
 		try {
 			// Alter infoset because of special namespace on tag p
 			HtmlParser parser = new HtmlParser(XmlViolationPolicy.ALTER_INFOSET);
-			DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-	        factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+			DocumentBuilderFactory factory = XMLFactories.newDocumentBuilderFactory();
 			DocumentBuilder builder = factory.newDocumentBuilder();
 			Document document = builder.newDocument();
 			HtmlToDomBuilderHandler contentHandler = new HtmlToDomBuilderHandler(document, convertInputValue);
@@ -373,6 +373,8 @@ public class AssessmentHtmlBuilder {
 			attributes.addAttribute("data-oo-movie", ooData);
 
 			super.startElement("", "object", "object", attributes);
+			// ensure the tag is written <object> </object> and <object />
+			super.characters(SPACE.toCharArray(), 0, SPACE.length());
 			super.endElement("", "object", "object");
 		}
 	}

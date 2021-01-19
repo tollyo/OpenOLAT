@@ -60,6 +60,7 @@ import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.control.controller.BasicController;
 import org.olat.core.gui.control.generic.closablewrapper.CloseableModalController;
 import org.olat.core.gui.control.generic.dtabs.Activateable2;
+import org.olat.core.gui.control.winmgr.ScrollTopCommand;
 import org.olat.core.id.OLATResourceable;
 import org.olat.core.id.Roles;
 import org.olat.core.id.context.BusinessControl;
@@ -486,6 +487,7 @@ public class FolderRunController extends BasicController implements Activateable
 			
 			if(FolderCommandFactory.COMMAND_BROWSE.equals(cmd)) {
 				updatePathResource(ureq);
+				getWindowControl().getWindowBackOffice().sendCommandTo(new ScrollTopCommand());
 			}
 			enableDisableQuota(ureq);
 		}
@@ -564,6 +566,13 @@ public class FolderRunController extends BasicController implements Activateable
 				activatePath(ureq, path);
 			}
 		}
+	}
+	
+	public String getCurrentContainerPath() {
+		if(folderComponent != null) {
+			return folderComponent.getCurrentContainerPath();
+		}
+		return null;
 	}
 
 	public void activatePath(UserRequest ureq, String path) {

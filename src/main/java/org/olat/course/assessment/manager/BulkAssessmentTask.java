@@ -23,10 +23,13 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.apache.logging.log4j.Logger;
@@ -45,6 +48,7 @@ import org.olat.core.id.Identity;
 import org.olat.core.id.IdentityEnvironment;
 import org.olat.core.id.OLATResourceable;
 import org.olat.core.id.Roles;
+import org.olat.core.id.UserConstants;
 import org.olat.core.logging.Tracing;
 import org.olat.core.logging.activity.OlatResourceableType;
 import org.olat.core.logging.activity.ThreadLocalUserActivityLogger;
@@ -158,7 +162,7 @@ public class BulkAssessmentTask implements LongRunnable, TaskAwareRunnable, Sequ
 			if(task != null && task.getCreator() != null) {
 				UserSession session = new UserSession();
 				session.setIdentity(task.getCreator());
-				session.setSessionInfo(new SessionInfo(task.getCreator().getKey(), task.getCreator().getName()));
+				session.setSessionInfo(new SessionInfo(task.getCreator().getKey()));
 				ThreadLocalUserActivityLoggerInstaller.initUserActivityLogger(session);
 				infos[0] = LoggingResourceable.wrap(courseRes, OlatResourceableType.course);
 				ThreadLocalUserActivityLogger.addLoggingResourceInfo(infos[0]);
@@ -379,9 +383,9 @@ public class BulkAssessmentTask implements LongRunnable, TaskAwareRunnable, Sequ
 					ScoreEvaluation se;
 					if (hasPassed && cut != null){
 						Boolean passed = (score.floatValue() >= cut.floatValue()) ? Boolean.TRUE	: Boolean.FALSE;
-						se = new ScoreEvaluation(score, passed, datas.getStatus(), datas.getVisibility(), null, null, null);
+						se = new ScoreEvaluation(score, passed, datas.getStatus(), datas.getVisibility(), null, null, null, null);
 					} else {
-						se = new ScoreEvaluation(score, null, datas.getStatus(), datas.getVisibility(), null, null, null);
+						se = new ScoreEvaluation(score, null, datas.getStatus(), datas.getVisibility(), null, null, null, null);
 					}
 					
 					// Update score,passed properties in db, and the user's efficiency statement
@@ -394,20 +398,17 @@ public class BulkAssessmentTask implements LongRunnable, TaskAwareRunnable, Sequ
 			if (hasPassed && passed != null && cut == null) { // Configuration of manual assessment --> Display passed/not passed: yes, Type of display: Manual by tutor
 				ScoreEvaluation seOld = courseAssessmentService.getAssessmentEvaluation(courseNode, uce);
 				Float oldScore = seOld.getScore();
-				ScoreEvaluation se = new ScoreEvaluation(oldScore, passed, datas.getStatus(), datas.getVisibility(), null, null, null);
+				ScoreEvaluation se = new ScoreEvaluation(oldScore, passed, datas.getStatus(), datas.getVisibility(), null, null, null, null);
 				// Update score,passed properties in db, and the user's efficiency statement
 				boolean incrementAttempts = false;
 				courseAssessmentService.updateScoreEvaluation(courseNode, se, uce, coachIdentity, incrementAttempts, Role.auto);
 				statusVisibilitySet = true;
 			}
 			
-			boolean identityHasReturnFile = false;
 			if(hasReturnFiles && row.getReturnFiles() != null && !row.getReturnFiles().isEmpty()) {
-				String assessedId = row.getAssessedId();
-				File assessedFolder = new File(unzipped, assessedId);
-				identityHasReturnFile = assessedFolder.exists();
-				if(identityHasReturnFile) {
-					processReturnFile(courseNode, row, uce, assessedFolder);
+				Optional<Path> assessedFolder = getAssessedFolder(row, identity);
+				if(assessedFolder.isPresent()) {
+					processReturnFile(courseNode, row, uce, assessedFolder.get().toFile(), coachIdentity);
 				}
 			}
 			
@@ -428,7 +429,8 @@ public class BulkAssessmentTask implements LongRunnable, TaskAwareRunnable, Sequ
 			if(!statusVisibilitySet && (datas.getStatus() != null || datas.getVisibility() != null)) {
 				ScoreEvaluation seOld = courseAssessmentService.getAssessmentEvaluation(courseNode, uce);
 				ScoreEvaluation se = new ScoreEvaluation(seOld.getScore(), seOld.getPassed(),
-						datas.getStatus(), datas.getVisibility(), seOld.getCurrentRunCompletion(),
+						datas.getStatus(), datas.getVisibility(),
+						seOld.getCurrentRunStartDate(), seOld.getCurrentRunCompletion(),
 						seOld.getCurrentRunStatus(), seOld.getAssessmentID());
 				// Update score,passed properties in db, and the user's efficiency statement
 				boolean incrementAttempts = false;
@@ -441,6 +443,29 @@ public class BulkAssessmentTask implements LongRunnable, TaskAwareRunnable, Sequ
 				dbInstance.commit();
 			}
 		}
+	}
+	
+	private Optional<Path> getAssessedFolder(BulkAssessmentRow row, Identity identity) {
+		try {
+			String assessedId = row.getAssessedId();
+			Optional<Path> assessedFolder = Files.walk(unzipped.toPath())
+					.filter(Files::isDirectory)
+					.filter(path -> path.getFileName().toString().equals(assessedId))
+					.findAny();
+			if (assessedFolder.isEmpty()) {
+				String username = identity.getUser().getProperty(UserConstants.NICKNAME, null);
+				if (StringHelper.containsNonWhitespace(username)) {
+					assessedFolder = Files.walk(unzipped.toPath())
+							.filter(Files::isDirectory)
+							.filter(path -> path.getFileName().toString().equals(username))
+							.findAny();
+				}
+			}
+			return assessedFolder;
+		} catch (IOException e) {
+			// not found
+		}
+		return Optional.empty();
 	}
 	
 	private void updateTasksState(GTACourseNode courseNode, UserCourseEnvironment uce, TaskProcess status, boolean acceptSubmission) {
@@ -476,8 +501,7 @@ public class BulkAssessmentTask implements LongRunnable, TaskAwareRunnable, Sequ
 		}
 	}
 	
-	private void processReturnFile(CourseNode courseNode, BulkAssessmentRow row, UserCourseEnvironment uce, File assessedFolder) {
-		String assessedId = row.getAssessedId();
+	private void processReturnFile(CourseNode courseNode, BulkAssessmentRow row, UserCourseEnvironment uce, File assessedFolder, Identity coachIdentity) {
 		Identity identity = uce.getIdentityEnvironment().getIdentity();
 		VFSContainer returnBox = getReturnBox(uce, courseNode, identity);
 		if(returnBox != null) {
@@ -492,9 +516,9 @@ public class BulkAssessmentTask implements LongRunnable, TaskAwareRunnable, Sequ
 				VFSLeaf returnLeaf = returnBox.createChildLeaf(returnFilename);
 				if(returnFile.exists()) {
 					try(InputStream inStream = new FileInputStream(returnFile)) {
-						VFSManager.copyContent(inStream, returnLeaf);
+						VFSManager.copyContent(inStream, returnLeaf, coachIdentity);
 					} catch (IOException e) {
-						log.error("Cannot copy return file " + returnFilename + " from " + assessedId, e);
+						log.error("Cannot copy return file {} from {}", returnFilename, row.getIdentityKey(), e);
 					}
 				}
 			}

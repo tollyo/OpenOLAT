@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import javax.annotation.PostConstruct;
@@ -56,12 +57,14 @@ import org.olat.course.run.environment.CourseEnvironment;
 import org.olat.course.run.navigation.NodeVisitedListener;
 import org.olat.course.run.scoring.AccountingEvaluators;
 import org.olat.course.run.scoring.AssessmentEvaluation;
+import org.olat.course.run.scoring.ScoreAccounting;
 import org.olat.course.run.scoring.ScoreEvaluation;
 import org.olat.course.run.userview.UserCourseEnvironment;
 import org.olat.course.run.userview.UserCourseEnvironmentImpl;
 import org.olat.group.BusinessGroup;
 import org.olat.modules.assessment.AssessmentEntry;
 import org.olat.modules.assessment.AssessmentService;
+import org.olat.modules.assessment.Overridable;
 import org.olat.modules.assessment.Role;
 import org.olat.modules.assessment.model.AssessmentEntryStatus;
 import org.olat.modules.assessment.model.AssessmentRunStatus;
@@ -172,13 +175,13 @@ public class CourseAssessmentServiceImpl implements CourseAssessmentService, Nod
 	
 	@Override
 	public void updateCurrentCompletion(CourseNode courseNode, UserCourseEnvironment userCourseEnvironment,
-			Double currentCompletion, AssessmentRunStatus runStatus, Role by) {
+			Date start, Double currentCompletion, AssessmentRunStatus runStatus, Role by) {
 		if (!userCourseEnvironment.isParticipant()) return;
 		
 		AssessmentManager am = userCourseEnvironment.getCourseEnvironment().getAssessmentManager();
 		Identity assessedIdentity = userCourseEnvironment.getIdentityEnvironment().getIdentity();
-		am.updateCurrentCompletion(courseNode, assessedIdentity, userCourseEnvironment, currentCompletion, runStatus,
-				by);
+		am.updateCurrentCompletion(courseNode, assessedIdentity, userCourseEnvironment, start, currentCompletion,
+				runStatus, by);
 	}
 	
 	@Override
@@ -193,11 +196,11 @@ public class CourseAssessmentServiceImpl implements CourseAssessmentService, Nod
 	
 	@Override
 	public void updateFullyAssessed(CourseNode courseNode, UserCourseEnvironment userCourseEnvironment,
-			Boolean fullyAssessed, AssessmentEntryStatus status, Role by) {
+			Boolean fullyAssessed, AssessmentEntryStatus status) {
 		if (!userCourseEnvironment.isParticipant()) return;
 		
 		AssessmentManager am = userCourseEnvironment.getCourseEnvironment().getAssessmentManager();
-		am.updateFullyAssessed(courseNode, userCourseEnvironment, fullyAssessed, status, by);
+		am.updateFullyAssessed(courseNode, userCourseEnvironment, fullyAssessed, status);
 	}
 
 	@Override
@@ -217,14 +220,15 @@ public class CourseAssessmentServiceImpl implements CourseAssessmentService, Nod
 	}
 
 	@Override
-	public void updateAttempts(CourseNode courseNode, Integer userAttempts,
+	public void updateAttempts(CourseNode courseNode, Integer userAttempts, Date lastAttempt,
 			UserCourseEnvironment userCourseEnvironment, Identity coachingIdentity, Role by) {
-		if (!userCourseEnvironment.isParticipant()) return;
+		if (!userCourseEnvironment.isParticipant())
+			return;
 		
 		if (userAttempts != null) {
 			AssessmentManager am = userCourseEnvironment.getCourseEnvironment().getAssessmentManager();
 			Identity assessedIdentity = userCourseEnvironment.getIdentityEnvironment().getIdentity();
-			am.saveNodeAttempts(courseNode, coachingIdentity, assessedIdentity, userAttempts, by);
+			am.saveNodeAttempts(courseNode, coachingIdentity, assessedIdentity, userAttempts, lastAttempt, by);
 		}
 	}
 
@@ -324,6 +328,30 @@ public class CourseAssessmentServiceImpl implements CourseAssessmentService, Nod
 		am.saveScoreEvaluation(courseNode, identity, assessedIdentity, scoreEvaluation, userCourseEnvironment,
 				incrementUserAttempts, by);
 	}
+	
+	@Override
+	public Overridable<Boolean> getRootPassed(UserCourseEnvironment userCourseEnvironment) {
+		if (!userCourseEnvironment.isParticipant()) return Overridable.empty();
+		
+		AssessmentManager am = userCourseEnvironment.getCourseEnvironment().getAssessmentManager();
+		return am.getRootPassed(userCourseEnvironment);
+	}
+
+	@Override
+	public Overridable<Boolean> overrideRootPassed(Identity coach, UserCourseEnvironment userCourseEnvironment, Boolean passed) {
+		if (!userCourseEnvironment.isParticipant()) return Overridable.empty();
+		
+		AssessmentManager am = userCourseEnvironment.getCourseEnvironment().getAssessmentManager();
+		return am.overrideRootPassed(coach, userCourseEnvironment, passed);
+	}
+
+	@Override
+	public Overridable<Boolean> resetRootPassed(Identity coach, UserCourseEnvironment userCourseEnvironment) {
+		if (!userCourseEnvironment.isParticipant()) return Overridable.empty();
+		
+		AssessmentManager am = userCourseEnvironment.getCourseEnvironment().getAssessmentManager();
+		return am.resetRootPassed(coach, userCourseEnvironment);
+	}
 
 	@Override
 	public Controller getDetailsEditController(UserRequest ureq, WindowControl wControl, BreadcrumbPanel stackPanel,
@@ -370,22 +398,35 @@ public class CourseAssessmentServiceImpl implements CourseAssessmentService, Nod
 		List<Identity> members = repositoryService.getMembers(courseEntry, RepositoryEntryRelationType.all, GroupRoles.participant.name());
 		identities.addAll(members);
 		
-		int count = 0;
 		for(Identity identity: identities) {
 			evaluateAll(courseEnv, identity);
 			log.debug("Evaluated score accounting in course {} for {}", course, identity);
-			if(++count % 10 == 0) {
-				dbInstance.commitAndCloseSession();
-			}
+			dbInstance.commitAndCloseSession();
 		}
-		dbInstance.commitAndCloseSession();
 	}
 
 	private void evaluateAll(CourseEnvironment courseEnv, Identity assessedIdentity) {
 		IdentityEnvironment identityEnv = new IdentityEnvironment();
 		identityEnv.setIdentity(assessedIdentity);
 		UserCourseEnvironment userCourseEnv = new UserCourseEnvironmentImpl(identityEnv, courseEnv);
-		userCourseEnv.getScoreAccounting().evaluateAll(true);
+		
+		RepositoryEntry courseEntry = courseEnv.getCourseGroupManager().getCourseEntry();
+		CourseNode rootNode = courseEnv.getRunStructure().getRootNode();
+		AssessmentEntry rootAssessmentEntry = assessmentService.loadAssessmentEntry(assessedIdentity, courseEntry, rootNode.getIdent());
+		Boolean previousPassed = rootAssessmentEntry != null
+				? rootAssessmentEntry.getPassedOverridable().getCurrent()
+				: null;
+		
+		ScoreAccounting scoreAccounting = userCourseEnv.getScoreAccounting();
+		scoreAccounting.evaluateAll(true);
+		
+		AssessmentEvaluation rootAssessmentEvaluation = scoreAccounting.evalCourseNode(rootNode);
+		Boolean currentPassed = rootAssessmentEvaluation.getPassed();
+		
+		// Save root score evaluation to propagate to efficiency statement
+		if (!Objects.equals(previousPassed, currentPassed)) {
+			saveScoreEvaluation(rootNode, null, rootAssessmentEvaluation, userCourseEnv, false, null);
+		}
 	}
 
 	@Override
@@ -405,7 +446,7 @@ public class CourseAssessmentServiceImpl implements CourseAssessmentService, Nod
 		CourseEnvironment courseEnv = course.getCourseEnvironment();
 		Identity assessedIdentity = rootEntry.getIdentity();
 		evaluateAll(courseEnv, assessedIdentity);
-		log.info("Evaluated score accounting after start over in course {} for {}", course, assessedIdentity);
+		log.debug("Evaluated score accounting after start over in course {} for {}", course, assessedIdentity);
 		dbInstance.commitAndCloseSession();
 	}
 }

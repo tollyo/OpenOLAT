@@ -23,6 +23,7 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 
+import javax.persistence.FlushModeType;
 import javax.persistence.TypedQuery;
 
 import org.olat.basesecurity.Authentication;
@@ -31,6 +32,8 @@ import org.olat.basesecurity.BaseSecurityModule;
 import org.olat.basesecurity.IdentityRef;
 import org.olat.core.commons.persistence.DB;
 import org.olat.core.id.Identity;
+import org.olat.core.logging.AssertException;
+import org.olat.core.util.StringHelper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -46,13 +49,76 @@ public class AuthenticationDAO {
 	@Autowired
 	private DB dbInstance;
 	
+	public Authentication getAuthenticationByAuthusername(String authusername, String provider) {
+		StringBuilder sb = new StringBuilder(256);
+		sb.append("select auth from ").append(AuthenticationImpl.class.getName()).append(" as auth")
+		  .append(" inner join fetch auth.identity ident")
+		  .append(" inner join fetch ident.user identUser")
+		  .append(" where auth.provider=:provider and lower(auth.authusername)=:authusername");
+
+		List<Authentication> results = dbInstance.getCurrentEntityManager()
+				.createQuery(sb.toString(), Authentication.class)
+				.setParameter("provider", provider)
+				.setParameter("authusername", authusername.toLowerCase())
+				.getResultList();
+		if (results.isEmpty()) return null;
+		if (results.size() != 1) {
+			throw new AssertException("more than one entry for the a given authusername and provider, should never happen (even db has a unique constraint on those columns combined) ");
+		}
+		return results.get(0);
+	}
+	
+	public List<Authentication> getAuthenticationsByAuthusername(String authusername) {
+		StringBuilder sb = new StringBuilder(256);
+		sb.append("select auth from ").append(AuthenticationImpl.class.getName()).append(" as auth")
+		  .append(" inner join fetch auth.identity ident")
+		  .append(" inner join fetch ident.user identUser")
+		  .append(" where lower(auth.authusername)=:authusername");
+		
+		return dbInstance.getCurrentEntityManager()
+				.createQuery(sb.toString(), Authentication.class)
+				.setParameter("authusername", authusername.toLowerCase())
+				.getResultList();
+	}
+	
+	public List<Authentication> getAuthenticationsByAuthusername(String authusername, List<String> providers) {
+		StringBuilder sb = new StringBuilder(256);
+		sb.append("select auth from ").append(AuthenticationImpl.class.getName()).append(" as auth")
+		  .append(" inner join fetch auth.identity ident")
+		  .append(" inner join fetch ident.user identUser")
+		  .append(" where lower(auth.authusername)=:authusername and auth.provider in (:providers)");
+
+		return dbInstance.getCurrentEntityManager()
+				.createQuery(sb.toString(), Authentication.class)
+				.setParameter("authusername", authusername.toLowerCase())
+				.setParameter("providers", providers)
+				.getResultList();
+	}
+	
+	/**
+	 * 
+	 * @param provider The authentication provider
+	 * @return A list of identities (the user is not fetched)
+	 */
+	public List<Identity> getIdentitiesWithLogin(String login) {
+		StringBuilder sb = new StringBuilder(256);
+		sb.append("select ident from ").append(AuthenticationImpl.class.getName()).append(" as auth")
+		  .append(" inner join auth.identity as ident")
+		  .append(" inner join ident.user as user")
+		  .append(" where lower(auth.authusername)=:login");
+		return dbInstance.getCurrentEntityManager()
+				.createQuery(sb.toString(), Identity.class)
+				.setParameter("login", login.toLowerCase())
+				.getResultList();
+	}
+	
 	/**
 	 * 
 	 * @param provider The authentication provider
 	 * @return A list of identities (the user is not fetched)
 	 */
 	public List<Identity> getIdentitiesWithAuthentication(String provider) {
-		StringBuilder sb = new StringBuilder();
+		StringBuilder sb = new StringBuilder(256);
 		sb.append("select ident from ").append(AuthenticationImpl.class.getName()).append(" as auth")
 		  .append(" inner join auth.identity as ident")
 		  .append(" where auth.provider=:provider");
@@ -62,8 +128,86 @@ public class AuthenticationDAO {
 				.getResultList();
 	}
 	
-	public boolean hasAuthentication(IdentityRef identity, String provider) {
+	public long countIdentitiesWithAuthentication(String provider) {
+		StringBuilder sb = new StringBuilder(256);
+		sb.append("select count(auth.identity.key) from ").append(AuthenticationImpl.class.getName()).append(" as auth")
+		  .append(" where auth.provider=:provider");
+		List<Long> count = dbInstance.getCurrentEntityManager()
+				.createQuery(sb.toString(), Long.class)
+				.setParameter("provider", provider)
+				.getResultList();
+		return count == null || count.isEmpty() || count.get(0) == null ? 0l : count.get(0).longValue();
+	}
+	
+	/**
+	 * 
+	 * @param provider The authentication provider
+	 * @return A list of identities (the user is not fetched)
+	 */
+	public List<Authentication> getAuthentications(String provider) {
+		StringBuilder sb = new StringBuilder(256);
+		sb.append("select auth from ").append(AuthenticationImpl.class.getName()).append(" as auth")
+		  .append(" inner join fetch auth.identity as ident")
+		  .append(" inner join fetch ident.user as identUser")
+		  .append(" where auth.provider=:provider");
+		return dbInstance.getCurrentEntityManager()
+				.createQuery(sb.toString(), Authentication.class)
+				.setParameter("provider", provider)
+				.getResultList();
+	}
+
+	public Authentication getAuthentication(IdentityRef identity, String provider) {
+		if (identity == null || !StringHelper.containsNonWhitespace(provider)) {
+			throw new IllegalArgumentException("identity must not be null");
+		}
+		
 		StringBuilder sb = new StringBuilder();
+		sb.append("select auth from ").append(AuthenticationImpl.class.getName()).append(" as auth")
+		  .append(" inner join auth.identity as ident")
+		  .append(" inner join ident.user as user")
+		  .append(" where auth.identity.key=:identityKey and auth.provider=:provider");
+		
+		List<Authentication> results = dbInstance.getCurrentEntityManager()
+				.createQuery(sb.toString(), Authentication.class)
+				.setParameter("identityKey", identity.getKey())
+				.setParameter("provider", provider)
+				.getResultList();
+		if (results == null || results.isEmpty()) {
+			return null;
+		}
+		if (results.size() > 1) {
+			throw new AssertException("Found more than one Authentication for a given subject and a given provider.");
+		}
+		return results.get(0);
+	}
+	
+	/**
+	 * The flush mode is set to COMMIT for performance reason. Especially for LDAP synchronization
+	 * on very large groups. Identity and user are fetched with.
+	 * 
+	 * @param authUsername The authentication user name
+	 * @param provider The provider
+	 * @return An authentication
+	 */
+	public Authentication getAuthentication(String authUsername, String provider) {
+		StringBuilder sb = new StringBuilder(256);
+		sb.append("select auth from ").append(AuthenticationImpl.class.getName()).append(" as auth")
+		  .append(" inner join fetch auth.identity as ident")
+		  .append(" inner join fetch ident.user as user")
+		  .append(" where lower(auth.authusername)=:authUsername and auth.provider=:provider");
+		List<Authentication> authentications = dbInstance.getCurrentEntityManager()
+				.createQuery(sb.toString(), Authentication.class)
+				.setFlushMode(FlushModeType.COMMIT)
+				.setParameter("authUsername", authUsername.toLowerCase())
+				.setParameter("provider", provider)
+				.setFirstResult(0)
+				.setMaxResults(1)
+				.getResultList();
+		return authentications != null && !authentications.isEmpty() ? authentications.get(0) : null;
+	}
+	
+	public boolean hasAuthentication(IdentityRef identity, String provider) {
+		StringBuilder sb = new StringBuilder(256);
 		sb.append("select auth.key from ").append(AuthenticationImpl.class.getName()).append(" as auth")
 		  .append(" where auth.identity.key=:identityKey and auth.provider=:provider");
 		List<Long> authentications = dbInstance.getCurrentEntityManager()
@@ -74,6 +218,40 @@ public class AuthenticationDAO {
 				.setMaxResults(1)
 				.getResultList();
 		return authentications != null && !authentications.isEmpty();
+	}
+	
+	/**
+	 * The query fetch the identity.
+	 * 
+	 * @param identity The identity to search authentication for
+	 * @return A list of authentications
+	 */
+	public List<Authentication> getAuthentications(IdentityRef identity) {
+		StringBuilder sb = new StringBuilder(256);
+		sb.append("select auth from ").append(AuthenticationImpl.class.getName()).append(" as auth")
+		  .append(" inner join auth.identity as ident")
+		  .append(" where ident.key=:identityKey");
+		return dbInstance.getCurrentEntityManager()
+				.createQuery(sb.toString(), Authentication.class)
+				.setParameter("identityKey", identity.getKey())
+				.getResultList();
+	}
+	
+	
+	/**
+	 * The query doesn't fetch the identity.
+	 * 
+	 * @param identity The identity to search authentication for
+	 * @return A list of authentications
+	 */
+	public List<Authentication> getAuthenticationsNoFetch(IdentityRef identity) {
+		StringBuilder sb = new StringBuilder(256);
+		sb.append("select auth from ").append(AuthenticationImpl.class.getName()).append(" as auth")
+		  .append(" where auth.identity.key=:identityKey");
+		return dbInstance.getCurrentEntityManager()
+				.createQuery(sb.toString(), Authentication.class)
+				.setParameter("identityKey", identity.getKey())
+				.getResultList();
 	}
 	
 	public Authentication updateAuthentication(Authentication authentication) {

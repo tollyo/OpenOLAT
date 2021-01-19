@@ -647,7 +647,7 @@ public class RepositoryManager {
 				isCourseParticipant, isCourseCoach,
 				isGroupParticipant, isGroupCoach, isGroupWaiting,
 				isCurriculumParticipant, isCurriculumCoach, isMasterCoach,
-				isAuthor, isPrincipal, canLaunch, readOnly);
+				isAuthor, isAdministrator, isLearnRessourceManager, isPrincipal, canLaunch, readOnly);
 	}
 
 	public RepositoryEntry setAccess(final RepositoryEntry re, RepositoryEntryStatusEnum status, boolean allUsers, boolean guests) {
@@ -801,6 +801,22 @@ public class RepositoryManager {
 			updatedRe.getLifecycle().getCreationDate();
 		}
 		dbInstance.commit();
+		return updatedRe;
+	}
+	
+	public RepositoryEntry setDescriptionAndName(final RepositoryEntry re, String displayName, String description) {
+		RepositoryEntry reloadedRe = repositoryEntryDao.loadForUpdate(re);
+		if(reloadedRe == null) {
+			return null;
+		}
+		
+		reloadedRe.setDisplayname(displayName);
+		reloadedRe.setDescription(description);
+		
+		RepositoryEntry updatedRe = dbInstance.getCurrentEntityManager().merge(reloadedRe);
+
+		dbInstance.commit();
+		lifeIndexer.indexDocument(RepositoryEntryDocument.TYPE, updatedRe.getKey());
 		return updatedRe;
 	}
 
@@ -1019,7 +1035,7 @@ public class RepositoryManager {
 	/**
 	 * Count by type, exclude deleted.
 	 * @param restrictedType
-	 * @param roles
+	 * @param Roles
 	 * @return Number of repo entries
 	 */
 	public int countByType(String restrictedType) {
@@ -1056,7 +1072,7 @@ public class RepositoryManager {
 	 * @param limitType
 	 * @return Results
 	 */
-	public List<RepositoryEntry> queryByOwner(IdentityRef identity, boolean follow, String... limitTypes) {
+	public List<RepositoryEntry> queryByOwner(IdentityRef identity, boolean follow, IdentityRef asParticipant, String... limitTypes) {
 		if (identity == null) throw new AssertException("identity can not be null!");
 		QueryBuilder sb = new QueryBuilder(400);
 		sb.append("select v from repositoryentry v")
@@ -1070,6 +1086,14 @@ public class RepositoryManager {
 		if (limitTypes != null && limitTypes.length > 0) {
 			sb.append(" and res.resName in (:types)");
 		}
+		// only as participant
+		if (asParticipant != null) { // fuzzy author search
+			sb.append(" and exists (select relpart from repoentrytogroup as relpart, bgroupmember as participant")
+		      .append("   where relpart.entry.key=v.key and participant.group.key=relpart.group.key")
+		      .append("   and participant.role='").append(GroupRoles.participant.name()).append("'")
+		      .append("   and participant.identity.key=:participantKey")
+		      .append(" )");
+		}
 
 		TypedQuery<RepositoryEntry> query = dbInstance.getCurrentEntityManager()
 				.createQuery(sb.toString(), RepositoryEntry.class)
@@ -1080,6 +1104,9 @@ public class RepositoryManager {
 				types.add(type);
 			}
 			query.setParameter("types", types);
+		}
+		if(asParticipant != null) {
+			query.setParameter("participantKey", asParticipant.getKey());
 		}
 		return query.getResultList();
 	}
@@ -1135,7 +1162,7 @@ public class RepositoryManager {
 	/**
 	 * Query by initial-author
 	 * @param restrictedType
-	 * @param roles
+	 * @param Roles
 	 * @return Results
 	 */
 	public List<RepositoryEntry> queryByInitialAuthor(String initialAuthor) {
@@ -1162,7 +1189,8 @@ public class RepositoryManager {
 	 * @return
 	 */
 	public List<RepositoryEntry> queryResourcesLimitType(Identity identity, Roles roles, boolean organisationWildCard,
-			List<String> resourceTypes, String displayName, String author, String desc, boolean checkCanReference, boolean checkCanCopy) {
+			List<String> resourceTypes, String displayName, String author, String desc, IdentityRef asParticipant,
+			boolean checkCanReference, boolean checkCanCopy) {
 		if(!roles.isAuthor() && !roles.isLearnResourceManager() && !roles.isAdministrator() && !roles.isQualityManager()) {
 			return Collections.emptyList();
 		}
@@ -1222,6 +1250,15 @@ public class RepositoryManager {
 		         .append("      and (user.firstName like :author or user.lastName like :author or identity.name like :author)")
 		         .append("  )");
 		}
+		// only as participant
+		if (asParticipant != null) { // fuzzy author search
+			sb.append(" and exists (select relpart from repoentrytogroup as relpart, bgroupmember as participant")
+		      .append("   where relpart.entry.key=v.key and participant.group.key=relpart.group.key")
+		      .append("   and participant.role='").append(GroupRoles.participant.name()).append("'")
+		      .append("   and participant.identity.key=:participantKey")
+		      .append(" )");
+		}
+		
 		// restrict on resource name
 		if (StringHelper.containsNonWhitespace(displayName)) {
 			displayName = displayName.replace('*','%');
@@ -1250,6 +1287,9 @@ public class RepositoryManager {
 		}
 		if (resourceTypes != null) {
 			dbquery.setParameter("resourcetypes", resourceTypes);
+		}
+		if (asParticipant != null) {
+			dbquery.setParameter("participantKey", asParticipant.getKey());
 		}
 		return dbquery.getResultList();
 	}
@@ -1746,7 +1786,17 @@ public class RepositoryManager {
 				.getResultList();
 	}
 
-	public List<RepositoryEntry> getLearningResourcesAsBookmark(Identity identity, Roles roles, String type, int firstResult, int maxResults) {
+	/**
+	 * This method only returns entries with a valid membership.
+	 * 
+	 * @param identity The identity
+	 * @param roles The roles of the identity
+	 * @param type The type of resource to search for
+	 * @param firstResult The first result
+	 * @param maxResults The max. numbers of results to return or -1 if all
+	 * @return A list of repository entries
+	 */
+	public List<RepositoryEntry> getLearningResourcesAsBookmarkedMember(Identity identity, Roles roles, String type, int firstResult, int maxResults) {
 		if(roles.isGuestOnly()) {
 			return Collections.emptyList();
 		}
@@ -1761,7 +1811,7 @@ public class RepositoryManager {
 		  .append(" ) ")
 		  .append(" and res.resName=:resourceType")
 		  .append(" and exists (select rel from repoentrytogroup as rel, bgroup as baseGroup, bgroupmember as membership")
-		  .append("   where rel.entry=v and rel.group=baseGroup and membership.group=baseGroup and membership.identity.key=:identityKey")
+		  .append("   where rel.entry.key=v.key and rel.group.key=baseGroup.key and membership.group.key=baseGroup.key and membership.identity.key=:identityKey")
 		  .append("   and (")
 		  .append("     (")
 		  .append("      membership.role ").in(OrganisationRoles.administrator, OrganisationRoles.learnresourcemanager, GroupRoles.owner).append(" and v.status").in(RepositoryEntryStatusEnum.preparationToClosed())
@@ -1769,9 +1819,6 @@ public class RepositoryManager {
 		  .append("      membership.role ").in(GroupRoles.coach).append(" and v.status").in(RepositoryEntryStatusEnum.coachPublishedToClosed())
 		  .append("     ) or (")
 		  .append("      membership.role ").in(GroupRoles.participant).append(" and v.status").in(RepositoryEntryStatusEnum.publishedAndClosed())
-		  .append("     ) or (")
-		  .append("      (v.allUsers=true or v.bookable=true) and v.status ").in(RepositoryEntryStatusEnum.publishedAndClosed())
-		  .append("       and membership.role not ").in(OrganisationRoles.invitee, OrganisationRoles.guest, GroupRoles.waiting)
 		  .append("     )")
 		  .append("   )")
 		  .append(" )");

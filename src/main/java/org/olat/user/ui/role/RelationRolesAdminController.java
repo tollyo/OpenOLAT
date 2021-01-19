@@ -77,7 +77,7 @@ public class RelationRolesAdminController extends FormBasicController {
 	private BaseSecurityModule securityModule;
 	@Autowired
 	private IdentityRelationshipService identityRelationsService;
-	
+
 	public RelationRolesAdminController(UserRequest ureq, WindowControl wControl) {
 		super(ureq, wControl, "relation_roles", Util.createPackageTranslator(UserModule.class, ureq.getLocale()));
 		initForm(ureq);
@@ -131,6 +131,7 @@ public class RelationRolesAdminController extends FormBasicController {
 	
 	private void loadModel() {
 		List<RelationRole> relationRoles = identityRelationsService.getAvailableRoles();
+
 		List<RelationRoleRow> rows = new ArrayList<>(relationRoles.size());
 		for(RelationRole relationRole:relationRoles) {
 			rows.add(new RelationRoleRow(relationRole));
@@ -143,9 +144,10 @@ public class RelationRolesAdminController extends FormBasicController {
 	@Override
 	protected void event(UserRequest ureq, Controller source, Event event) {
 		if(editRoleCtrl == source || translatorCtrl == source) {
-			if(event == Event.DONE_EVENT || event == Event.CHANGED_EVENT) {
-				loadModel();
+			if(event == Event.DONE_EVENT) {
+				System.out.println("save");
 			}
+			loadModel();
 			cmc.deactivate();
 			cleanUp();
 		} else if(confirmDeleteCtrl == source) {
@@ -207,8 +209,8 @@ public class RelationRolesAdminController extends FormBasicController {
 	
 	private void doAddRole(UserRequest ureq) {
 		if(guardModalController(editRoleCtrl)) return;
-		
-		editRoleCtrl = new EditRelationRoleController(ureq, getWindowControl());
+
+		editRoleCtrl = new EditRelationRoleController(ureq, getWindowControl(), null);
 		listenTo(editRoleCtrl);
 		
 		cmc = new CloseableModalController(getWindowControl(), "close", editRoleCtrl.getInitialComponent(), true, translate("add.role"));

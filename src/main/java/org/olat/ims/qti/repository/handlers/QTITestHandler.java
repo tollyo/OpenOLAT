@@ -36,16 +36,13 @@ import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.control.generic.layout.MainLayoutController;
 import org.olat.core.gui.control.generic.messages.MessageUIFactory;
-import org.olat.core.gui.control.generic.wizard.StepsMainRunController;
 import org.olat.core.gui.media.MediaResource;
 import org.olat.core.gui.translator.Translator;
 import org.olat.core.id.Identity;
 import org.olat.core.id.OLATResourceable;
 import org.olat.core.id.Organisation;
 import org.olat.core.id.Roles;
-import org.olat.core.logging.AssertException;
 import org.olat.core.util.Util;
-import org.olat.course.assessment.AssessmentMode;
 import org.olat.course.assessment.manager.UserCourseInformationsManager;
 import org.olat.course.nodes.iq.IQEditController;
 import org.olat.course.nodes.iq.QTIResourceTypeModule;
@@ -64,7 +61,6 @@ import org.olat.modules.iq.IQSecurityCallback;
 import org.olat.repository.RepositoryEntry;
 import org.olat.repository.RepositoryEntrySecurity;
 import org.olat.repository.handlers.EditionSupport;
-import org.olat.repository.ui.RepositoryEntryRuntimeController.RuntimeControllerCreator;
 import org.olat.resource.OLATResource;
 import org.olat.resource.references.Reference;
 import org.olat.resource.references.ReferenceManager;
@@ -99,12 +95,15 @@ public class QTITestHandler extends QTIHandler {
 	
 	@Override
 	public boolean supportImport() {
-		return true;
+		return CoreSpringFactory.getImpl(QTIModule.class).isImportResourcesEnabled();
 	}
 
 	@Override
 	public ResourceEvaluation acceptImport(File file, String filename) {
-		return TestFileResource.evaluate(file, filename);
+		if (supportImport()) {
+			return TestFileResource.evaluate(file, filename);
+		}
+		return ResourceEvaluation.notValid();
 	}
 
 	@Override
@@ -153,39 +152,30 @@ public class QTITestHandler extends QTIHandler {
 	}
 
 	@Override
-	public StepsMainRunController createWizardController(OLATResourceable res, UserRequest ureq, WindowControl wControl) {
-		throw new AssertException("Trying to get wizard where no creation wizard is provided for this type.");
-	}
-	
-	/**
-	 * @param ureq
-	 * @param wControl
-	 * @param res
-	 * @return Controller
-	 */
-	@Override
 	public MainLayoutController createLaunchController(RepositoryEntry re, RepositoryEntrySecurity reSecurity, UserRequest ureq, WindowControl wControl) {
 		return new QTIRuntimeController(ureq, wControl, re, reSecurity,
-			new RuntimeControllerCreator() {
-				@Override
-				public Controller create(UserRequest uureq, WindowControl wwControl, TooledStackedPanel toolbarPanel,
-						RepositoryEntry entry, RepositoryEntrySecurity security, AssessmentMode assessmentMode) {
-					Controller runController;
-					OLATResource res = entry.getOlatResource();
-					CoreSpringFactory.getImpl(UserCourseInformationsManager.class)
-						.updateUserCourseInformations(entry.getOlatResource(), uureq.getIdentity());
-					if (QTIResourceTypeModule.isOnyxTest(res)) {
-						Translator trans = Util.createPackageTranslator(IQEditController.class, ureq.getLocale());
-						runController = MessageUIFactory.createInfoMessage(ureq, wControl, "", trans.translate("error.onyx"));
-					} else {
-						Resolver resolver = new ImsRepositoryResolver(entry);
-						IQSecurityCallback secCallback = new IQPreviewSecurityCallback();
-						runController = CoreSpringFactory.getImpl(IQManager.class)
-							.createIQDisplayController(res, resolver, AssessmentInstance.QMD_ENTRY_TYPE_SELF, secCallback, uureq, wwControl);
-					}
-					return runController;
+			(uureq, wwControl, toolbarPanel, entry, security, assessmentMode) -> {
+				QTIModule qtiModule = CoreSpringFactory.getImpl(QTIModule.class);
+				if (!qtiModule.isRunEnabled()) {
+					Translator trans = Util.createPackageTranslator(IQEditController.class, uureq.getLocale());
+					return MessageUIFactory.createInfoMessage(uureq, wwControl, "", trans.translate("error.qti12"));
 				}
-			});
+				
+				Controller runController;
+				OLATResource res = entry.getOlatResource();
+				CoreSpringFactory.getImpl(UserCourseInformationsManager.class)
+					.updateUserCourseInformations(entry.getOlatResource(), uureq.getIdentity());
+				if (QTIResourceTypeModule.isOnyxTest(res)) {
+					Translator trans = Util.createPackageTranslator(IQEditController.class, uureq.getLocale());
+					runController = MessageUIFactory.createInfoMessage(uureq, wwControl, "", trans.translate("error.onyx"));
+				} else {
+					Resolver resolver = new ImsRepositoryResolver(entry);
+					IQSecurityCallback secCallback = new IQPreviewSecurityCallback();
+					runController = CoreSpringFactory.getImpl(IQManager.class)
+						.createIQDisplayController(res, resolver, AssessmentInstance.QMD_ENTRY_TYPE_SELF, secCallback, uureq, wwControl);
+				}
+				return runController;
+		});
 	}
 
 	@Override

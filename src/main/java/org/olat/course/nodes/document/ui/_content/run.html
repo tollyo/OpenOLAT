@@ -1,0 +1,49 @@
+<div class="o_cnd_run">
+	<div class="o_button_group o_button_group_right">
+		#if($r.available("run.edit"))
+			$r.render("run.edit")
+		#end
+		#if($r.available("run.view"))
+			$r.render("run.view")
+		#end
+		#if($r.available("run.download"))
+			$r.render("run.download")
+		#end
+	</div>
+	#if($r.available("run.file"))
+		$r.render("run.file")
+	#end
+	#if($image)
+		<div #if($height) style='height:${height}px'#end>
+			<img src="$mediaUrl/$filename" />
+		</div>
+	#elseif($r.available("audio"))
+		<div class="clearfix">
+			$r.render("audio")
+		</div>
+	#elseif($r.available("content"))
+		<div id="cndContent" class="o_content clearfix">
+			$r.render("content")
+		</div>
+		<script>
+		/* <![CDATA[ */
+			function setHeight() {
+				var contentHeight;
+				#if($height)
+					contentHeight = '$height';
+				#else
+					## reset height to a small value
+					jQuery('#cndContent').height('100px');
+					b_resizeIframeToMainMaxHeight("cndContent");
+					contentHeight = jQuery('#cndContent').height()
+				#end
+				document.documentElement.style.setProperty('--cndcontentheight', `${contentHeight}px`);
+			}
+			setHeight();
+			jQuery(document).on("oo.window.resize.after", () => {
+				setHeight();
+			});
+		/* ]]> */
+		</script>
+	#end
+</div>

@@ -40,6 +40,7 @@ import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiCellR
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiColumnModel;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiTableColumnModel;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiTableDataModelFactory;
+import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiTableReduceEvent;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiTableSearchEvent;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.SelectionEvent;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.StaticFlexiCellRenderer;
@@ -51,12 +52,10 @@ import org.olat.core.gui.control.Event;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.control.generic.dtabs.Activateable2;
 import org.olat.core.id.OLATResourceable;
-import org.olat.core.id.UserConstants;
 import org.olat.core.id.context.ContextEntry;
 import org.olat.core.id.context.StateEntry;
 import org.olat.core.util.Util;
 import org.olat.core.util.resource.OresHelper;
-import org.olat.group.ui.main.MemberListTableModel.Cols;
 import org.olat.modules.portfolio.Binder;
 import org.olat.modules.portfolio.BinderSecurityCallback;
 import org.olat.modules.portfolio.BinderSecurityCallbackFactory;
@@ -75,7 +74,6 @@ import org.olat.modules.portfolio.ui.event.DonePageEvent;
 import org.olat.modules.portfolio.ui.renderer.PageTitleCellRenderer;
 import org.olat.modules.portfolio.ui.renderer.SharedPageStatusCellRenderer;
 import org.olat.modules.portfolio.ui.renderer.StatusCellRenderer;
-import org.olat.modules.portfolio.ui.shared.SharedBindersDataModel.ShareItemCols;
 import org.olat.modules.portfolio.ui.shared.SharedPagesDataModel.SharePageCols;
 import org.olat.user.UserManager;
 import org.olat.user.propertyhandlers.UserPropertyHandler;
@@ -100,7 +98,6 @@ public class SharedPagesController extends FormBasicController implements Activa
 	private int counter;
 	private final List<PageStatus> filters;
 	private final PageStatus defaultFilter;
-	private final boolean isAdministrativeUser;
 	private final List<UserPropertyHandler> userPropertyHandlers;
 	
 	private PageRunController pageCtrl;
@@ -123,7 +120,7 @@ public class SharedPagesController extends FormBasicController implements Activa
 		this.defaultFilter = defaultFilter;
 		this.stackPanel = stackPanel;
 		this.searchParams = searchParams;
-		isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
+		boolean isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
 		userPropertyHandlers = userManager.getUserPropertyHandlersFor(USER_PROPS_ID, isAdministrativeUser);
 		stackPanel.addListener(this);
 
@@ -153,19 +150,13 @@ public class SharedPagesController extends FormBasicController implements Activa
 				FlexiColumnModel.ALIGNMENT_LEFT, titleRenderer));
 		
 		SortKey defaultSortKey = null;
-		if(isAdministrativeUser) {
-			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(ShareItemCols.username));
-			defaultSortKey = new SortKey(Cols.username.name(), true);
-		}
 		// followed by the users fields
 		int colPos = USER_PROPS_OFFSET;
 		for (int i = 0; i < userPropertyHandlers.size(); i++) {
 			UserPropertyHandler userPropertyHandler	= userPropertyHandlers.get(i);
 
 			String propName = userPropertyHandler.getName();
-			if(defaultSortKey == null && i == 0) {
-				defaultSortKey = new SortKey(propName, true);
-			} else if(UserConstants.LASTNAME.equals(propName) && !isAdministrativeUser) {
+			if(defaultSortKey == null) {
 				defaultSortKey = new SortKey(propName, true);
 			}
 			
@@ -185,7 +176,7 @@ public class SharedPagesController extends FormBasicController implements Activa
 		tableEl.setElementCssClass("o_binder_shared_bookmark_pages_listing");
 		tableEl.setEmtpyTableMessageKey("table.sEmptyTable");
 		tableEl.setPageSize(24);
-		tableEl.setAndLoadPersistedPreferences(ureq, "shared-bookmark-pages");
+		tableEl.setAndLoadPersistedPreferences(ureq, "shared-bookmark-pages-v2");
 		
 		if(filters != null && !filters.isEmpty()) {
 			List<FlexiTableFilter> tableFilters = new ArrayList<>(filters.size());
@@ -280,7 +271,7 @@ public class SharedPagesController extends FormBasicController implements Activa
 				}
 			} else if(event instanceof FlexiTableSearchEvent) {
 				FlexiTableSearchEvent se = (FlexiTableSearchEvent)event;
-				if(FlexiTableSearchEvent.QUICK_SEARCH.equals(se.getCommand())
+				if(FlexiTableReduceEvent.QUICK_SEARCH.equals(se.getCommand())
 						|| FormEvent.RESET.getCommand().equals(se.getCommand())) {
 					loadModel(true, true);
 				}

@@ -211,7 +211,7 @@ public class MembersMailController extends FormBasicController {
 		bodyEl.getEditorConfiguration().setRelativeUrls(false);
 		bodyEl.getEditorConfiguration().setRemoveScriptHost(false);
 		
-		attachmentEl = uifactory.addFileElement(getWindowControl(), "file_upload_1", "contact.attachment", formLayout);
+		attachmentEl = uifactory.addFileElement(getWindowControl(), getIdentity(), "file_upload_1", "contact.attachment", formLayout);
 		attachmentEl.addActionListener(FormEvent.ONCHANGE);
 		attachmentEl.setExampleKey("contact.attachment.maxsize", new String[]{ Integer.toString(contactAttachmentMaxSizeInMb) });
 		
@@ -450,9 +450,9 @@ public class MembersMailController extends FormBasicController {
 	
 	private void doDeleteAttachment(Attachment attachment) {
 		attachmentSize -= attachment.getFile().length();
-		attachment.getFile().delete();
+		FileUtils.deleteFile(attachment.getFile());
 		attachments.remove(attachment);
-		uploadCont.setVisible(attachments.size() > 0);
+		uploadCont.setVisible(!attachments.isEmpty());
 		uploadCont.setDirty(true);
 	}
 	

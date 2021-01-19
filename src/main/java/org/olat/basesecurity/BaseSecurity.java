@@ -31,6 +31,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.olat.basesecurity.model.FindNamedIdentity;
+import org.olat.basesecurity.model.FindNamedIdentityCollection;
 import org.olat.core.id.Identity;
 import org.olat.core.id.Organisation;
 import org.olat.core.id.OrganisationRef;
@@ -85,6 +87,9 @@ public interface BaseSecurity {
 
 	public boolean isGuest(IdentityRef identity);
 	
+	public Identity findIdentityByLogin(String login);
+	
+	public Identity findIdentityByNickName(String name);
 
 	/**
 	 * Find an identity by its name. This is an exact match. Use the
@@ -99,29 +104,38 @@ public interface BaseSecurity {
 	public Identity findIdentityByName(String identityName);
 	
 	public Identity findIdentityByNameCaseInsensitive(String identityName);
-	
-	public List<Identity> findIdentitiesByName(Collection<String> identityName);
-	
-	public List<Identity> findIdentitiesByNameCaseInsensitive(Collection<String> identityNames);
 
 	/**
-	 * Find an identity by student/institutionalnumber (i.e., Matrikelnummer), using the getIdentititesByPowerSearch() method.
-	 * <p>
-	 * Be aware that this method does <b>not</b> check the identities status! This method returns identities with any state, also deleted identities!
+	 * Specialized method to import identities in courses, groups... The query
+	 * search in the legacy name of identity, in authentication user name,
+	 * concat first and last name, email, institutional number, institutional
+	 * email. It's all case insensitive.
 	 * 
-	 * @param identityNumber
-	 * @return the identity or null if not found
-	 */
-	public Identity findIdentityByNumber(String identityNumber);
-	
-	/**
-	 * The list of visible identities with a institutional number like in the
-	 * specified list. Deleted ones are not included.
-	 * 
-	 * @param identityNumbers
+	 * @param identityNames A list of names
 	 * @return A list of identities
 	 */
-	public List<Identity> findIdentitiesByNumber(Collection<String> identityNumbers);
+	public List<FindNamedIdentity> findIdentitiesBy(Collection<String> names);
+	
+	/**
+	 * Find the identities by
+	 * {@link #findIdentityByNameCaseInsensitive(Collection<String>)} and separate
+	 * them in unique identities, duplicate identities and not found identity names.
+	 *
+	 * @param names
+	 * @return
+	 */
+	public FindNamedIdentityCollection findAndCollectIdentitiesBy(Collection<String> names);
+	
+	/**
+	 * Find the identities by
+	 * {@link #findIdentityByNameCaseInsensitive(Collection<String>)} and separate
+	 * them in unique identities, duplicate identities and not found identity names.
+	 *
+	 * @param names The list of strings to search for
+	 * @param organisations Limit to the specified list of organizations
+	 * @return
+	 */
+	public FindNamedIdentityCollection findAndCollectIdentitiesBy(Collection<String> names, List<Organisation> organisations);
 	
 	/**
 	 * Find an identity by its user
@@ -226,56 +240,41 @@ public interface BaseSecurity {
 	 */
 	public Long countUniqueUserLoginsSince (Date lastLoginLimit);
 	
-	/**
-	 * @param username the username
-	 * @param user the unpresisted User
-	 * @param provider the provider of the authentication ("OLAT" or "AAI"). If
-	 *          null, no authentication token is generated.
-	 * @param authusername the username used as authentication credential
-	 *          (=username for provider "OLAT")
-	 * @param credential the credentials or null if not used
-	 * @return the new identity
-	 */
-	public Identity createAndPersistIdentityAndUser(String username, String externalId, User user, String provider, String authusername);
 
 	/**
-	 * @param username the username
-	 * @param user the unpresisted User
-	 * @param provider the provider of the authentication ("OLAT" or "AAI"). If
+	 * @param identityName Optionally set the name of identity (if null it will be generated), must be unique and cannot be changed
+	 * @param nickName An optional nickname
+	 * @param externalId An optional external id
+	 * @param user The unpersisted user
+	 * @param provider The provider of the authentication ("OLAT", "LDAP"...). If
 	 *          null, no authentication token is generated.
-	 * @param authusername the username used as authentication credential
+	 * @param authusername The user name used as authentication credential
 	 *          (=username for provider "OLAT")
 	 * @param password The password which will be used as credentials (not hashed it)
-	 * @return the new identity
+	 * @return The new persisted identity
 	 */
-	public Identity createAndPersistIdentityAndUser(String username, String externalId, User user, String provider, String authusername, String password);
+	public Identity createAndPersistIdentityAndUser(String identityName, String nickName, String externalId,
+			User user, String provider, String authusername, String password, Date expirationDate);
 	
 	/**
 	 * Persists the given user, creates an identity for it and adds the user to
-	 * the users system group
+	 * the specified organization or the default one, create an authentication for
+	 * an external provider if the provider is specified.
 	 * 
-	 * @param loginName
-	 * @param externalId
-	 * @param pwd null: no OLAT authentication is generated. If not null, the password will be 
-	 *   encrypted and and an OLAT authentication is generated.
-	 * @param newUser The unpersisted users
-	 * @param organisation The organization where it is user (if null the default organization will be choosed)
-	 * @return Identity
+	 * @param identityName Optionally set the name of identity (if null it will be generated), must be unique and cannot be changed
+	 * @param nickName An optional nickname
+	 * @param externalId An optional external id
+	 * @param user The unpersisted user
+	 * @param provider The provider of the authentication ("OLAT", "LDAP"...). If
+	 *          null, no authentication token is generated.
+	 * @param authusername The user name used as authentication credential
+	 *          (=username for provider "OLAT")
+	 * @param pwd The password which will be used as credentials (not hashed it)
+	 * @param organisation The organization or null, null will be the default organization
+	 * @return The new persisted identity
 	 */
-	public Identity createAndPersistIdentityAndUserWithDefaultProviderAndUserGroup(String loginName, String externalId, String pwd, User newUser, Organisation organisation);
-	
-	/**
-	 * Persists the given user, creates an identity for it and adds the user to
-	 * the users system group, create an authentication for an external provider
-	 * 
-	 * @param loginName
-	 * @param externalId
-	 * @param provider
-	 * @param authusername
-	 * @param newUser
-	 * @return
-	 */
-	public Identity createAndPersistIdentityAndUserWithUserGroup(String loginName, String externalId, String provider, String authusername, User newUser, Organisation organisation);
+	public Identity createAndPersistIdentityAndUserWithOrganisation(String identityName, String nickName, String externalId,
+			User user, String provider, String authusername, String password, Organisation organisation, Date expirationDate);
 	
 
 	/**
@@ -284,7 +283,7 @@ public interface BaseSecurity {
 	 * @param identity
 	 * @return a list of Authentication
 	 */
-	public List<Authentication> getAuthentications(Identity identity);
+	public List<Authentication> getAuthentications(IdentityRef identity);
 
 	/**
 	 * @param identity
@@ -295,6 +294,16 @@ public interface BaseSecurity {
 	public Authentication findAuthentication(IdentityRef identity, String provider);
 	
 	public List<Authentication> findAuthentications(IdentityRef identity, List<String> providers);
+	
+	/**
+	 * This returns the user name by priority: first LDAP, Shibboleth, OLAT
+	 * and after the social logins. The WebDAV logins are excluded. The method
+	 * returns always the same name.
+	 * 
+	 * @param identity The identity
+	 * @return A user name
+	 */
+	public String findAuthenticationName(IdentityRef identity);
 	
 	public String findAuthenticationName(IdentityRef identity, String provider);
 	
@@ -385,7 +394,7 @@ public interface BaseSecurity {
 	public Authentication findAuthenticationByAuthusername(String authusername, String provider);
 	
 
-	public List<Authentication> findAuthenticationByAuthusername(String authusername, List<String> providers);
+	public List<Authentication> findAuthenticationsByAuthusername(String authusername, List<String> providers);
 
 
 	/**
@@ -487,6 +496,19 @@ public interface BaseSecurity {
 	 */
 	public Identity saveIdentityStatus(Identity identity, Integer status, Identity doer);
 	
+	public Identity saveIdentityExpirationDate(Identity identity, Date expirationDate, Identity doer);
+	
+	/**
+	 * Set the status of the identity to active and reset all inactivation dates:
+	 * inactivation date, inactivation email date and reactivation date. A call
+	 * to @see setIdentityLastLogin is needed to prevent the status to be
+	 * set to inactive again.
+	 * 
+	 * @param identity the identity to reactivate
+	 * @return The merged identity
+	 */
+	public Identity reactivatedIdentity(Identity identity);
+	
 	/**
 	 * Set the date of the last login
 	 * @param identity
@@ -535,6 +557,16 @@ public interface BaseSecurity {
 	 * @return
 	 */
 	public boolean isIdentityVisible(Identity identity);
+
+	/**
+	 * Check if identity is allowed to log in. Deleted, login-denied or pending users
+	 * are not allowed to login.
+	 * 
+	 * @param identity The identity
+	 * @param provider  The name of the authentication provider
+	 * @return true if active, inactive...
+	 */
+	public boolean isIdentityLoginAllowed(Identity identity, String provider);
 	
 
 	/**

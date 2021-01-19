@@ -21,7 +21,7 @@ package org.olat.course.groupsandrights;
 
 import java.util.Locale;
 
-import org.olat.basesecurity.RelationRightProvider;
+import org.olat.basesecurity.RightProvider;
 import org.olat.core.gui.translator.Translator;
 import org.olat.core.util.Util;
 import org.springframework.stereotype.Component;
@@ -33,11 +33,33 @@ import org.springframework.stereotype.Component;
  *
  */
 @Component
-public class ViewCourseCalendarRightProvider implements RelationRightProvider {
+public class ViewCourseCalendarRightProvider implements RightProvider {
+
+	public static final String RELATION_RIGHT = CourseRightsEnum.viewCourseCalendar.name();
 
 	@Override
 	public String getRight() {
-		return CourseRightsEnum.viewCourseCalendar.name();
+		return RELATION_RIGHT;
+	}
+
+	@Override
+	public RightProvider getParent() {
+		return null;
+	}
+
+	@Override
+	public boolean isUserRelationsRight() {
+		return true;
+	}
+
+	@Override
+	public int getUserRelationsPosition() {
+		return UserRelationRightsOrder.ViewCourseCalendarRight.ordinal();
+	}
+
+	@Override
+	public int getOrganisationPosition() {
+		return OrganisationRightsOrder.ViewCourseCalendarRight.ordinal();
 	}
 
 	@Override

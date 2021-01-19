@@ -72,6 +72,9 @@ public interface AssessmentService {
 	
 	public AssessmentEntry updateAssessmentEntry(AssessmentEntry entry);
 	
+	public void resetAllRootPassed(RepositoryEntry entry);
+	
+	public void resetAllOverridenRootPassed(RepositoryEntry entry);
 	
 	public List<AssessmentEntry> loadAssessmentEntriesBySubIdent(RepositoryEntry entry, String subIdent);
 	
@@ -79,7 +82,7 @@ public interface AssessmentService {
 	
 	public List<AssessmentEntry> loadAssessmentEntriesByAssessedIdentity(Identity assessedIdentity, RepositoryEntry entry);
 	
-	public List<AssessmentEntry> loadRootAssessmentEntriesByAssessedIdentity(Identity assessedIdentity, Collection<Long> entryKeys);
+	public List<AssessmentEntryScoring> loadRootAssessmentEntriesByAssessedIdentity(Identity assessedIdentity, Collection<Long> entryKeys);
 	
 	public List<AssessmentEntry> loadAssessmentEntries(BusinessGroup assessedGroup, RepositoryEntry entry, String subIdent);
 

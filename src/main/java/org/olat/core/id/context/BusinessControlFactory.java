@@ -503,7 +503,7 @@ public class BusinessControlFactory {
 					}
 				}
 			} catch (ParseException e) {
-				log.warn("Error parsing the date after activate: " + dateEntry, e);
+				log.warn("Error parsing the date after activate: {}", dateEntry, e);
 			}
 		}
 		return date;
@@ -539,7 +539,17 @@ public class BusinessControlFactory {
 		return getURLFromBusinessPathString("url", bPathString);
 	}
 	
-	public String getAuthenticatedURLFromBusinessPathString(String bPathString){
+	public String getAuthenticatedURLFromBusinessPathStrings(String... bPathString) {
+		StringBuilder sb = new StringBuilder();
+		for(String path:bPathString) {
+			if(path != null) {
+				sb.append(path);
+			}
+		}
+		return getAuthenticatedURLFromBusinessPathString(sb.toString());
+	}
+	
+	public String getAuthenticatedURLFromBusinessPathString(String bPathString) {
 		return getURLFromBusinessPathString("auth", bPathString);
 	}
 	

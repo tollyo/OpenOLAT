@@ -28,6 +28,7 @@ package org.olat.course.nodes;
 
 import java.io.File;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -53,6 +54,7 @@ import org.olat.core.util.Util;
 import org.olat.core.util.coordinate.CoordinatorManager;
 import org.olat.core.util.nodes.INode;
 import org.olat.core.util.resource.OresHelper;
+import org.olat.course.CourseFactory;
 import org.olat.course.ICourse;
 import org.olat.course.archiver.ScoreAccountingHelper;
 import org.olat.course.assessment.AssessmentManager;
@@ -82,6 +84,7 @@ import org.olat.course.statistic.StatisticResourceResult;
 import org.olat.course.statistic.StatisticType;
 import org.olat.fileresource.FileResourceManager;
 import org.olat.fileresource.types.ImsQTI21Resource;
+import org.olat.ims.qti.QTIModule;
 import org.olat.ims.qti.QTIResultManager;
 import org.olat.ims.qti.export.QTIExportEssayItemFormatConfig;
 import org.olat.ims.qti.export.QTIExportFIBItemFormatConfig;
@@ -101,10 +104,14 @@ import org.olat.ims.qti.statistics.QTIStatisticResourceResult;
 import org.olat.ims.qti.statistics.QTIStatisticSearchParams;
 import org.olat.ims.qti21.AssessmentTestSession;
 import org.olat.ims.qti21.QTI21DeliveryOptions;
+import org.olat.ims.qti21.QTI21Module;
 import org.olat.ims.qti21.QTI21Service;
 import org.olat.ims.qti21.manager.AssessmentTestSessionDAO;
 import org.olat.ims.qti21.manager.archive.QTI21ArchiveFormat;
+import org.olat.ims.qti21.model.DigitalSignatureOptions;
 import org.olat.ims.qti21.model.QTI21StatisticSearchParams;
+import org.olat.ims.qti21.model.xml.QtiMaxScoreEstimator;
+import org.olat.ims.qti21.model.xml.QtiNodesExtractor;
 import org.olat.ims.qti21.resultexport.QTI21ResultsExportMediaResource;
 import org.olat.ims.qti21.ui.statistics.QTI21StatisticResourceResult;
 import org.olat.ims.qti21.ui.statistics.QTI21StatisticsSecurityCallback;
@@ -137,7 +144,9 @@ public class IQTESTCourseNode extends AbstractAccessableCourseNode implements QT
 	private static final String TRANSLATOR_PACKAGE = Util.getPackageName(IQEditController.class);
 	public static final String TYPE = "iqtest";
 
-	private static final int CURRENT_CONFIG_VERSION = 2;
+	private static final int CURRENT_CONFIG_VERSION = 3;
+
+	private transient RepositoryEntry cachedReferenceRepositoryEntry;
 
 	public IQTESTCourseNode() {
 		this(null);
@@ -185,16 +194,22 @@ public class IQTESTCourseNode extends AbstractAccessableCourseNode implements QT
 				controller = MessageUIFactory.createInfoMessage(ureq, wControl, "", transe.translate("error.onyx"));
 			} else {
 				//QTI 1.2
-				TestFileResource fr = new TestFileResource();
-				fr.overrideResourceableId(ores.getResourceableId());
-				if(!CoordinatorManager.getInstance().getCoordinator().getLocker().isLocked(fr, null)) {
-					AssessmentManager am = userCourseEnv.getCourseEnvironment().getAssessmentManager();
-					IQSecurityCallback sec = new CourseIQSecurityCallback(this, am, ureq.getIdentity());
-					controller = new IQRunController(userCourseEnv, getModuleConfiguration(), sec, ureq, wControl, this, testEntry);
+				QTIModule qtiModule = CoreSpringFactory.getImpl(QTIModule.class);
+				if (qtiModule.isRunEnabled()) {
+					TestFileResource fr = new TestFileResource();
+					fr.overrideResourceableId(ores.getResourceableId());
+					if(!CoordinatorManager.getInstance().getCoordinator().getLocker().isLocked(fr, null)) {
+						AssessmentManager am = userCourseEnv.getCourseEnvironment().getAssessmentManager();
+						IQSecurityCallback sec = new CourseIQSecurityCallback(this, am, ureq.getIdentity());
+						controller = new IQRunController(userCourseEnv, getModuleConfiguration(), sec, ureq, wControl, this, testEntry);
+					} else {
+						String title = trans.translate("editor.lock.title");
+						String message = trans.translate("editor.lock.message");
+						controller = MessageUIFactory.createInfoMessage(ureq, wControl, title, message);
+					}
 				} else {
-					String title = trans.translate("editor.lock.title");
-					String message = trans.translate("editor.lock.message");
-					controller = MessageUIFactory.createInfoMessage(ureq, wControl, title, message);
+					Translator transe = Util.createPackageTranslator(IQEditController.class, ureq.getLocale());
+					controller = MessageUIFactory.createInfoMessage(ureq, wControl, "", transe.translate("error.qti12"));
 				}
 			}
 		}
@@ -222,7 +237,8 @@ public class IQTESTCourseNode extends AbstractAccessableCourseNode implements QT
 		if(ImsQTI21Resource.TYPE_NAME.equals(testEntry.getOlatResource().getResourceableTypeName())) {
 			ModuleConfiguration config = getModuleConfiguration();
 			boolean configRef = config.getBooleanSafe(IQEditController.CONFIG_KEY_CONFIG_REF, false);
-			if(!configRef && config.getIntegerSafe(IQEditController.CONFIG_KEY_TIME_LIMIT, -1) > 0) {
+			if((!configRef && config.getIntegerSafe(IQEditController.CONFIG_KEY_TIME_LIMIT, -1) > 0)
+					|| config.getDateValue(IQEditController.CONFIG_KEY_END_TEST_DATE) != null) {
 				timeLimit = true;
 			} else {
 				AssessmentTest assessmentTest = loadAssessmentTest(testEntry);
@@ -232,6 +248,15 @@ public class IQTESTCourseNode extends AbstractAccessableCourseNode implements QT
 			}
 		}
 		return timeLimit;
+	}
+	
+	public Double getQTI21EvaluatedMaxScore(RepositoryEntry testEntry) {
+		Double estimatedMaxScore = null;
+		if(ImsQTI21Resource.TYPE_NAME.equals(testEntry.getOlatResource().getResourceableTypeName())) {
+			ResolvedAssessmentTest resolvedAssessmentTest = loadResolvedAssessmentTest(testEntry);
+			estimatedMaxScore = QtiMaxScoreEstimator.estimateMaxScore(resolvedAssessmentTest);
+		}
+		return estimatedMaxScore;
 	}
 	
 	/**
@@ -258,17 +283,50 @@ public class IQTESTCourseNode extends AbstractAccessableCourseNode implements QT
 		}
 		return timeLimit;
 	}
+
+	public DigitalSignatureOptions getSignatureOptions(AssessmentTestSession session, Locale locale) {
+		RepositoryEntry testEntry = session.getTestEntry();
+		RepositoryEntry courseEntry = session.getRepositoryEntry();
+		QTI21DeliveryOptions deliveryOptions = CoreSpringFactory.getImpl(QTI21Service.class)
+				.getDeliveryOptions(testEntry);
+		
+		ModuleConfiguration config = getModuleConfiguration();
+		boolean digitalSignature = config.getBooleanSafe(IQEditController.CONFIG_DIGITAL_SIGNATURE,
+			deliveryOptions.isDigitalSignature());
+		boolean sendMail = config.getBooleanSafe(IQEditController.CONFIG_DIGITAL_SIGNATURE_SEND_MAIL,
+			deliveryOptions.isDigitalSignatureMail());
+
+		DigitalSignatureOptions options = new DigitalSignatureOptions(digitalSignature, sendMail, courseEntry, testEntry);
+		if(digitalSignature) {
+			CourseEnvironment courseEnv = CourseFactory.loadCourse(courseEntry).getCourseEnvironment();
+			QTI21AssessmentRunController.decorateCourseConfirmation(session, options, courseEnv, this, testEntry, null, locale);
+		}
+		return options;
+	}
+	
+	public boolean isScoreVisibleAfterCorrection() {
+		String defVisibility = CoreSpringFactory.getImpl(QTI21Module.class).isResultsVisibleAfterCorrectionWorkflow()
+				? IQEditController.CONFIG_VALUE_SCORE_VISIBLE_AFTER_CORRECTION : IQEditController.CONFIG_VALUE_SCORE_NOT_VISIBLE_AFTER_CORRECTION;
+		String visibility = getModuleConfiguration().getStringValue(IQEditController.CONFIG_KEY_SCORE_VISIBILITY_AFTER_CORRECTION, defVisibility);
+		return IQEditController.CONFIG_VALUE_SCORE_VISIBLE_AFTER_CORRECTION.equals(visibility);
+	}
 	
 	public AssessmentTest loadAssessmentTest(RepositoryEntry testEntry) {
 		if(testEntry == null) return null;
 		
-		File unzippedDirRoot = FileResourceManager.getInstance().unzipFileResource(testEntry.getOlatResource());
-		ResolvedAssessmentTest resolvedAssessmentTest = CoreSpringFactory.getImpl(QTI21Service.class)
-				.loadAndResolveAssessmentTest(unzippedDirRoot, false, false);
+		ResolvedAssessmentTest resolvedAssessmentTest = loadResolvedAssessmentTest(testEntry);
 		if(resolvedAssessmentTest != null) {
 			return resolvedAssessmentTest.getRootNodeLookup().extractIfSuccessful();
 		}
 		return null;
+	}
+	
+	public ResolvedAssessmentTest loadResolvedAssessmentTest(RepositoryEntry testEntry) {
+		if(testEntry == null) return null;
+		
+		File unzippedDirRoot = FileResourceManager.getInstance().unzipFileResource(testEntry.getOlatResource());
+		return CoreSpringFactory.getImpl(QTI21Service.class)
+				.loadAndResolveAssessmentTest(unzippedDirRoot, false, false);
 	}
 
 	@Override
@@ -362,7 +420,7 @@ public class IQTESTCourseNode extends AbstractAccessableCourseNode implements QT
 		boolean hasTestReference = getModuleConfiguration().get(IQEditController.CONFIG_KEY_REPOSITORY_SOFTKEY) != null;
 		if (hasTestReference) {
 			/*
-			 * COnfiugre an IQxxx BB with a repo entry, do not publish
+			 * Configure an IQxxx BB with a repo entry, do not publish
 			 * this BB, mark IQxxx as deleted, remove repo entry, undelete BB IQxxx
 			 * and bang you enter this if.
 			 */
@@ -416,12 +474,27 @@ public class IQTESTCourseNode extends AbstractAccessableCourseNode implements QT
 		sd.setActivateableViewIdentifier(pane);
 		status.add(sd);
 	}
+	
+	/**
+	 * @return A cached instance of the reference repository entry. May be not suitable
+	 * 		to insert an assessment entry.
+	 */
+	public RepositoryEntry getCachedReferencedRepositoryEntry() {
+		RepositoryEntry cachedEntry = cachedReferenceRepositoryEntry;
+		if(IQEditController.matchIQReference(cachedEntry, getModuleConfiguration())) {
+			return cachedEntry;
+		}
+		// The method updates the cache
+		return getReferencedRepositoryEntry();
+	}
 
 	@Override
 	public RepositoryEntry getReferencedRepositoryEntry() {
 		// ",false" because we do not want to be strict, but just indicate whether
 		// the reference still exists or not
-		return IQEditController.getIQReference(getModuleConfiguration(), false);
+		RepositoryEntry entry = IQEditController.getIQReference(getModuleConfiguration(), false);
+		cachedReferenceRepositoryEntry = entry;
+		return entry;
 	}
 
 	@Override
@@ -470,14 +543,19 @@ public class IQTESTCourseNode extends AbstractAccessableCourseNode implements QT
 		// 1) prepare result export
 		CourseEnvironment courseEnv = course.getCourseEnvironment();
 		try {
-			RepositoryEntry re = RepositoryManager.getInstance().lookupRepositoryEntryBySoftkey(repositorySoftKey, true);
+			RepositoryEntry re = RepositoryManager.getInstance().lookupRepositoryEntryBySoftkey(repositorySoftKey, false);
+			if(re == null) {
+				log.error("Cannot archive course node. Missing repository entry with soft key: {}", repositorySoftKey);
+				return false;
+			}
+			
 			boolean onyx = QTIResourceTypeModule.isOnyxTest(re.getOlatResource());
 			if (onyx) {
 				return true;
 			} else if(ImsQTI21Resource.TYPE_NAME.equals(re.getOlatResource().getResourceableTypeName())) {
 				// 2a) create export resource
 				List<Identity> identities = ScoreAccountingHelper.loadUsers(courseEnv, options);
-				new QTI21ResultsExportMediaResource(courseEnv, identities, this, archivePath, locale).exportTestResults(exportStream);
+				new QTI21ResultsExportMediaResource(courseEnv, identities, true, this, archivePath, locale).exportTestResults(exportStream);
 				// excel results
 				RepositoryEntry courseEntry = course.getCourseEnvironment().getCourseGroupManager().getCourseEntry();
 				QTI21StatisticSearchParams searchParams = new QTI21StatisticSearchParams(options, re, courseEntry, getIdent());
@@ -562,15 +640,40 @@ public class IQTESTCourseNode extends AbstractAccessableCourseNode implements QT
 			visibility = Boolean.TRUE;
 		}
 		CourseAssessmentService courseAssessmentService = CoreSpringFactory.getImpl(CourseAssessmentService.class);
-		ScoreEvaluation sceval = new ScoreEvaluation(session.getScore().floatValue(), session.getPassed(), assessmentStatus, visibility, 1.0d,
-				AssessmentRunStatus.done, session.getKey());
+		ScoreEvaluation sceval = new ScoreEvaluation(session.getScore().floatValue(), session.getPassed(), assessmentStatus, visibility,
+				null, 1.0d, AssessmentRunStatus.done, session.getKey());
 		courseAssessmentService.updateScoreEvaluation(this, sceval, assessedUserCourseEnv, coachingIdentity, true, by);
 		
 		if(IQEditController.CORRECTION_GRADING.equals(correctionMode)) {
 			AssessmentEntry assessmentEntry = courseAssessmentService.getAssessmentEntry(this, assessedUserCourseEnv);
 			RepositoryEntry testEntry = IQEditController.getIQReference(getModuleConfiguration(), false);
-			CoreSpringFactory.getImpl(GradingService.class).assignGrader(testEntry, assessmentEntry, true);
+			CoreSpringFactory.getImpl(GradingService.class).assignGrader(testEntry, assessmentEntry, session.getFinishTime(), true);
 		}
+	}
+	
+	public void promoteAssessmentTestSession(AssessmentTestSession testSession, UserCourseEnvironment assessedUserCourseEnv,
+			boolean updateScoring, Identity coachingIdentity, Role by) {
+		
+		Float score = null;
+		Boolean passed = null;
+		if(updateScoring) {
+			AssessmentTest assessmentTest = loadAssessmentTest(testSession.getTestEntry());
+			Double cutValue = QtiNodesExtractor.extractCutValue(assessmentTest);
+	
+			BigDecimal finalScore = testSession.getFinalScore();
+			score = finalScore == null ? null : finalScore.floatValue();
+			passed = testSession.getPassed();
+			if(testSession.getManualScore() != null && finalScore != null && cutValue != null) {
+				boolean calculated = finalScore.compareTo(BigDecimal.valueOf(cutValue.doubleValue())) >= 0;
+				passed = Boolean.valueOf(calculated);
+			}
+		}
+
+		CourseAssessmentService courseAssessmentService = CoreSpringFactory.getImpl(CourseAssessmentService.class);
+		AssessmentEntry currentAssessmentEntry = courseAssessmentService.getAssessmentEntry(this, assessedUserCourseEnv);
+		boolean increment = currentAssessmentEntry.getAttempts() == null || currentAssessmentEntry.getAttempts().intValue() == 0;
+		ScoreEvaluation sceval = new ScoreEvaluation(score, passed, null, null, null, 1.0d, AssessmentRunStatus.done, testSession.getKey());
+		courseAssessmentService.updateScoreEvaluation(this, sceval, assessedUserCourseEnv, coachingIdentity, increment, by);
 	}
 
 	/**
@@ -596,13 +699,16 @@ public class IQTESTCourseNode extends AbstractAccessableCourseNode implements QT
 			if (version < CURRENT_CONFIG_VERSION) {
 				// Loaded config is older than current config version => migrate
 				if (version == 1) {
-					// migrate V1 => V2, new parameter 'enableScoreInfo'
-					version = 2;
 					config.set(IQEditController.CONFIG_KEY_ENABLESCOREINFO, Boolean.TRUE);
+				} else if (version <= 2) {
+					if (config.get(IQEditController.CONFIG_KEY_DATE_DEPENDENT_RESULTS) instanceof Boolean) {
+						config.setStringValue(IQEditController.CONFIG_KEY_DATE_DEPENDENT_RESULTS, String.valueOf(config.getBooleanEntry(IQEditController.CONFIG_KEY_DATE_DEPENDENT_RESULTS)));
+					}
 				}
-				config.setConfigurationVersion(CURRENT_CONFIG_VERSION);
 			}
 		}
+		
+		config.setConfigurationVersion(CURRENT_CONFIG_VERSION);
 	}
 
 	@Override

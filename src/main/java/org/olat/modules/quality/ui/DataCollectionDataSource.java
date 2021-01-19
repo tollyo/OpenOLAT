@@ -20,12 +20,9 @@
 package org.olat.modules.quality.ui;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-import org.olat.basesecurity.BaseSecurityModule;
-import org.olat.basesecurity.IdentityRef;
 import org.olat.core.CoreSpringFactory;
 import org.olat.core.commons.persistence.DefaultResultInfos;
 import org.olat.core.commons.persistence.ResultInfos;
@@ -33,7 +30,6 @@ import org.olat.core.commons.persistence.SortKey;
 import org.olat.core.gui.components.form.flexible.elements.FlexiTableFilter;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiTableDataSourceDelegate;
 import org.olat.core.gui.translator.Translator;
-import org.olat.core.id.OrganisationRef;
 import org.olat.modules.quality.QualityDataCollectionView;
 import org.olat.modules.quality.QualityDataCollectionViewSearchParams;
 import org.olat.modules.quality.QualityService;
@@ -48,26 +44,39 @@ import org.springframework.beans.factory.annotation.Autowired;
 public class DataCollectionDataSource implements FlexiTableDataSourceDelegate<DataCollectionRow> {
 	
 	private final Translator translator;
-	private final QualityDataCollectionViewSearchParams searchParams;
+	private final QualityDataCollectionViewSearchParams defaultSearchParams;
+	private QualityDataCollectionViewSearchParams searchParams;
+	private Integer count;
 	
 	@Autowired
 	private QualityService qualityService;
-	@Autowired
-	private BaseSecurityModule securityModule;
 
-	public DataCollectionDataSource(Translator translator, Collection<? extends OrganisationRef> organsationRefs,
-			IdentityRef identityRef) {
+	public DataCollectionDataSource(Translator translator, QualityDataCollectionViewSearchParams defaultSearchParams) {
 		this.translator = translator;
+		this.defaultSearchParams = defaultSearchParams;
+		
 		CoreSpringFactory.autowireObject(this);
-		searchParams = new QualityDataCollectionViewSearchParams();
-		searchParams.setOrgansationRefs(organsationRefs);
-		searchParams.setReportAccessIdentity(identityRef);
-		searchParams.setIgnoreReportAccessRelationRole(!securityModule.isRelationRoleEnabled());
+	}
+
+	public void setSearchParams(QualityDataCollectionViewSearchParams searchParams) {
+		this.searchParams = searchParams;
+		this.searchParams.setOrgansationRefs(defaultSearchParams.getOrgansationRefs());
+		this.searchParams.setReportAccessIdentity(defaultSearchParams.getReportAccessIdentity());
+		this.searchParams.setLearnResourceManagerOrganisationRefs(defaultSearchParams.getLearnResourceManagerOrganisationRefs());
+		this.searchParams.setIgnoreReportAccessRelationRole(defaultSearchParams.isIgnoreReportAccessRelationRole());
+		count = null;
+	}
+	
+	public void resetCount() {
+		count = null;
 	}
 
 	@Override
 	public int getRowCount() {
-		return qualityService.getDataCollectionCount(searchParams);
+		if (count == null) {
+			count = qualityService.getDataCollectionCount(searchParams);
+		}
+		return count.intValue();
 	}
 
 	@Override
@@ -78,6 +87,7 @@ public class DataCollectionDataSource implements FlexiTableDataSourceDelegate<Da
 	@Override
 	public ResultInfos<DataCollectionRow> getRows(String query, List<FlexiTableFilter> filters,
 			List<String> condQueries, int firstResult, int maxResults, SortKey... orderBy) {
+		searchParams.setSearchString(query);
 
 		List<QualityDataCollectionView> dataCollections = qualityService.loadDataCollections(translator, searchParams,
 				firstResult, maxResults, orderBy);

@@ -519,7 +519,6 @@ public abstract class AssessmentObjectComponentRenderer extends DefaultComponent
 				renderTable(renderer, sb, component, resolvedAssessmentItem, itemSessionState, (Table)block, ubu, translator);
 				break;
 			case Object.QTI_CLASS_NAME:
-				System.out.println("1");
 				break;
 			default: {
 				renderStartHtmlTag(sb, component, resolvedAssessmentItem, block, null);
@@ -1030,7 +1029,7 @@ public abstract class AssessmentObjectComponentRenderer extends DefaultComponent
 		ctx.put("isCorrectionSolution", component.isCorrectionSolution());
 		ctx.put("isSolutionMode", renderer.isSolutionMode());
 
-		Renderer fr = Renderer.getInstance(component, translator, ubu, new RenderResult(), renderer.getGlobalSettings());
+		Renderer fr = Renderer.getInstance(component, translator, ubu, new RenderResult(), renderer.getGlobalSettings(), renderer.getRenderer().getCsrfToken());
 		AssessmentRenderer fHints = renderer.newHints(fr);
 		try(AssessmentObjectVelocityRenderDecorator vrdec
 			= new AssessmentObjectVelocityRenderDecorator(fHints, sb, component, resolvedAssessmentItem, itemSessionState, ubu, translator)) {
@@ -1329,7 +1328,8 @@ public abstract class AssessmentObjectComponentRenderer extends DefaultComponent
 			  .append("  formName:'").append(form.getFormName()).append("',\n")
 			  .append("  dispIdField:'").append(form.getDispatchFieldId()).append("',\n")
 			  .append("  dispId:'").append(component.getQtiItem().getFormDispatchId()).append("',\n")
-			  .append("  eventIdField:'").append(form.getEventFieldId()).append("'\n")
+			  .append("  eventIdField:'").append(form.getEventFieldId()).append("',\n")
+			  .append("  csrf:'").append(renderer.getRenderer().getCsrfToken()).append("',\n")
 			  .append(" }).tabOverride();\n")
 			  .append("})\n")
 			  .append(FormJSHelper.getJSEnd());
@@ -1425,7 +1425,7 @@ public abstract class AssessmentObjectComponentRenderer extends DefaultComponent
 				math.getAttributes().add(xmlnsAttribute);
 			}
 			renderStartHtmlTag(mathOutput, component, resolvedAssessmentItem, math, null);
-			math.getContent().forEach((foreignElement)
+			math.getContent().forEach(foreignElement
 					-> renderMath(renderer, mathOutput, component, resolvedAssessmentItem, itemSessionState, foreignElement));
 			renderEndTag(mathOutput, math);
 			String enrichedMathML = StringOutputPool.freePop(mathOutput);
@@ -1617,7 +1617,7 @@ public abstract class AssessmentObjectComponentRenderer extends DefaultComponent
             InputSource assessmentSaxSource = new InputSource(mathStream);
             xmlReader.parse(assessmentSaxSource);
         } catch (final Exception e) {
-            log.error("Rendering XSLT pipeline failed for request {}", e);
+            log.error("Rendering XSLT pipeline failed for request", e);
             sb.append("<span class='o_error'>ERROR MATHML</span>");
         }
 	}

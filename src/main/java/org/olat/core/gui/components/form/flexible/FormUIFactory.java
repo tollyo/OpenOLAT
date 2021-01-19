@@ -36,6 +36,7 @@ import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
 import org.olat.core.gui.components.ComponentEventListener;
 import org.olat.core.gui.components.dropdown.DropdownItem;
+import org.olat.core.gui.components.form.flexible.elements.AddRemoveElement;
 import org.olat.core.gui.components.form.flexible.elements.AutoCompleter;
 import org.olat.core.gui.components.form.flexible.elements.DateChooser;
 import org.olat.core.gui.components.form.flexible.elements.DownloadLink;
@@ -60,6 +61,8 @@ import org.olat.core.gui.components.form.flexible.impl.FormEvent;
 import org.olat.core.gui.components.form.flexible.impl.FormItemImpl;
 import org.olat.core.gui.components.form.flexible.impl.components.SimpleExampleText;
 import org.olat.core.gui.components.form.flexible.impl.components.SimpleFormErrorText;
+import org.olat.core.gui.components.form.flexible.impl.elements.AddRemoveElementImpl;
+import org.olat.core.gui.components.form.flexible.impl.elements.AddRemoveElementImpl.AddRemoveMode;
 import org.olat.core.gui.components.form.flexible.impl.elements.AutoCompleterImpl;
 import org.olat.core.gui.components.form.flexible.impl.elements.DownloadLinkImpl;
 import org.olat.core.gui.components.form.flexible.impl.elements.FileElementImpl;
@@ -95,6 +98,7 @@ import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.media.MediaResource;
 import org.olat.core.gui.themes.Theme;
 import org.olat.core.gui.translator.Translator;
+import org.olat.core.id.Identity;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.UserSession;
 import org.olat.core.util.ValidationStatus;
@@ -270,6 +274,10 @@ public class FormUIFactory {
 		return addCheckboxesVertical(name, name, formLayout, keys, values, null, iconLeftCSS, columns);
 	}
 	
+	public MultipleSelectionElement addCheckboxesVertical(String name, String i18nLabel, FormItemContainer formLayout, String[] keys, String[] values, String[] iconLeftCSS, int columns) {
+		return addCheckboxesVertical(name, i18nLabel, formLayout, keys, values, null, iconLeftCSS, columns);
+	}
+	
 	public MultipleSelectionElement addCheckboxesVertical(String name, String i18nLabel, FormItemContainer formLayout, String[] keys, String[] values, int columns) {
 		return addCheckboxesVertical(name, i18nLabel, formLayout, keys, values, null, null, columns);
 	}
@@ -363,7 +371,7 @@ public class FormUIFactory {
 	 * @return
 	 */
 	public SingleSelection addRadiosHorizontal(final String name, final String i18nLabel, FormItemContainer formLayout, final String[] theKeys, final String[] theValues) {
-		SingleSelection ss = new SingleSelectionImpl(name, name, SingleSelection.Layout.horizontal);
+		SingleSelection ss = new SingleSelectionImpl(name, name, SingleSelection.Layout.horizontal, formLayout.getTranslator().getLocale());
 		ss.setKeysAndValues(theKeys, theValues, null);
 		setLabelIfNotNull(i18nLabel, ss);
 		formLayout.add(ss);
@@ -398,7 +406,7 @@ public class FormUIFactory {
 	 * @return
 	 */
 	public SingleSelection addRadiosVertical(final String name, final String i18nLabel, FormItemContainer formLayout, final String[] theKeys, final String[] theValues) {
-		SingleSelection ss = new SingleSelectionImpl(name, name,  SingleSelection.Layout.vertical);
+		SingleSelection ss = new SingleSelectionImpl(name, name,  SingleSelection.Layout.vertical, formLayout.getTranslator().getLocale());
 		ss.setKeysAndValues(theKeys, theValues, null);
 		setLabelIfNotNull(i18nLabel, ss);
 		formLayout.add(ss);
@@ -684,9 +692,31 @@ public class FormUIFactory {
 	 * @param formLayout
 	 * @return
 	 */
-	public TextAreaElement addTextAreaElement(String name, final String i18nLabel, final int maxLen, final int rows, final int cols, boolean isAutoHeightEnabled, boolean fixedFontWidth,
-		String initialValue, FormItemContainer formLayout) {
-		TextAreaElement te = new TextAreaElementImpl(name, initialValue, rows, cols, isAutoHeightEnabled, fixedFontWidth) {
+	public TextAreaElement addTextAreaElement(String name, final String i18nLabel, final int maxLen, final int rows, final int cols,
+			boolean isAutoHeightEnabled, boolean fixedFontWidth, String initialValue, FormItemContainer formLayout) {
+		return addTextAreaElement(name, i18nLabel, maxLen, rows, cols, isAutoHeightEnabled, fixedFontWidth, false, initialValue, formLayout);
+	}
+	
+	/**
+	 * Add a multi line text element
+	 * @param name
+	 * @param i18nLabel i18n key for the label or null to set no label at all.
+	 * @param maxLen
+	 * @param rows the number of lines or -1 to use default value
+	 * @param cols the number of characters per line or -1 to use 100% of the
+	 *          available space
+	 * @param isAutoHeightEnabled true: element expands to fit content height,
+	 *          (max 100 lines); false: specified rows used
+	 * @param fixedFontWidth 
+	 * @param originalLineBreaks Maintain the original line breaks and prevent the browser
+	 *          to add its own, scroll horizontally if necessary
+	 * @param initialValue Initial value
+	 * @param formLayout
+	 * @return
+	 */
+	public TextAreaElement addTextAreaElement(String name, final String i18nLabel, final int maxLen, final int rows, final int cols,
+			boolean isAutoHeightEnabled, boolean fixedFontWidth, boolean originalLineBreaks, String initialValue, FormItemContainer formLayout) {
+		TextAreaElement te = new TextAreaElementImpl(name, initialValue, rows, cols, isAutoHeightEnabled, fixedFontWidth, originalLineBreaks) {
 			{
 				setNotLongerThanCheck(maxLen, "text.element.error.notlongerthan");
 				// the text.element.error.notlongerthan uses a variable {0} that
@@ -775,12 +805,18 @@ public class FormUIFactory {
 	 *          text element
 	 * @param usess The user session that dispatches the images
 	 * @param wControl the current window controller
-	 * @param wControl
-	 *            the current window controller
+
 	 * @return The rich text element instance
 	 */
 	public RichTextElement addRichTextElementForStringData(String name, String i18nLabel, String initialHTMLValue, int rows,
 			int cols, boolean fullProfile, VFSContainer baseContainer, CustomLinkTreeModel customLinkTreeModel,
+			FormItemContainer formLayout, UserSession usess, WindowControl wControl) {
+		return addRichTextElementForStringData(name, i18nLabel, initialHTMLValue, rows, cols,
+				fullProfile, baseContainer, null, customLinkTreeModel, formLayout, usess, wControl);
+	}
+	
+	public RichTextElement addRichTextElementForStringData(String name, String i18nLabel, String initialHTMLValue, int rows,
+			int cols, boolean fullProfile, VFSContainer baseContainer, String relFilePath, CustomLinkTreeModel customLinkTreeModel,
 			FormItemContainer formLayout, UserSession usess, WindowControl wControl) {
 		// Create richt text element with bare bone configuration
 		WindowBackOffice backoffice = wControl.getWindowBackOffice();
@@ -788,7 +824,7 @@ public class FormUIFactory {
 		setLabelIfNotNull(i18nLabel, rte);
 		// Now configure editor
 		Theme theme = backoffice.getWindow().getGuiTheme();
-		rte.getEditorConfiguration().setConfigProfileFormEditor(fullProfile, usess, theme, baseContainer, customLinkTreeModel);			
+		rte.getEditorConfiguration().setConfigProfileFormEditor(fullProfile, usess, theme, baseContainer, relFilePath, customLinkTreeModel);
 		// Add to form and finish
 		formLayout.add(rte);
 		return rte;
@@ -900,6 +936,7 @@ public class FormUIFactory {
 	 *            The path to the file relative to the baseContainer
 	 * @param customLinkTreeModel
 	 *            A custom link tree model or NULL not not use a custom model
+	 * @param toolLinkTreeModel 
 	 * @param formLayout
 	 *            The form item container where to add the rich text element
 	 * @param usess
@@ -908,19 +945,17 @@ public class FormUIFactory {
 	 *            the current window controller
 	 * @return The richt text element instance
 	 */
-	public RichTextElement addRichTextElementForFileData(String name,
-			final String i18nLabel, String initialValue, final int rows, int cols,
-			VFSContainer baseContainer, String relFilePath,
-			CustomLinkTreeModel customLinkTreeModel,
-			FormItemContainer formLayout, UserSession usess,
-			WindowControl wControl) {
+	public RichTextElement addRichTextElementForFileData(String name, final String i18nLabel, String initialValue,
+			final int rows, int cols, VFSContainer baseContainer, String relFilePath,
+			CustomLinkTreeModel customLinkTreeModel, CustomLinkTreeModel toolLinkTreeModel,
+			FormItemContainer formLayout, UserSession usess, WindowControl wControl) {
 		// Create richt text element with bare bone configuration
 		RichTextElement rte = new RichTextElementImpl(name, initialValue, rows, cols, formLayout.getRootForm(), formLayout.getTranslator().getLocale());
 		setLabelIfNotNull(i18nLabel, rte);
 		// Now configure editor
 		rte.getEditorConfiguration().setConfigProfileFileEditor(usess,
 				wControl.getWindowBackOffice().getWindow().getGuiTheme(),
-				baseContainer, relFilePath, customLinkTreeModel);
+				baseContainer, relFilePath, customLinkTreeModel, toolLinkTreeModel);
 		// Add to form and finish
 		formLayout.add(rte);
 		return rte;
@@ -1060,6 +1095,21 @@ public class FormUIFactory {
 		}
 		return fte;
 	}
+	
+	public FormLink addFormLink(String name, String cmd, String i18nLink, FlexiTableElement table) {
+		return addFormLink(name, cmd, i18nLink, table, Link.LINK);
+	}
+	
+	public FormLink addFormLink(String name, String cmd, String i18nLink, FlexiTableElement table, int presentation) {
+		FormLinkImpl fte = new FormLinkImpl(name, cmd, i18nLink, presentation);
+		fte.setI18nKey(i18nLink);
+		setLabelIfNotNull(null, fte);
+		
+		if(table instanceof FlexiTableElementImpl) {
+			((FlexiTableElementImpl)table).addFormItem(fte);
+		}
+		return fte;
+	}
 
 	/**
 	 * Add a form link with a special css class
@@ -1104,38 +1154,38 @@ public class FormUIFactory {
 	 * @param linkTitle
 	 * @param i18nLabel
 	 * @param file
-	 * @param formLayout
+	 * @param table
 	 * @return
 	 */
-	public DownloadLink addDownloadLink(String name,  String linkTitle, String i18nLabel, VFSLeaf file, FlexiTableElement formLayout) {
+	public DownloadLink addDownloadLink(String name,  String linkTitle, String i18nLabel, VFSLeaf file, FlexiTableElement table) {
 		DownloadLinkImpl fte = new DownloadLinkImpl(name);
 		fte.setLinkText(linkTitle);
 		fte.setDownloadItem(file);
 		setLabelIfNotNull(i18nLabel, fte);
-		if(formLayout != null) {
-			((FlexiTableElementImpl)formLayout).addFormItem(fte);
+		if(table instanceof FlexiTableElementImpl) {
+			((FlexiTableElementImpl)table).addFormItem(fte);
 		}
 		return fte;
 	}
 	
-	public DownloadLink addDownloadLink(String name,  String linkTitle, String i18nLabel, File file, FlexiTableElement formLayout) {
+	public DownloadLink addDownloadLink(String name,  String linkTitle, String i18nLabel, File file, FlexiTableElement table) {
 		DownloadLinkImpl fte = new DownloadLinkImpl(name);
 		fte.setLinkText(linkTitle);
 		fte.setDownloadItem(file);
 		setLabelIfNotNull(i18nLabel, fte);
-		if(formLayout != null) {
-			((FlexiTableElementImpl)formLayout).addFormItem(fte);
+		if(table instanceof FlexiTableElementImpl) {
+			((FlexiTableElementImpl)table).addFormItem(fte);
 		}
 		return fte;
 	}
 	
-	public DownloadLink addDownloadLink(String name,  String linkTitle, String i18nLabel, MediaResource resource, FlexiTableElement formLayout) {
+	public DownloadLink addDownloadLink(String name,  String linkTitle, String i18nLabel, MediaResource resource, FlexiTableElement table) {
 		DownloadLinkImpl fte = new DownloadLinkImpl(name);
 		fte.setLinkText(linkTitle);
 		fte.setDownloadMedia(resource);
 		setLabelIfNotNull(i18nLabel, fte);
-		if(formLayout != null) {
-			((FlexiTableElementImpl)formLayout).addFormItem(fte);
+		if(table instanceof FlexiTableElementImpl) {
+			((FlexiTableElementImpl)table).addFormItem(fte);
 		}
 		return fte;
 	}
@@ -1166,27 +1216,30 @@ public class FormUIFactory {
 	
 	/**
 	 * Add a file upload element, with a label's i18n key being the same as the <code>name<code>.
-	 * If you do not want a label, use the {@link FormUIFactory#addFileElement(String, String, FormItemContainer)} 
+	 * If you do not want a label, use the {@link FormUIFactory#addFileElement(String, Identity, String, FormItemContainer)} 
 	 * method with <code>null</code> value for the <code>i18nKey</code>. 
-	 * 
+	 * @param wControl 
+	 * @param savedBy 
 	 * @param name
 	 * @param formLayout
 	 * @return
 	 */
-	public FileElement addFileElement(WindowControl wControl, String name, FormItemContainer formLayout) {
-		return addFileElement(wControl, name, name, formLayout);
+	public FileElement addFileElement(WindowControl wControl, Identity savedBy, String name, FormItemContainer formLayout) {
+		return addFileElement(wControl, savedBy, name, name, formLayout);
 	}
 	
 		
 	/**
 	 * Add a file upload element
+	 * @param wControl 
+	 * @param savedBy
 	 * @param name
-	 * @param i18nKey
 	 * @param formLayout
+	 * @param i18nKey
 	 * @return
 	 */
-	public FileElement addFileElement(WindowControl wControl, String name, String i18nLabel, FormItemContainer formLayout) {
-		FileElement fileElement = new FileElementImpl(wControl, name);
+	public FileElement addFileElement(WindowControl wControl, Identity savedBy, String name, String i18nLabel, FormItemContainer formLayout) {
+		FileElement fileElement = new FileElementImpl(wControl, savedBy, name);
 		setLabelIfNotNull(i18nLabel, fileElement);
 		formLayout.add(fileElement);
 		return fileElement;
@@ -1280,13 +1333,18 @@ public class FormUIFactory {
 		return slider;
 	}
 	
-	
 	public DropdownItem addDropdownMenu(String name, String i18nLabel, FormItemContainer formLayout, Translator translator) {
-		DropdownItem dropdown = new DropdownItem(name, name, translator);
+		return addDropdownMenu(name, name, i18nLabel, formLayout, translator);
+	}
+	
+	public DropdownItem addDropdownMenu(String name, String label, String i18nLabel, FormItemContainer formLayout, Translator translator) {
+		DropdownItem dropdown = new DropdownItem(name, label, translator);
 		dropdown.setEmbbeded(true);
 		dropdown.setButton(true);
 		setLabelIfNotNull(i18nLabel, dropdown);
-		formLayout.add(dropdown);
+		if (formLayout != null) {
+			formLayout.add(dropdown);
+		}
 		return dropdown;
 	}
 	
@@ -1300,6 +1358,26 @@ public class FormUIFactory {
 			formLayout.add(ratingCmp);
 		}
 		return ratingCmp;
+	}
+	
+	public AddRemoveElement addAddRemoveElement(String name, String i18nLabel, int presentation, boolean showText, FormItemContainer formLayout) {
+		AddRemoveElementImpl addRemove = new AddRemoveElementImpl(name, presentation);
+		addRemove.setShowText(showText);
+		setLabelIfNotNull(i18nLabel, addRemove);
+		if(formLayout != null) {
+			formLayout.add(addRemove);
+		}
+		return addRemove;
+	}
+	
+	public AddRemoveElement addAddRemoveElement(String i18nLabel, int presentation, boolean showText, FormItemContainer formLayout) {
+		return addAddRemoveElement(i18nLabel, i18nLabel, presentation, showText, formLayout);
+	}
+	
+	public AddRemoveElement addAddRemoveElement(String name, String i18nLabel, int presentation, boolean showText, AddRemoveMode displayMode, FormItemContainer formLayout) {
+		AddRemoveElement addRemove = addAddRemoveElement(name, i18nLabel, presentation, showText, formLayout);
+		addRemove.setAddRemoveMode(displayMode);
+		return addRemove;
 	}
 	
 }

@@ -27,13 +27,13 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
-import org.hamcrest.Matchers;
 import org.junit.Assert;
 import org.junit.Test;
 import org.olat.basesecurity.Group;
 import org.olat.basesecurity.GroupRoles;
 import org.olat.basesecurity.OrganisationRoles;
 import org.olat.basesecurity.OrganisationService;
+import org.olat.basesecurity.manager.GroupDAO;
 import org.olat.core.commons.persistence.DB;
 import org.olat.core.id.Identity;
 import org.olat.core.id.Organisation;
@@ -59,6 +59,8 @@ public class RepositoryEntryRelationDAOTest extends OlatTestCase {
 	
 	@Autowired
 	private DB dbInstance;
+	@Autowired
+	private GroupDAO groupDao;
 	@Autowired
 	private RepositoryService repositoryService;
 	@Autowired
@@ -153,10 +155,8 @@ public class RepositoryEntryRelationDAOTest extends OlatTestCase {
 	
 		Object[] firstRole = participantRoles.get(0);
 		Object[] secondRole = participantRoles.get(1);
-		Assert.assertThat((String)firstRole[0], Matchers
-				.either(Matchers.is(GroupRoles.participant.name())).or(Matchers.is(OrganisationRoles.user.name())));
-		Assert.assertThat((String)secondRole[0], Matchers
-				.either(Matchers.is(GroupRoles.participant.name())).or(Matchers.is(OrganisationRoles.user.name())));
+		assertThat((String)firstRole[0]).isIn(GroupRoles.participant.name(), OrganisationRoles.user.name());
+		assertThat((String)secondRole[0]).isIn(GroupRoles.participant.name(), OrganisationRoles.user.name());
 	}
 	
 	@Test
@@ -714,7 +714,7 @@ public class RepositoryEntryRelationDAOTest extends OlatTestCase {
 		List<Identity> groupdParticipants = repositoryEntryRelationDao.getCoachedParticipants(groupCoach1_1, entry);
 		assertThat(groupdParticipants)
 				.hasSize(2)
-				.containsExactly(groupParticipant1_1, groupParticipant1_2);
+				.containsExactlyInAnyOrder(groupParticipant1_1, groupParticipant1_2);
 		
 		// Coach of group 1 is now coach of group 2 as well
 		businessGroupRelationDao.addRole(groupCoach1_1, group2, GroupRoles.coach.name());
@@ -723,7 +723,7 @@ public class RepositoryEntryRelationDAOTest extends OlatTestCase {
 		groupdParticipants = repositoryEntryRelationDao.getCoachedParticipants(groupCoach1_1, entry);
 		assertThat(groupdParticipants)
 				.hasSize(4)
-				.containsExactly(groupParticipant1_1, groupParticipant1_2, groupParticipant2_1, groupParticipant2_2);
+				.containsExactlyInAnyOrder(groupParticipant1_1, groupParticipant1_2, groupParticipant2_1, groupParticipant2_2);
 		
 		// Participant of group 1 is now member of group 2 as well. Get it only once.
 		businessGroupRelationDao.addRole(groupParticipant1_1, group2, GroupRoles.participant.name());
@@ -732,7 +732,7 @@ public class RepositoryEntryRelationDAOTest extends OlatTestCase {
 		groupdParticipants = repositoryEntryRelationDao.getCoachedParticipants(groupCoach1_1, entry);
 		assertThat(groupdParticipants)
 				.hasSize(4)
-				.containsExactly(groupParticipant1_1, groupParticipant1_2, groupParticipant2_1, groupParticipant2_2);
+				.containsExactlyInAnyOrder(groupParticipant1_1, groupParticipant1_2, groupParticipant2_1, groupParticipant2_2);
 		
 		// Course coach is now participant of group 1. He still coaches only the course participants
 		businessGroupRelationDao.addRole(courseCoach, group1, GroupRoles.participant.name());
@@ -756,4 +756,34 @@ public class RepositoryEntryRelationDAOTest extends OlatTestCase {
 				.containsExactlyInAnyOrder(courseParticipant1, courseParticipant2);
 		
 	}
+	
+	@Test
+	public void getGroupDependencies() {
+		List<Long> dependencies = repositoryEntryRelationDao.getBrokenGroupDependencies(0, 5000);
+		Assert.assertNotNull(dependencies);
+		Assert.assertEquals(0, dependencies.size());
+	}
+	
+	@Test
+	public void detectBrokenGroupDependencies() {
+		RepositoryEntry entry = JunitTestHelper.createAndPersistRepositoryEntry();
+		Group group = groupDao.createGroup();
+		RepositoryEntryToGroupRelation relation = repositoryEntryRelationDao.createRelation(group, entry);
+		dbInstance.commitAndCloseSession();
+		
+		List<Long> dependencies = repositoryEntryRelationDao.getBrokenGroupDependencies(0, 5000);
+		Assert.assertNotNull(dependencies);
+		Assert.assertEquals(1, dependencies.size());
+		
+		RepositoryEntryToGroupRelation reloadedRelation = repositoryEntryRelationDao.loadRelationByKey(relation.getKey());
+		repositoryEntryRelationDao.removeRelation(reloadedRelation);
+		dbInstance.commitAndCloseSession();
+		
+		RepositoryEntryToGroupRelation deletedRelation = repositoryEntryRelationDao.loadRelationByKey(reloadedRelation.getKey());
+		Assert.assertNull(deletedRelation);
+		
+		List<Long> brokenDependencies = repositoryEntryRelationDao.getBrokenGroupDependencies(0, 5000);
+		Assert.assertEquals(0, brokenDependencies.size());
+	}
+	
 }

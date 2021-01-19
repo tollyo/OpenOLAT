@@ -33,13 +33,16 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.logging.log4j.Logger;
 import org.olat.core.commons.services.doceditor.DocEditor.Mode;
 import org.olat.core.commons.services.doceditor.DocEditorIdentityService;
-import org.olat.core.commons.services.doceditor.DocEditorSecurityCallback;
+import org.olat.core.commons.services.doceditor.DocEditorService;
 import org.olat.core.commons.services.doceditor.onlyoffice.ApiConfig;
+import org.olat.core.commons.services.doceditor.onlyoffice.OnlyOfficeEditor;
+import org.olat.core.commons.services.doceditor.onlyoffice.OnlyOfficeModule;
 import org.olat.core.commons.services.doceditor.onlyoffice.OnlyOfficeSecurityService;
 import org.olat.core.commons.services.doceditor.onlyoffice.OnlyOfficeService;
 import org.olat.core.commons.services.doceditor.onlyoffice.model.ApiConfigImpl;
 import org.olat.core.commons.services.doceditor.onlyoffice.model.DocumentImpl;
 import org.olat.core.commons.services.doceditor.onlyoffice.model.EditorConfigImpl;
+import org.olat.core.commons.services.doceditor.onlyoffice.model.EmbeddedImpl;
 import org.olat.core.commons.services.doceditor.onlyoffice.model.InfoImpl;
 import org.olat.core.commons.services.doceditor.onlyoffice.model.PermissionsImpl;
 import org.olat.core.commons.services.doceditor.onlyoffice.model.UserImpl;
@@ -75,13 +78,16 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
 
 	private static final Logger log = Tracing.createLoggerFor(OnlyOfficeServiceImpl.class);
 	
-	private static final String LOCK_APP_NAME = "onlyoffice";
 	private static final DateFormat LAST_MODIFIED = new SimpleDateFormat("yyyyMMddHHmmss");
 	
 	private static ObjectMapper mapper = new ObjectMapper();
 
 	@Autowired
+	private OnlyOfficeModule onlyOfficeModule;
+	@Autowired
 	private OnlyOfficeSecurityService onlyOfficeSecurityService;
+	@Autowired
+	private DocEditorService documentEditorServie;
 	@Autowired
 	private DocEditorIdentityService identityService;
 	@Autowired
@@ -118,13 +124,17 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
 	}
 
 	@Override
-	public ApiConfig getApiConfig(VFSMetadata vfsMetadata, Identity identity, DocEditorSecurityCallback secCallback) {
+	public ApiConfig getApiConfig(VFSMetadata vfsMetadata, Identity identity, Mode mode, boolean isDownloadEnabled, boolean versionControlled, String downloadUrl) {
 		String fileName = vfsMetadata.getFilename();
 
 		ApiConfigImpl apiConfig = new ApiConfigImpl();
 		apiConfig.setWidth("100%");
 		apiConfig.setHeight("100%");
-		apiConfig.setType("desktop");
+		String type = "desktop";
+		if (Mode.EMBEDDED.equals(mode)) {
+			type = "embedded";
+		}
+		apiConfig.setType(type);
 		String suffix = FileUtils.getFileSuffix(fileName);
 		String documentType = getEditorDocumentType(suffix);
 		apiConfig.setDocumentType(documentType);
@@ -147,21 +157,27 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
 		document.setInfo(info);
 		
 		PermissionsImpl permissions = new PermissionsImpl();
-		boolean edit = Mode.EDIT.equals(secCallback.getMode());
+		boolean edit = Mode.EDIT.equals(mode);
 		permissions.setEdit(edit);
 		permissions.setComment(true);
-		permissions.setDownload(true);
-		permissions.setFollForms(true);
+		permissions.setDownload(isDownloadEnabled);
+		permissions.setFillForms(true);
 		permissions.setPrint(true);
 		permissions.setReview(true);
 		document.setPermissions(permissions);
 		
 		EditorConfigImpl editorConfig = new EditorConfigImpl();
-		String callbackUrl = getCallbackUrl(vfsMetadata, secCallback.isVersionControlled());
+		String callbackUrl = getCallbackUrl(vfsMetadata, versionControlled);
 		editorConfig.setCallbackUrl(callbackUrl);
-		String mode = edit? "edit": "view";
-		editorConfig.setMode(mode);
+		String modeConfig = edit? "edit": "view";
+		editorConfig.setMode(modeConfig);
 		editorConfig.setLang(identity.getUser().getPreferences().getLanguage());
+		
+		if (Mode.EMBEDDED.equals(mode)) {
+			EmbeddedImpl embedded = new EmbeddedImpl();
+			embedded.setSaveUrl(downloadUrl);
+			editorConfig.setEmbedded(embedded);
+		}
 		apiConfig.setEditor(editorConfig);
 		
 		UserImpl user = new UserImpl();
@@ -244,7 +260,7 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
 				if (versionControlled && vfsLeaf.canVersion() == VFSConstants.YES) {
 					updated = vfsRepositoryService.addVersion(vfsLeaf, identity, "OnlyOffice", content);
 				} else {
-					updated = VFSManager.copyContent(content, vfsLeaf);
+					updated = VFSManager.copyContent(content, vfsLeaf, identity);
 				}
 			} else {
 				log.warn("Update content from ONLYOFICE failed. URL: " + url);
@@ -256,6 +272,7 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
 		if (updated) {
 			log.debug("File updated. File name: " + vfsLeaf.getName());
 			refreshLock(vfsLeaf);
+			vfsRepositoryService.resetThumbnails(vfsLeaf);
 		}
 		
 		return updated;
@@ -268,6 +285,21 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
 			lock.setExpiresAt(inADay);
 		}
 	}
+
+	@Override
+	public boolean isEditLicenseAvailable() {
+		Integer licenseEdit = onlyOfficeModule.getLicenseEdit();
+		if (licenseEdit == null) return true;
+		if (licenseEdit.intValue() <= 0) return false;
+		
+		Long accessCount = documentEditorServie.getAccessCount(OnlyOfficeEditor.TYPE, Mode.EDIT);
+		return accessCount < licenseEdit.intValue();
+	}
+
+	@Override
+	public Long getEditLicensesInUse() {
+		return documentEditorServie.getAccessCount(OnlyOfficeEditor.TYPE, Mode.EDIT);
+	}
 	
 	@Override
 	public boolean isLockNeeded(Mode mode) {
@@ -276,17 +308,17 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
 
 	@Override
 	public boolean isLockedForMe(VFSLeaf vfsLeaf, Identity identity) {
-		return lockManager.isLockedForMe(vfsLeaf, identity, VFSLockApplicationType.collaboration, LOCK_APP_NAME);
+		return lockManager.isLockedForMe(vfsLeaf, identity, VFSLockApplicationType.collaboration, OnlyOfficeEditor.TYPE);
 	}
 
 	@Override
 	public boolean isLockedForMe(VFSLeaf vfsLeaf, VFSMetadata metadata, Identity identity) {
-		return lockManager.isLockedForMe(vfsLeaf, metadata, identity, VFSLockApplicationType.collaboration, LOCK_APP_NAME);
+		return lockManager.isLockedForMe(vfsLeaf, metadata, identity, VFSLockApplicationType.collaboration, OnlyOfficeEditor.TYPE);
 	}
 
 	@Override
 	public LockResult lock(VFSLeaf vfsLeaf, Identity identity) {
-		LockResult lock = lockManager.lock(vfsLeaf, identity, VFSLockApplicationType.collaboration, LOCK_APP_NAME);
+		LockResult lock = lockManager.lock(vfsLeaf, identity, VFSLockApplicationType.collaboration, OnlyOfficeEditor.TYPE);
 		log.debug("Locked file. File name: " + vfsLeaf.getName() + ", Identity: " + identity);
 		return lock;
 	}
@@ -294,7 +326,7 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
 	@Override
 	public void unlock(VFSLeaf vfsLeaf) {
 		LockInfo lock = lockManager.getLock(vfsLeaf);
-		if (lock != null && LOCK_APP_NAME.equals(lock.getAppName())) {
+		if (lock != null && OnlyOfficeEditor.TYPE.equals(lock.getAppName())) {
 			lock.getTokens().clear();
 			lockManager.unlock(vfsLeaf, VFSLockApplicationType.collaboration);
 			log.debug("Unlocked file. File name: " + vfsLeaf.getName());

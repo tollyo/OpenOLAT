@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Locale;
 
 import org.apache.logging.log4j.Logger;
+import org.olat.core.CoreSpringFactory;
 import org.olat.core.commons.fullWebApp.LayoutMain3ColsController;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
@@ -105,8 +106,11 @@ import org.olat.course.run.preview.PreviewConfigController;
 import org.olat.course.tree.CourseEditorTreeModel;
 import org.olat.course.tree.CourseEditorTreeNode;
 import org.olat.course.tree.PublishTreeModel;
+import org.olat.course.wizard.CourseWizardService;
 import org.olat.repository.RepositoryEntry;
 import org.olat.repository.ui.RepositoryEntryRuntimeController.ToolbarAware;
+import org.olat.repository.wizard.AccessAndProperties;
+import org.olat.repository.wizard.ui.AccessAndPropertiesController;
 import org.olat.util.logging.activity.LoggingResourceable;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -213,7 +217,8 @@ public class EditorMainController extends MainLayoutBasicController implements G
 		addLoggingResourceable(LoggingResourceable.wrap(course));
 		
 		// try to acquire edit lock for this course.			
-		lockEntry = CoordinatorManager.getInstance().getCoordinator().getLocker().acquireLock(ores, ureq.getIdentity(), CourseFactory.COURSE_EDITOR_LOCK);
+		lockEntry = CoordinatorManager.getInstance().getCoordinator().getLocker()
+				.acquireLock(ores, getIdentity(), CourseFactory.COURSE_EDITOR_LOCK, getWindow());
 
 		if(CourseFactory.isCourseEditSessionOpen(ores.getResourceableId())) {
 			MainPanel empty = new MainPanel("empty");
@@ -262,7 +267,7 @@ public class EditorMainController extends MainLayoutBasicController implements G
 				 */
 				cetm = course.getEditorTreeModel();
 	
-				CourseEditorEnv cev = new CourseEditorEnvImpl(cetm, cgm, getLocale());
+				CourseEditorEnv cev = new CourseEditorEnvImpl(cetm, cgm, getLocale(), NodeAccessType.of(course));
 				euce = new EditorUserCourseEnvironmentImpl(cev, getWindowControl());
 				euce.getCourseEditorEnv().setCurrentCourseNodeId(null);
 				
@@ -296,6 +301,7 @@ public class EditorMainController extends MainLayoutBasicController implements G
 				nodeTools.setElementCssClass("o_sel_course_editor_change_node");
 
 				deleteNodeLink = LinkFactory.createToolLink(CMD_DELNODE, translate(NLS_COMMAND_DELETENODE), this, "o_icon_delete_item");
+				deleteNodeLink.setElementCssClass("o_sel_course_editor_delete_node");
 				nodeTools.addComponent(deleteNodeLink);
 				moveNodeLink = LinkFactory.createToolLink(CMD_MOVENODE, translate(NLS_COMMAND_MOVENODE), this, "o_icon_move");
 				moveNodeLink.setElementCssClass("o_sel_course_editor_move_node");
@@ -1124,11 +1130,12 @@ public class EditorMainController extends MainLayoutBasicController implements G
 					}
 				}
 				
-				if (runContext.containsKey("accessAndProperties")) {
-					CourseAccessAndProperties accessAndProperties = (CourseAccessAndProperties) runContext.get("accessAndProperties");
+				if (runContext.containsKey(AccessAndPropertiesController.RUN_CONTEXT_KEY)) {
+					AccessAndProperties accessAndProperties = (AccessAndProperties) runContext.get(AccessAndPropertiesController.RUN_CONTEXT_KEY);
 					// fires an EntryChangedEvent for repository entry notifying
 					// about modification.
-					publishManager.changeAccessAndProperties(getIdentity(), accessAndProperties);
+					CourseWizardService courseWizardService = CoreSpringFactory.getImpl(CourseWizardService.class);
+					courseWizardService.changeAccessAndProperties(getIdentity(), accessAndProperties, true);
 					hasChanges = true;					
 				}
 				

@@ -68,8 +68,6 @@ public class AssessmentModePage {
 	 * @return
 	 */
 	public AssessmentModePage editAssessment(String name, Date begin, Date end, boolean manual) {
-		OOGraphene.closeBlueMessageWindow(browser);
-		
 		By nameBy = By.cssSelector("div.o_sel_assessment_mode_name input[type='text']");
 		OOGraphene.waitElement(nameBy, browser);
 		browser.findElement(nameBy).sendKeys(name);
@@ -121,14 +119,6 @@ public class AssessmentModePage {
 	 * @return
 	 */
 	public AssessmentModePage confirmStart() {
-		return confirmDialog();
-	}
-	
-	/**
-	 * Confirm a standard yes/no dialog
-	 * @return
-	 */
-	private AssessmentModePage confirmDialog() {
 		By confirmButtonBy = By.cssSelector("div.modal-dialog div.modal-footer a");
 		List<WebElement> buttonsEl = browser.findElements(confirmButtonBy);
 		buttonsEl.get(0).click();
@@ -151,7 +141,11 @@ public class AssessmentModePage {
 	}
 	
 	public AssessmentModePage confirmStop() {
-		return confirmDialog();
+		By confirmButtonBy = By.cssSelector("div.modal-dialog div.modal-body button.btn-primary");
+		OOGraphene.waitElement(confirmButtonBy, browser);
+		browser.findElement(confirmButtonBy).click();
+		OOGraphene.waitBusy(browser);
+		return this;
 	}
 	
 	/**

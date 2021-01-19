@@ -35,8 +35,8 @@ import org.olat.course.run.CoursePaginationController;
 import org.olat.course.run.userview.CourseTreeModelBuilder;
 import org.olat.course.run.userview.UserCourseEnvironment;
 import org.olat.course.tree.CourseEditorTreeModel;
-import org.olat.modules.assessment.Role;
 import org.olat.modules.assessment.model.AssessmentEntryStatus;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
 /**
@@ -46,6 +46,7 @@ import org.springframework.stereotype.Service;
  *
  */
 @Service
+@Order(10)
 public class ConditionNodeAccessProvider implements NodeAccessProvider {
 	
 	public static String TYPE = "condition";
@@ -60,6 +61,12 @@ public class ConditionNodeAccessProvider implements NodeAccessProvider {
 		Translator translator = Util.createPackageTranslator(ConditionNodeAccessProvider.class, locale);
 		return translator.translate("access.provider.name");
 	}
+	
+	@Override
+	public String getToolTipHelpText(Locale locale) {
+		Translator translator = Util.createPackageTranslator(ConditionNodeAccessProvider.class, locale);
+		return translator.translate("access.provider.toolTip");
+	}
 
 	@Override
 	public boolean isSupported(String courseNodeType) {
@@ -68,6 +75,11 @@ public class ConditionNodeAccessProvider implements NodeAccessProvider {
 
 	@Override
 	public boolean isGuestSupported() {
+		return true;
+	}
+
+	@Override
+	public boolean isConditionExpressionSupported() {
 		return true;
 	}
 
@@ -122,17 +134,17 @@ public class ConditionNodeAccessProvider implements NodeAccessProvider {
 
 	@Override
 	public void onScoreUpdated(CourseNode courseNode, UserCourseEnvironment userCourseEnv, Float score,
-			Boolean userVisibility, Role by) {
+			Boolean userVisibility) {
 		// nothing to do
 	}
 	@Override
-	public void onPassedUpdated(CourseNode courseNode, UserCourseEnvironment userCourseEnv, Boolean passed, Boolean userVisibility, Role by) {
+	public void onPassedUpdated(CourseNode courseNode, UserCourseEnvironment userCourseEnv, Boolean passed, Boolean userVisibility) {
 		// nothing to do
 	}
 
 	@Override
 	public void onStatusUpdated(CourseNode courseNode, UserCourseEnvironment userCourseEnv,
-			AssessmentEntryStatus status, Role by) {
+			AssessmentEntryStatus status) {
 		// nothing to do
 	}
 

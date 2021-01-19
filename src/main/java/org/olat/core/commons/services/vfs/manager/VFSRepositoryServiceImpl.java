@@ -266,6 +266,10 @@ public class VFSRepositoryServiceImpl implements VFSRepositoryService, GenericEv
 
 	@Override
 	public VFSMetadata getMetadataFor(File file) {
+		if(file == null || file.getParentFile() == null) {
+			return null;
+		}
+		
 		String relativePath = getRelativePath(file.getParentFile());
 		if(relativePath.equals("..")) {
 			return null;
@@ -456,49 +460,90 @@ public class VFSRepositoryServiceImpl implements VFSRepositoryService, GenericEv
 	}
 
 	@Override
-	public void itemSaved(VFSLeaf leaf) {
+	public void itemSaved(VFSLeaf leaf, Identity savedBy) {
 		if(leaf == null || leaf.canMeta() != VFSConstants.YES) return; // nothing to do
 		
 		String relativePath = getContainerRelativePath(leaf);
 		Date lastModified = new Date(leaf.getLastModified());
-		metadataDao.updateMetadata(leaf.getSize(), lastModified, relativePath, leaf.getName());
+		// Ensure the existence of the matadata before the update.
+		if (metadataDao.getMetadata(relativePath, leaf.getName(), false) == null) {
+			getMetadataFor(leaf);
+		}
+		metadataDao.updateMetadata(leaf.getSize(), lastModified, savedBy, relativePath, leaf.getName());
+		dbInstance.commitAndCloseSession();
 	}
 
 	@Override
 	public int deleteMetadata(VFSMetadata data) {
 		if(data == null) return 0; // nothing to do
 		
-		List<VFSThumbnailMetadata> thumbnails = thumbnailDao.loadByMetadata(data);
-		for(VFSThumbnailMetadata thumbnail:thumbnails) {
-			VFSItem item = VFSManager.olatRootLeaf("/" + data.getRelativePath(), thumbnail.getFilename());
-			if(item != null && item.exists()) {
-				item.deleteSilently();
-			}
-			thumbnailDao.removeThumbnail(thumbnail);
+		int deleted = 0;
+		List<VFSMetadata> children = metadataDao.getMetadatasOnly(data);
+		for(VFSMetadata child:children) {
+			deleted += deleteMetadata(child);
 		}
 		
-		List<VFSRevision> revisions = getRevisions(data);
+		deleteThumbnailsOfMetadata(data);
+		deleteRevisionsOfMetadata(data);
+
+		data = dbInstance.getCurrentEntityManager().getReference(VFSMetadataImpl.class, data.getKey());
+		metadataDao.removeMetadata(data);
+		if(children.isEmpty()) {
+			dbInstance.commit();
+		} else {
+			dbInstance.commitAndCloseSession();
+		}
+		
+		deleted++;
+		return deleted;
+	}
+	
+	private void deleteRevisionsOfMetadata(VFSMetadata data) {
+		List<VFSRevision> revisions = revisionDao.getRevisionsOnly(data);
 		for(VFSRevision revision:revisions) {
 			File revFile = getRevisionFile(revision);
 			if(revFile != null && revFile.exists()) {
 				try {
 					Files.delete(revFile.toPath());
 				} catch (IOException e) {
-					log.error("Cannot delete thumbnail: {}", revFile, e);
+					log.error("Cannot delete revision: {}", revFile, e);
 				}
 			}
 			revisionDao.deleteRevision(revision);
 		}
-		
-		int deleted = 0;
-		
-		List<VFSMetadata> children = getChildren(data);
-		for(VFSMetadata child:children) {
-			deleted += deleteMetadata(child);
+		if(!revisions.isEmpty()) {
+			dbInstance.commit();
 		}
-		metadataDao.removeMetadata(data);
-		deleted++;
-		return deleted;
+	}
+	
+	private void deleteThumbnailsOfMetadata(VFSMetadata data) {
+		boolean hasThumbnailMetadata = false;
+		List<VFSThumbnailMetadata> thumbnails = thumbnailDao.loadByMetadata(data);
+		for(VFSThumbnailMetadata thumbnail:thumbnails) {
+			VFSItem item = VFSManager.olatRootLeaf("/" + data.getRelativePath(), thumbnail.getFilename());
+			if(item != null && item.exists()) {
+				if(item instanceof LocalFileImpl) {
+					File thumbnailFile = ((LocalFileImpl)item).getBasefile();
+					try {
+						Files.delete(thumbnailFile.toPath());
+					} catch (IOException e) {
+						log.error("Cannot delete thumbnail: {}", thumbnailFile, e);
+					}
+					
+					VFSMetadata thumbnailMetadata = metadataDao.getMetadata(data.getRelativePath(), thumbnail.getFilename(), false);
+					if(thumbnailMetadata != null) {
+						metadataDao.removeMetadata(thumbnailMetadata);
+						hasThumbnailMetadata = true;
+					}
+				} else {
+					item.deleteSilently();
+				}
+			}
+			thumbnailDao.removeThumbnail(thumbnail);
+		}
+		if(!thumbnails.isEmpty() || hasThumbnailMetadata) {
+			dbInstance.commit();
+		}
 	}
 
 	@Override
@@ -552,7 +597,7 @@ public class VFSRepositoryServiceImpl implements VFSRepositoryService, GenericEv
 					targetMetadata = metadataDao.createMetadata(UUID.randomUUID().toString(), relativePath, targetFile.getName(),
 							new Date(), targetFile.length(), false, targetFile.toURI().toString(), "file", parentMetadata);
 				}
-				targetMetadata.copyValues(sourceMetadata);
+				targetMetadata.copyValues(sourceMetadata, true);
 				if(source.canVersion() == VFSConstants.YES || target.canVersion() == VFSConstants.YES) {
 					targetMetadata.setRevisionComment(sourceMetadata.getRevisionComment());
 					targetMetadata.setRevisionNr(sourceMetadata.getRevisionNr());
@@ -582,9 +627,18 @@ public class VFSRepositoryServiceImpl implements VFSRepositoryService, GenericEv
 	@Override
 	public VFSMetadata rename(VFSItem item, String newName) {
 		VFSMetadata metadata = getMetadataFor(item);
-
-		((VFSMetadataImpl)metadata).setFilename(newName);
+		
+		// Is there already a metadata from an other file with the same name
+		VFSMetadata currentMetadata = metadataDao.getMetadata(metadata.getRelativePath(), newName, (item instanceof VFSContainer));
+		if(currentMetadata != null && !currentMetadata.equals(metadata)) {
+			metadata.copyValues(currentMetadata, false);
+			deleteThumbnailsOfMetadata(currentMetadata);
+			deleteRevisionsOfMetadata(currentMetadata);
+			metadataDao.removeMetadata(currentMetadata);
+		}
+		
 		Path newFile = Paths.get(folderModule.getCanonicalRoot(), metadata.getRelativePath(), newName);
+		((VFSMetadataImpl)metadata).setFilename(newName);
 		String uri = newFile.toFile().toURI().toString();
 		((VFSMetadataImpl)metadata).setUri(uri);
 			
@@ -654,6 +708,7 @@ public class VFSRepositoryServiceImpl implements VFSRepositoryService, GenericEv
 					thumbnailLeaf = (VFSLeaf)item;
 				} else if(item == null) {
 					thumbnailDao.removeThumbnail(thumbnail);
+					dbInstance.commit();// free lock ASAP
 				}
 			}
 		}
@@ -689,6 +744,7 @@ public class VFSRepositoryServiceImpl implements VFSRepositoryService, GenericEv
 			try {
 				FinalSize finalSize = thumbnailService.generateThumbnail(file, thumbnailLeaf, maxWidth, maxHeight, fill);
 				if(finalSize == null) {
+					thumbnailLeaf.deleteSilently();
 					thumbnailLeaf = null;
 					metadata.setCannotGenerateThumbnails(Boolean.TRUE);
 					metadataDao.updateMetadata(metadata);
@@ -755,6 +811,7 @@ public class VFSRepositoryServiceImpl implements VFSRepositoryService, GenericEv
 			}
 			thumbnailDao.removeThumbnail(thumbnail);
 		}
+		dbInstance.commit();
 	}
 
 	@Override
@@ -853,7 +910,7 @@ public class VFSRepositoryServiceImpl implements VFSRepositoryService, GenericEv
 			if (addToRevisions(currentLeaf, metadata, identity, comment, false)) {
 				// copy the content of the new file to the old
 				VFSLeaf revFile = getRevisionLeaf(metadata, ((VFSRevisionImpl)revision));
-				if (VFSManager.copyContent(revFile.getInputStream(), currentLeaf)) {
+				if (VFSManager.copyContent(revFile.getInputStream(), currentLeaf, metadata.getFileLastModifiedBy())) {
 					metadata = metadataDao.loadMetadata(metadata.getKey());
 					((VFSMetadataImpl)metadata).copyValues((VFSRevisionImpl)revision);
 					metadata = metadataDao.updateMetadata(metadata);
@@ -884,7 +941,7 @@ public class VFSRepositoryServiceImpl implements VFSRepositoryService, GenericEv
 			if(newFile instanceof net.sf.jazzlib.ZipInputStream || newFile instanceof java.util.zip.ZipInputStream) {
 				newFile = new ShieldInputStream(newFile);
 			}
-			allOk = VFSManager.copyContent(newFile, currentFile);
+			allOk = VFSManager.copyContent(newFile, currentFile, identity);
 		} else {
 			log.error("Cannot create a version of this file: {}", currentFile);
 		}

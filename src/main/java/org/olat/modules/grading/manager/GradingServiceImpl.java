@@ -36,6 +36,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.Logger;
+import org.olat.basesecurity.BaseSecurity;
 import org.olat.basesecurity.IdentityRef;
 import org.olat.commons.calendar.CalendarUtils;
 import org.olat.core.commons.persistence.DB;
@@ -67,6 +68,7 @@ import org.olat.modules.grading.GradingAssignment;
 import org.olat.modules.grading.GradingAssignmentRef;
 import org.olat.modules.grading.GradingAssignmentStatus;
 import org.olat.modules.grading.GradingModule;
+import org.olat.modules.grading.GradingNotificationType;
 import org.olat.modules.grading.GradingService;
 import org.olat.modules.grading.GradingTimeRecord;
 import org.olat.modules.grading.GradingTimeRecordRef;
@@ -118,6 +120,8 @@ public class GradingServiceImpl implements GradingService, UserDataDeletable, Re
 	@Autowired
 	private MailManager mailManager;
 	@Autowired
+	private BaseSecurity securityManager;
+	@Autowired
 	private GradingModule gradingModule;
 	@Autowired
 	private TaxonomyModule taxonomyModule;
@@ -148,7 +152,14 @@ public class GradingServiceImpl implements GradingService, UserDataDeletable, Re
 	
 	@Override
 	public boolean deleteRepositoryEntryData(RepositoryEntry re) {
-		boolean hasAssignment = gradingAssignmentDao.hasGradingAssignment(re);
+		boolean hasAssignment = gradingAssignmentDao.hasGradingAssignment(re); // or grader to identity
+		if(!hasAssignment) {
+			RepositoryEntryGradingConfiguration config = gradingConfigurationDao.getConfiguration(re);
+			if(config != null) {
+				gradedToIdentityDao.deleteGradersRelations(re);
+				gradingConfigurationDao.deleteConfiguration(config);
+			}
+		}
 		return !hasAssignment;
 	}
 
@@ -174,7 +185,7 @@ public class GradingServiceImpl implements GradingService, UserDataDeletable, Re
 		boolean grader = enabled && gradedToIdentityDao.isGrader(identity);
 		boolean resourcesManager = enabled && (roles.isAdministrator() || roles.isLearnResourceManager()
 				|| gradedToIdentityDao.isGradingManager(identity, ImsQTI21Resource.TYPE_NAME));
-		return new GradingSecurity(grader, resourcesManager);
+		return new GradingSecurity(grader, resourcesManager, roles);
 	}
 
 	@Override
@@ -250,10 +261,12 @@ public class GradingServiceImpl implements GradingService, UserDataDeletable, Re
 	
 	private boolean doSendEmails(MailContext context, List<GraderToIdentity> graders, MailTemplate template, MailerResult result) {
 		for(GraderToIdentity grader:graders) {
-			Identity recipient = grader.getIdentity();
-			MailBundle bundle = mailManager.makeMailBundle(context, recipient, template, null, null, result);
-			MailerResult sendResult = mailManager.sendMessage(bundle);
-			result.append(sendResult);
+			if(grader != null && grader.getIdentity() != null) {
+				Identity recipient = grader.getIdentity();
+				MailBundle bundle = mailManager.makeMailBundle(context, recipient, template, null, null, result);
+				MailerResult sendResult = mailManager.sendMessage(bundle);
+				result.append(sendResult);
+			}
 		}
 		return result.isSuccessful();
 	}
@@ -296,7 +309,11 @@ public class GradingServiceImpl implements GradingService, UserDataDeletable, Re
 		}
 		
 		for(IdentityTimeRecordStatistics record:records) {
-			GraderWithStatistics statistics = identityToStatistics.get(record.getKey());
+			Long graderIdentityKey = record.getKey();
+			GraderWithStatistics statistics = identityToStatistics.computeIfAbsent(graderIdentityKey, key -> {
+				Identity grader = securityManager.loadIdentityByKey(graderIdentityKey);
+				return new GraderWithStatistics(grader, GraderStatistics.empty(graderIdentityKey));
+			});
 			statistics.addRecordedTimeInSeconds(record.getTime());
 			statistics.addRecordedMetadataTimeInSeconds(record.getMetadataTime());
 		}
@@ -496,7 +513,7 @@ public class GradingServiceImpl implements GradingService, UserDataDeletable, Re
 				entryRefs.add(row.getReferenceEntry());
 			}
 			
-			Map<RepositoryEntryRef,List<TaxonomyLevel>> levelsMap = repositoryEntryToTaxonomyLevelDao.getTaxonomyLevels(new ArrayList<>(entryRefs));
+			Map<RepositoryEntryRef,List<TaxonomyLevel>> levelsMap = repositoryEntryToTaxonomyLevelDao.getTaxonomyLevels(new ArrayList<>(entryRefs), false);
 			for(GradingAssignmentWithInfos row:rows) {
 				List<TaxonomyLevel> levels = levelsMap.get(row.getReferenceEntry());
 				String levelsToString = taxonomyLevelToString(levels);
@@ -566,11 +583,11 @@ public class GradingServiceImpl implements GradingService, UserDataDeletable, Re
 		for(GradingAssignment assignment:inexactList) {
 			try {
 				RepositoryEntryGradingConfiguration config = gradingConfigurationDao.getConfiguration(assignment.getReferenceEntry());
-				if(exactReminderCalculation(assignment, config.getFirstReminder())) {
+				if(exactReminderCalculation(assignment, assignment.getReminder1Date(), config.getFirstReminder())) {
 					reminder(assignment, config.getFirstReminderSubject(), config.getFirstReminderBody());
 					assignment.setReminder1Date(new Date());
 					gradingAssignmentDao.updateAssignment(assignment);
-				} else if(exactReminderCalculation(assignment, config.getSecondReminder())) {
+				} else if(exactReminderCalculation(assignment, assignment.getReminder2Date(), config.getSecondReminder())) {
 					reminder(assignment, config.getSecondReminderSubject(), config.getSecondReminderBody());
 					assignment.setReminder2Date(new Date());
 					gradingAssignmentDao.updateAssignment(assignment);
@@ -583,8 +600,8 @@ public class GradingServiceImpl implements GradingService, UserDataDeletable, Re
 		}
 	}
 	
-	private boolean exactReminderCalculation(GradingAssignment assignment, Integer reminderPeriod) {
-		if(reminderPeriod == null) return false;
+	private boolean exactReminderCalculation(GradingAssignment assignment, Date sendReminderDate, Integer reminderPeriod) {
+		if(reminderPeriod == null || sendReminderDate != null) return false;
 		
 		Date assignmentDate = assignment.getAssignmentDate();
 		Date assignmentDatePlusPeriod = CalendarUtils.addWorkingDays(assignmentDate, reminderPeriod.intValue());
@@ -607,18 +624,42 @@ public class GradingServiceImpl implements GradingService, UserDataDeletable, Re
 		return sendResult;
 	}
 	
-	private MailerResult reminder(Identity recipient, RepositoryEntry entry, String subject, String body) {
+	private void notificationDaily(Identity grader, RepositoryEntry referenceEntry,
+			List<GradingAssignment> assignments, String subject, String body) {
 		
+		Set<RepositoryEntry> entries = new HashSet<>();
+		for(GradingAssignment assignment: assignments) {
+			RepositoryEntry entry = assignment.getAssessmentEntry().getRepositoryEntry();
+			entries.add(entry);
+		}
+
+		Set<CourseNode> courseNodes = new HashSet<>();
+		for(RepositoryEntry entry:entries) {
+			ICourse course = CourseFactory.loadCourse(entry);
+			Set<String> courseNodeIds = assignments.stream()
+					.filter(assignment -> entry.equals(assignment.getAssessmentEntry().getRepositoryEntry()))
+					.map(assignment -> assignment.getAssessmentEntry().getSubIdent())
+					.collect(Collectors.toSet());
+			for(String courseNodeId:courseNodeIds) {
+				CourseNode courseNode = course.getRunStructure().getNode(courseNodeId);
+				courseNodes.add(courseNode);
+			}
+		}
+
 		GraderMailTemplate template = new GraderMailTemplate(subject, body);
-		decorateGraderMailTemplate(entry, template);
+		// test and taxonomy
+		decorateGraderMailTemplate(referenceEntry, template);
+		
+		template.setEntries(new ArrayList<>(entries));
+		template.setAssessmentDate(assignments.get(0).getAssessmentDate());
+		template.setCourseNodes(new ArrayList<>(courseNodes));
 
 		MailContext context = new MailContextImpl("[CoachSite:0][Grading:0]");
 		
 		MailerResult result = new MailerResult();
-		MailBundle bundle = mailManager.makeMailBundle(context, recipient, template, null, null, result);
+		MailBundle bundle = mailManager.makeMailBundle(context, grader, template, null, null, result);
 		MailerResult sendResult = mailManager.sendMessage(bundle);
 		result.append(sendResult);
-		return sendResult;
 	}
 	
 	private GradingAssignment decorateGraderMailTemplate(GradingAssignment assignment, GraderMailTemplate template) {
@@ -646,20 +687,32 @@ public class GradingServiceImpl implements GradingService, UserDataDeletable, Re
 		if(referenceEntry == null || template == null) return;
 
 		template.setReferenceEntry(referenceEntry);
-		
+
+		StringBuilder taxonomyLevelPath = new StringBuilder();
 		List<TaxonomyLevel> levels = repositoryEntryToTaxonomyLevelDao.getTaxonomyLevels(referenceEntry);
-		String taxonomyLevels = taxonomyLevelToString(levels);
+
+		String taxonomyLevels = taxonomyLevelToString(new ArrayList<>(levels));
 		template.setTaxonomyLevel(taxonomyLevels);
 		
-		if(levels.size() == 1) {
-			TaxonomyLevel level = levels.get(0);
-			List<TaxonomyLevel> parentLine = taxonomyLevelDao.getParentLine(level, level.getTaxonomy());
-			
-			StringBuilder sb = new StringBuilder(256);
-			for(TaxonomyLevel parent:parentLine) {
-				if(sb.length() > 0) sb.append(" / ");
-				sb.append(parent.getDisplayName());
+		if(!levels.isEmpty()) {
+			for(TaxonomyLevel level:levels) {
+				List<TaxonomyLevel> parentLine = taxonomyLevelDao.getParentLine(level, level.getTaxonomy());
+				
+				StringBuilder sb = new StringBuilder(256);
+				for(TaxonomyLevel parent:parentLine) {
+					if(sb.length() > 0) sb.append(" / ");
+					sb.append(parent.getDisplayName());
+				}
+				
+				if(taxonomyLevelPath.length() > 0) {
+					taxonomyLevelPath.append(", ");
+				}
+				taxonomyLevelPath.append(sb);
 			}
+		}
+		
+		if(taxonomyLevelPath.length() > 0) {
+			template.setTaxonomyLevelPath(taxonomyLevelPath.toString());
 		}
 	}
 	
@@ -673,37 +726,63 @@ public class GradingServiceImpl implements GradingService, UserDataDeletable, Re
 		}	
 	}
 	
-	public void sendGraderAsssignmentsNotification(Identity grader) {
-		List<GradingAssignment> assignmentsToNotify = gradingAssignmentDao.getAssignmentsForGradersNotify(grader);
+	public void sendGraderAsssignmentNotification(GraderToIdentity grader, RepositoryEntry referenceEntry,
+			GradingAssignment assignment, RepositoryEntryGradingConfiguration config) {
+		if(grader == null) return; // nothing to do
 
-		List<RepositoryEntry> newReferenceEntries = assignmentsToNotify.stream()
+		GraderMailTemplate mailTemplate = new GraderMailTemplate(config.getNotificationSubject(), config.getNotificationBody());
+		decorateGraderMailTemplate(referenceEntry, mailTemplate);
+
+		MailerResult result = new MailerResult();
+		MailContext context = new MailContextImpl("[RepositoryEntry:0][Grading:0]");
+		decorateGraderMailTemplate(assignment, mailTemplate);
+		doSendEmails(context, Collections.singletonList(grader), mailTemplate, result);
+	}
+	
+	public void sendGraderAsssignmentsNotification(Identity grader) {
+		List<GradingAssignment> assignments = gradingAssignmentDao.getAssignmentsForGradersNotify(grader);
+		List<GradingAssignment> assignmentsToNotify= assignments.stream()
 				.filter(assignment -> assignment.getAssignmentNotificationDate() == null)
-				.map(GradingAssignment::getReferenceEntry)
 				.distinct().collect(Collectors.toList());
-		for(RepositoryEntry newReferenceEntry:newReferenceEntries) {
-			RepositoryEntryGradingConfiguration config = gradingConfigurationDao.getConfiguration(newReferenceEntry);
-			if(StringHelper.containsNonWhitespace(config.getNotificationBody())) {
-				reminder(grader, newReferenceEntry, config.getNotificationSubject(), config.getNotificationBody());
-			}
-		}
 		
-		Date now = new Date();
-		for(GradingAssignment assignmentToNotify:assignmentsToNotify) {
-			assignmentToNotify.setAssignmentNotificationDate(now);
-			gradingAssignmentDao.updateAssignment(assignmentToNotify);
+		if(!assignmentsToNotify.isEmpty()) {
+			List<RepositoryEntry> newReferenceEntries = assignmentsToNotify.stream()
+					.map(GradingAssignment::getReferenceEntry)
+					.distinct().collect(Collectors.toList());
+			for(RepositoryEntry newReferenceEntry:newReferenceEntries) {
+				RepositoryEntryGradingConfiguration config = gradingConfigurationDao.getConfiguration(newReferenceEntry);
+				List<GradingAssignment> refAssignmentsToNotify = assignmentsToNotify.stream()
+						.filter(assignment -> newReferenceEntry.equals(assignment.getReferenceEntry()))
+						.collect(Collectors.toList());
+				if(config.getNotificationTypeEnum() == GradingNotificationType.onceDay
+						&& StringHelper.containsNonWhitespace(config.getNotificationBody())
+						&& !refAssignmentsToNotify.isEmpty()) {
+					notificationDaily(grader, newReferenceEntry, refAssignmentsToNotify, config.getNotificationSubject(), config.getNotificationBody());
+				}
+			}
+			
+			Date now = new Date();
+			for(GradingAssignment assignmentToNotify:assignmentsToNotify) {
+				assignmentToNotify.setAssignmentNotificationDate(now);
+				gradingAssignmentDao.updateAssignment(assignmentToNotify);
+			}
 		}
 		dbInstance.commitAndCloseSession();
 	}
 
 	@Override
-	public void assignGrader(RepositoryEntry referenceEntry, AssessmentEntry assessmentEntry, boolean updateAssessmentDate) {	
+	public GradingAssignment assignGrader(RepositoryEntry referenceEntry, AssessmentEntry assessmentEntry, Date assessmentDate, boolean updateAssessmentDate) {	
+		if(assessmentDate == null) {
+			assessmentDate = new Date();
+		}
+		
 		GradingAssignment assignment = gradingAssignmentDao.getGradingAssignment(referenceEntry, assessmentEntry);
-		if(assignment != null) {
+		if(assignment != null && assignment.getGrader() != null) {
 			if(updateAssessmentDate) {
-				assignment.setAssessmentDate(new Date());
-				gradingAssignmentDao.updateAssignment(assignment);
+				assignment.setAssessmentDate(assessmentDate);
+				assignment = gradingAssignmentDao.updateAssignment(assignment);
 			}
-			return;
+			return assignment;
 		}
 		
 		GraderToIdentity choosedGrader = selectGrader(referenceEntry);
@@ -714,8 +793,32 @@ public class GradingServiceImpl implements GradingService, UserDataDeletable, Re
 			deadLine = CalendarUtils.addWorkingDays(new Date(), config.getGradingPeriod().intValue());
 			deadLine = CalendarUtils.endOfDay(deadLine);
 		}
-		gradingAssignmentDao.createGradingAssignment(choosedGrader, referenceEntry, assessmentEntry, new Date(), deadLine);
+		
+		if(assignment == null) {
+			assignment = gradingAssignmentDao.createGradingAssignment(choosedGrader, referenceEntry, assessmentEntry, new Date(), deadLine);
+		} else {
+			assignment.setAssessmentDate(assessmentDate);
+			assignment.setDeadline(deadLine);
+			if(choosedGrader == null) {
+				assignment.setAssignmentStatus(GradingAssignmentStatus.unassigned);
+			} else {
+				assignment.setAssignmentStatus(GradingAssignmentStatus.assigned);
+				assignment.setAssignmentDate(assessmentDate);
+				assignment.setGrader(choosedGrader);
+			}
+			assignment = gradingAssignmentDao.updateAssignment(assignment);
+		}
 		dbInstance.commit();
+		
+		if(config != null && config.getNotificationTypeEnum() == GradingNotificationType.afterTestSubmission) {
+			if(choosedGrader != null) {
+				sendGraderAsssignmentNotification(choosedGrader, referenceEntry, assignment, config);
+			}
+			assignment.setAssignmentNotificationDate(new Date());
+			assignment = gradingAssignmentDao.updateAssignment(assignment);
+			dbInstance.commit();
+		}
+		return assignment;
 	}
 	
 	protected GraderToIdentity selectGrader(RepositoryEntry referenceEntry) {
@@ -844,9 +947,24 @@ public class GradingServiceImpl implements GradingService, UserDataDeletable, Re
 		log.info(Tracing.M_AUDIT, "Unassign assignment {}", assignment.getKey());
 		return assignment;
 	}
+	
+	@Override
+	public GradingAssignment deactivateAssignment(GradingAssignment assignment) {
+		assignment = gradingAssignmentDao.loadByKey(assignment.getKey());
+		
+		assignment.setAssignmentStatus(GradingAssignmentStatus.deactivated);
+		assignment.setExtendedDeadline(null);
+		assignment.setAssignmentDate(null);
+		assignment.setReminder1Date(null);
+		assignment.setReminder2Date(null);
+		((GradingAssignmentImpl)assignment).setGrader(null);
+		assignment = gradingAssignmentDao.updateAssignment(assignment);
+		log.info(Tracing.M_AUDIT, "Deactivate assignment {}", assignment.getKey());
+		return assignment;
+	}
 
 	@Override
-	public GradingAssignment assignmentDone(GradingAssignment assignment, Long metadataTime) {
+	public GradingAssignment assignmentDone(GradingAssignment assignment, Long metadataTime, Boolean resultsVisibleToUser) {
 		assignment = gradingAssignmentDao.loadByKey(assignment.getKey());
 		assignment.setAssignmentStatus(GradingAssignmentStatus.done);
 		assignment.setClosingDate(new Date());
@@ -857,13 +975,47 @@ public class GradingServiceImpl implements GradingService, UserDataDeletable, Re
 			gradingTimeRecordDao.updateTimeRecord(timeRecord);
 		}
 		log.info(Tracing.M_AUDIT, "Assignment done {}", assignment.getKey());
+		dbInstance.commit();
+		
+		if(resultsVisibleToUser != null && resultsVisibleToUser.booleanValue()) {
+			sendParticipantNotification(assignment);
+		}
 		return assignment;
 	}
 	
+	private void sendParticipantNotification(GradingAssignment assignment) {
+		RepositoryEntry referenceEntry = assignment.getReferenceEntry();
+		RepositoryEntry entry = assignment.getAssessmentEntry().getRepositoryEntry();
+		Identity assessedIdentity = assignment.getAssessmentEntry().getIdentity();
+		String language = assessedIdentity.getUser().getPreferences().getLanguage();
+		Locale locale = I18nManager.getInstance().getLocaleOrDefault(language);
+		Translator translator = Util.createPackageTranslator(GradingAssignmentsListController.class, locale);
+
+		GraderMailTemplate template = GraderMailTemplate.notificationParticipant(translator, entry, null, referenceEntry);
+		if(template == null) {
+			return;
+		}
+		
+		MailContext context = new MailContextImpl("[CoachSite:0][Grading:0]");
+		decorateGraderMailTemplate(assignment, template);
+
+		MailerResult result = new MailerResult();
+		MailBundle bundle = mailManager.makeMailBundle(context, assessedIdentity, template, null, null, result);
+		MailerResult sendResult = mailManager.sendMessage(bundle);
+		result.append(sendResult);
+		
+		if(result.getReturnCode() != MailerResult.OK) {
+			log.warn(Tracing.M_AUDIT, "Cannot send notification mail to {} for assignment: {}", assessedIdentity, assignment);
+		}
+	}
+	
 	@Override
-	public GradingAssignment reopenAssignment(GradingAssignment assignment) {
+	public GradingAssignment reopenAssignment(GradingAssignment assignment, Date assessmentDate) {
 		assignment = gradingAssignmentDao.loadByKey(assignment.getKey());
 		assignment.setAssignmentStatus(GradingAssignmentStatus.assigned);
+		if(assessmentDate != null) {
+			assignment.setAssessmentDate(assessmentDate);
+		}
 		assignment.setClosingDate(null);
 		assignment = gradingAssignmentDao.updateAssignment(assignment);
 		log.info(Tracing.M_AUDIT, "Assignment reopened {}", assignment.getKey());
@@ -955,6 +1107,11 @@ public class GradingServiceImpl implements GradingService, UserDataDeletable, Re
 	@Override
 	public void appendTimeTo(GradingTimeRecordRef record, long addedTime, TimeUnit unit) {
 		gradingTimeRecordDao.appendTimeInSeconds(record, unit.toSeconds(addedTime));
+	}
+
+	@Override
+	public boolean hasRecordedTime(GradingAssignment assignment) {
+		return gradingTimeRecordDao.hasRecordedTime(assignment);
 	}
 
 	@Override

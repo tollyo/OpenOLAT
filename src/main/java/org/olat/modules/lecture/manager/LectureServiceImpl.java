@@ -268,11 +268,8 @@ public class LectureServiceImpl implements LectureService, UserDataDeletable, De
 		lectureBlock.setRollCallStatus(LectureRollCallStatus.closed);
 		LectureBlockImpl block = (LectureBlockImpl)lectureBlockDao.update(lectureBlock);
 		
-		int numOfLectures = block.getEffectiveLecturesNumber();
-		if(numOfLectures <= 0 && block.getStatus() != LectureBlockStatus.cancelled) {
-			numOfLectures = block.getPlannedLecturesNumber();
-		}
-		
+		int numOfLectures = block.getCalculatedLecturesNumber();
+
 		List<LectureBlockRollCall> rollCallList = lectureBlockRollCallDao.getRollCalls(lectureBlock);
 		for(LectureBlockRollCall rollCall:rollCallList) {
 			lectureBlockRollCallDao.adaptLecture(block, rollCall, numOfLectures, author);
@@ -514,6 +511,11 @@ public class LectureServiceImpl implements LectureService, UserDataDeletable, De
 	}
 
 	@Override
+	public List<LectureBlock> getLectureBlocks(List<Long> keys) {
+		return lectureBlockDao.loadByKeys(keys);
+	}
+
+	@Override
 	public List<Reason> getAllReasons() {
 		return reasonDao.getReasons();
 	}
@@ -534,8 +536,8 @@ public class LectureServiceImpl implements LectureService, UserDataDeletable, De
 	}
 
 	@Override
-	public Reason createReason(String title, String description) {
-		return reasonDao.createReason(title, description);
+	public Reason createReason(String title, String description, boolean enabled) {
+		return reasonDao.createReason(title, description, enabled);
 	}
 
 	@Override
@@ -544,8 +546,8 @@ public class LectureServiceImpl implements LectureService, UserDataDeletable, De
 	}
 
 	@Override
-	public List<AbsenceCategory> getAllAbsencesCategories() {
-		return absenceCategoryDao.getAllAbsencesCategories();
+	public List<AbsenceCategory> getAbsencesCategories(Boolean enabled) {
+		return absenceCategoryDao.getAbsencesCategories(enabled);
 	}
 
 	@Override
@@ -554,8 +556,8 @@ public class LectureServiceImpl implements LectureService, UserDataDeletable, De
 	}
 
 	@Override
-	public AbsenceCategory createAbsenceCategory(String title, String description) {
-		return absenceCategoryDao.createAbsenceCategory(title, description);
+	public AbsenceCategory createAbsenceCategory(String title, String description, boolean enabled) {
+		return absenceCategoryDao.createAbsenceCategory(title, description, enabled);
 	}
 
 	@Override
@@ -1140,10 +1142,7 @@ public class LectureServiceImpl implements LectureService, UserDataDeletable, De
 		Map<Identity,LectureBlockRollCall> identityToRollCallMap = rollCalls.stream()
 				.collect(Collectors.toMap(LectureBlockRollCall::getIdentity, call -> call, (u, v) -> u));
 		
-		int numOfLectures = lectureBlock.getEffectiveLecturesNumber();
-		if(numOfLectures <= 0 && lectureBlock.getStatus() != LectureBlockStatus.cancelled) {
-			numOfLectures = lectureBlock.getPlannedLecturesNumber();
-		}
+		int numOfLectures = lectureBlock.getCalculatedLecturesNumber();
 		
 		for(Identity participant:participants) {
 			LectureBlockRollCall rollCall = identityToRollCallMap.get(participant);
@@ -1166,6 +1165,7 @@ public class LectureServiceImpl implements LectureService, UserDataDeletable, De
 		lectureBlock = getLectureBlock(lectureBlock);
 		
 		if(closeLectures) {
+			lectureBlock.setEffectiveLecturesNumber(lectureBlock.getPlannedLecturesNumber());
 			lectureBlock.setStatus(LectureBlockStatus.done);
 			lectureBlock.setRollCallStatus(LectureRollCallStatus.closed);
 		} else {
@@ -1211,10 +1211,7 @@ public class LectureServiceImpl implements LectureService, UserDataDeletable, De
 
 		List<LectureBlockRollCall> rollCallList = lectureBlockRollCallDao.getRollCalls(lectureBlock);
 		for(LectureBlockRollCall rollCall:rollCallList) {
-			int numOfLectures = lectureBlock.getEffectiveLecturesNumber();
-			if(numOfLectures <= 0 && lectureBlock.getStatus() != LectureBlockStatus.cancelled) {
-				numOfLectures = lectureBlock.getPlannedLecturesNumber();
-			}
+			int numOfLectures = lectureBlock.getCalculatedLecturesNumber();
 			lectureBlockRollCallDao.adaptLecture(lectureBlock, rollCall, numOfLectures, null);
 		}
 	}
@@ -1225,10 +1222,7 @@ public class LectureServiceImpl implements LectureService, UserDataDeletable, De
 		for(LectureBlock lectureBlock:lectureBlocks) {
 			List<LectureBlockRollCall> rollCallList = lectureBlockRollCallDao.getRollCalls(lectureBlock);
 			for(LectureBlockRollCall rollCall:rollCallList) {
-				int numOfLectures = lectureBlock.getEffectiveLecturesNumber();
-				if(numOfLectures <= 0 && lectureBlock.getStatus() != LectureBlockStatus.cancelled) {
-					numOfLectures = lectureBlock.getPlannedLecturesNumber();
-				}
+				int numOfLectures = lectureBlock.getCalculatedLecturesNumber();
 				lectureBlockRollCallDao.adaptLecture(lectureBlock, rollCall, numOfLectures, author);
 			}
 			dbInstance.commitAndCloseSession();
@@ -1331,7 +1325,9 @@ public class LectureServiceImpl implements LectureService, UserDataDeletable, De
 	private void sendAutoCloseNotifications(LectureBlock lectureBlock) {
 		RepositoryEntry entry = lectureBlock.getEntry();
 		RepositoryEntryLectureConfiguration config = getRepositoryEntryLectureConfiguration(entry);
-		if(config.isLectureEnabled()) {
+		if(config.isLectureEnabled()
+				&& entry.getEntryStatus() != RepositoryEntryStatusEnum.trash
+				&& entry.getEntryStatus() != RepositoryEntryStatusEnum.deleted) {
 			List<Identity> owners = repositoryEntryRelationDao
 					.getMembers(entry, RepositoryEntryRelationType.all, GroupRoles.owner.name());
 			List<Identity> teachers = getTeachers(lectureBlock);
@@ -1340,9 +1336,9 @@ public class LectureServiceImpl implements LectureService, UserDataDeletable, De
 				MailerResult result = sendMail("lecture.autoclose.notification.subject", "lecture.autoclose.notification.body",
 						owner, teachers, lectureBlock);
 				if(result.getReturnCode() == MailerResult.OK) {
-					log.info(Tracing.M_AUDIT, "Notification of lecture auto-close: " + lectureBlock.getKey() + " in course: " + entry.getKey());
+					log.info(Tracing.M_AUDIT, "Notification of lecture auto-close: {} in course: {}", lectureBlock.getKey(), entry.getKey());
 				} else {
-					log.error("Notification of lecture auto-close cannot be send: " + lectureBlock.getKey() + " in course: " + entry.getKey());
+					log.error("Notification of lecture auto-close cannot be send: {} in course: {}", lectureBlock.getKey(), entry.getKey());
 				}
 			}
 		}

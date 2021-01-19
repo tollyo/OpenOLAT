@@ -126,7 +126,7 @@ public class CourseLayoutGeneratorController extends FormBasicController {
 		this.courseConfig = courseConfig;
 		this.courseEnvironment = courseEnvironment;
 		lockEntry = CoordinatorManager.getInstance().getCoordinator().getLocker()
-				.acquireLock(entry.getOlatResource(), getIdentity(), CourseFactory.COURSE_EDITOR_LOCK);
+				.acquireLock(entry.getOlatResource(), getIdentity(), CourseFactory.COURSE_EDITOR_LOCK, getWindow());
 		this.editable = (lockEntry != null && lockEntry.isSuccess()) && editable;
 		this.onValues = new String[] {translate("on")};
 		
@@ -144,7 +144,11 @@ public class CourseLayoutGeneratorController extends FormBasicController {
 			if(lockEntry.getOwner() != null) {
 				lockerName = userManager.getUserDisplayName(lockEntry.getOwner());
 			}
-			showWarning("error.editoralreadylocked", new String[] { lockerName });
+			if(lockEntry.isDifferentWindows()) {
+				showWarning("error.editoralreadylocked.same.user", new String[] { lockerName });
+			} else {
+				showWarning("error.editoralreadylocked", new String[] { lockerName });
+			}
 		}
 	}
 	
@@ -242,7 +246,7 @@ public class CourseLayoutGeneratorController extends FormBasicController {
 		
 		// offer upload for 2nd logo
 		if(editable) {
-			logoUpl = uifactory.addFileElement(getWindowControl(), "upload.second.logo", formLayout);
+			logoUpl = uifactory.addFileElement(getWindowControl(), getIdentity(), "upload.second.logo", formLayout);
 			logoUpl.addActionListener(FormEvent.ONCHANGE);
 			Set<String> mimeTypes = new HashSet<>();
 			mimeTypes.add("image/*");

@@ -69,6 +69,7 @@ import org.olat.core.util.resource.OresHelper;
 import org.olat.course.assessment.AssessmentMode;
 import org.olat.course.assessment.AssessmentModeManager;
 import org.olat.course.assessment.ui.mode.AssessmentModeForLectureEditController;
+import org.olat.modules.lecture.AbsenceNotice;
 import org.olat.modules.lecture.LectureBlock;
 import org.olat.modules.lecture.LectureBlockRollCall;
 import org.olat.modules.lecture.LectureModule;
@@ -111,12 +112,11 @@ public class TeacherLecturesTableController extends FormBasicController implemen
 	private final String id;
 	private final boolean admin;
 	private final boolean sortAsc;
+	private final int defaultPageSize;
 	private final String emptyI18nKey;
 	private final boolean withTeachers;
 	private final boolean withAssessment;
 	private final boolean withRepositoryEntry;
-	
-	private final boolean isAdministrativeUser;
 	private final boolean authorizedAbsenceEnabled;
 	
 	@Autowired
@@ -131,7 +131,7 @@ public class TeacherLecturesTableController extends FormBasicController implemen
 	private AssessmentModeManager assessmentModeMgr;
 	
 	public TeacherLecturesTableController(UserRequest ureq, WindowControl wControl,
-			boolean admin, String emptyI18nKey, boolean sortAsc, String id,
+			boolean admin, String emptyI18nKey, boolean sortAsc, String id, int defaultPageSize,
 			boolean withRepositoryEntry, boolean withTeachers, boolean withAssessment) {
 		super(ureq, wControl, "teacher_view_table");
 		this.id = id;
@@ -140,10 +140,9 @@ public class TeacherLecturesTableController extends FormBasicController implemen
 		this.emptyI18nKey = emptyI18nKey;
 		this.withTeachers = withTeachers;
 		this.withAssessment = withAssessment;
+		this.defaultPageSize = defaultPageSize;
 		this.withRepositoryEntry = withRepositoryEntry;
 		
-		Roles roles = ureq.getUserSession().getRoles();
-		isAdministrativeUser = securityModule.isUserAllowedAdminProps(roles);
 		authorizedAbsenceEnabled = lectureModule.isAuthorizedAbsenceEnabled();
 		initForm(ureq);
 	}
@@ -182,7 +181,7 @@ public class TeacherLecturesTableController extends FormBasicController implemen
 		columnsModel.addFlexiColumnModel(toolsCol);
 		
 		tableModel = new TeacherOverviewDataModel(columnsModel, getLocale());
-		tableEl = uifactory.addTableElement(getWindowControl(), "table", tableModel, 20, false, getTranslator(), formLayout);
+		tableEl = uifactory.addTableElement(getWindowControl(), "table", tableModel, defaultPageSize, false, getTranslator(), formLayout);
 		
 		FlexiTableSortOptions sortOptions = new FlexiTableSortOptions();
 		sortOptions.setDefaultOrderBy(new SortKey(TeachCols.date.name(), sortAsc));
@@ -190,7 +189,7 @@ public class TeacherLecturesTableController extends FormBasicController implemen
 		tableEl.setCustomizeColumns(false);
 		tableEl.setNumOfRowsEnabled(false);
 		tableEl.setEmtpyTableMessageKey(emptyI18nKey);
-		tableEl.setAndLoadPersistedPreferences(ureq, "lecture-teacher-overview-v2-".concat(id));
+		tableEl.setAndLoadPersistedPreferences(ureq, "lecture-teacher-overview-v3-".concat(id));
 	}
 	
 	public int getRowCount() {
@@ -337,6 +336,9 @@ public class TeacherLecturesTableController extends FormBasicController implemen
 	private void doExportLectureBlock(UserRequest ureq, LectureBlock row) {
 		LectureBlock lectureBlock = lectureService.getLectureBlock(row);
 		List<Identity> teachers = lectureService.getTeachers(lectureBlock);
+		
+		Roles roles = ureq.getUserSession().getRoles();
+		boolean isAdministrativeUser = securityModule.isUserAllowedAdminProps(roles);
 		LectureBlockExport export = new LectureBlockExport(lectureBlock, teachers, isAdministrativeUser, authorizedAbsenceEnabled, getTranslator());
 		ureq.getDispatchResult().setResultingMediaResource(export);
 	}
@@ -348,10 +350,12 @@ public class TeacherLecturesTableController extends FormBasicController implemen
 			Collections.sort(participants, new IdentityComparator(getLocale()));
 		}
 		List<LectureBlockRollCall> rollCalls = lectureService.getRollCalls(row);
+		List<AbsenceNotice> notices = lectureService.getAbsenceNoticeRelatedTo(lectureBlock);
+
 		try {
 			LecturesBlockPDFExport export = new LecturesBlockPDFExport(lectureBlock, authorizedAbsenceEnabled, getTranslator());
 			export.setTeacher(userManager.getUserDisplayName(getIdentity()));
-			export.create(participants, rollCalls);
+			export.create(participants, rollCalls, notices);
 			ureq.getDispatchResult().setResultingMediaResource(export);
 		} catch (IOException | TransformerException e) {
 			logError("", e);

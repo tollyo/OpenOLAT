@@ -74,7 +74,7 @@ public class CPEditMainController extends BasicController implements ToolbarAwar
 		OLATResourceable ores = cpEntry.getOlatResource();
 
 		// acquire lock for resource
-		lock = CoordinatorManager.getInstance().getCoordinator().getLocker().acquireLock(ores, ureq.getIdentity(), null);
+		lock = CoordinatorManager.getInstance().getCoordinator().getLocker().acquireLock(ores, ureq.getIdentity(), null, getWindow());
 		cp = cpManager.load(cpContainer, ores);
 		
 		CPPackageConfig packageConfig = cpManager.getCPPackageConfig(ores);
@@ -106,9 +106,13 @@ public class CPEditMainController extends BasicController implements ToolbarAwar
 					showWarning("maincontroller.cp.created.with.third.party.editor");
 				}
 			} else {
-				showInfo("contentcontroller.no.lock");
+				if(lock.isDifferentWindows()) {
+					showWarning("contentcontroller.no.lock.same.user");
+				} else {
+					showWarning("contentcontroller.no.lock");
+				}
 				
-				CPAssessmentProvider cpAssessmentProvider = PersistingAssessmentProvider.create(cpEntry, getIdentity());
+				CPAssessmentProvider cpAssessmentProvider = PersistingAssessmentProvider.create(cpEntry, getIdentity(), false);
 				Controller cpCtr = CPUIFactory.getInstance()
 						.createMainLayoutController(ureq, wControl, cpContainer, true, deliveryOptions, cpAssessmentProvider);
 				putInitialPanel(cpCtr.getInitialComponent());
@@ -134,11 +138,6 @@ public class CPEditMainController extends BasicController implements ToolbarAwar
 	@Override
 	protected void doDispose() {
 		Long oresId = cp.getResourcable().getResourceableId();
-		logAudit("cp editor closing. oresId: " + oresId);
-		if (lock.isSuccess() && contentCtr != null) {
-			// Save CP to zip
-			cpManager.writeToZip(cp);
-		}
 		// In any case, release the lock
 		CoordinatorManager.getInstance().getCoordinator().getLocker().releaseLock(lock);
 		logAudit("finished editing cp. ores-id: " + oresId);

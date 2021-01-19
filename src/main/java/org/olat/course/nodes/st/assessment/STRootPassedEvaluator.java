@@ -21,6 +21,10 @@ package org.olat.course.nodes.st.assessment;
 
 import java.util.Date;
 
+import org.apache.logging.log4j.Logger;
+import org.hibernate.LazyInitializationException;
+import org.olat.core.CoreSpringFactory;
+import org.olat.core.logging.Tracing;
 import org.olat.course.nodes.CourseNode;
 import org.olat.course.nodes.STCourseNode;
 import org.olat.course.nodes.st.assessment.PassCounter.Counts;
@@ -29,6 +33,8 @@ import org.olat.course.run.scoring.RootPassedEvaluator;
 import org.olat.course.run.scoring.ScoreAccounting;
 import org.olat.modules.ModuleConfiguration;
 import org.olat.repository.RepositoryEntry;
+import org.olat.repository.RepositoryService;
+import org.olat.repository.model.RepositoryEntryLifecycle;
 
 /**
  * 
@@ -37,6 +43,8 @@ import org.olat.repository.RepositoryEntry;
  *
  */
 public class STRootPassedEvaluator implements RootPassedEvaluator {
+
+	private static final Logger log = Tracing.createLoggerFor(STRootPassedEvaluator.class);
 	
 	private final PassCounter passCounter;
 	
@@ -90,10 +98,11 @@ public class STRootPassedEvaluator implements RootPassedEvaluator {
 		// All passed
 		if (config.getBooleanSafe(STCourseNode.CONFIG_PASSED_ALL)) {
 			Counts counts = passCounter.getCounts(courseNode, scoreAccounting);
-			if (counts.isAllAssessed() && counts.getPassable() > 0) {
-				if (counts.getPassable() == counts.getPassed()) {
+			if (counts.getPassable() > 0) {
+				if (counts.isAllAssessed() && counts.getPassable() == counts.getPassed()) {
 					return Boolean.TRUE;
-				} else if (getActivePassedConfigs(config) == 1) {
+				}
+				if (counts.getFailed() > 0 && getActivePassedConfigs(config) == 1) {
 					return Boolean.FALSE;
 				}
 			}
@@ -110,8 +119,9 @@ public class STRootPassedEvaluator implements RootPassedEvaluator {
 				}
 			
 				// Failed if course end date is over
-				if (courseEntry != null && courseEntry.getLifecycle() != null && courseEntry.getLifecycle().getValidTo() != null) {
-					Date validTo = courseEntry.getLifecycle().getValidTo();
+				RepositoryEntryLifecycle lifecycle = getLifecycle(courseEntry);
+				if (lifecycle != null && lifecycle.getValidTo() != null) {
+					Date validTo = lifecycle.getValidTo();
 					if (validTo.before(new Date())) {
 						return Boolean.FALSE;
 					}
@@ -137,6 +147,27 @@ public class STRootPassedEvaluator implements RootPassedEvaluator {
 			active++;
 		}
 		return active;
+	}
+	
+	private RepositoryEntryLifecycle getLifecycle(RepositoryEntry courseEntry) {
+		RepositoryEntryLifecycle lifecycle = null;
+		
+		if (courseEntry != null) {
+			try {
+				lifecycle = courseEntry.getLifecycle();
+				if(lifecycle != null) {
+					lifecycle.getValidTo();
+				}
+			} catch (LazyInitializationException lie) {
+				RepositoryService repositoryService = CoreSpringFactory.getImpl(RepositoryService.class);
+				RepositoryEntry repositoryEntry = repositoryService.loadByKey(courseEntry.getKey());
+				lifecycle = repositoryEntry.getLifecycle();
+			} catch (Exception e) {
+				log.error("", e);
+			}
+		}
+		
+		return lifecycle;
 	}
 
 }

@@ -35,6 +35,7 @@ import org.olat.core.gui.components.form.flexible.elements.FlexiTableElement;
 import org.olat.core.gui.components.form.flexible.elements.FormLink;
 import org.olat.core.gui.components.form.flexible.impl.FormBasicController;
 import org.olat.core.gui.components.form.flexible.impl.FormEvent;
+import org.olat.core.gui.components.form.flexible.impl.FormLayoutContainer;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.DefaultFlexiColumnModel;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiColumnModel;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiTableColumnModel;
@@ -51,12 +52,16 @@ import org.olat.core.id.Identity;
 import org.olat.core.id.Roles;
 import org.olat.core.util.coordinate.CoordinatorManager;
 import org.olat.core.util.coordinate.LockResult;
+import org.olat.course.assessment.AssessmentHelper;
+import org.olat.course.run.userview.UserCourseEnvironment;
 import org.olat.ims.qti21.AssessmentItemSession;
 import org.olat.ims.qti21.AssessmentTestSession;
 import org.olat.ims.qti21.QTI21Module;
 import org.olat.ims.qti21.QTI21Module.CorrectionWorkflow;
 import org.olat.ims.qti21.QTI21Service;
+import org.olat.ims.qti21.ui.ConfirmReopenAssessmentEntryController;
 import org.olat.ims.qti21.ui.assessment.CorrectionIdentityTableModel.IdentityCols;
+import org.olat.ims.qti21.ui.assessment.components.AutoCorrectedFlexiCellRenderer;
 import org.olat.ims.qti21.ui.assessment.components.CorrectedFlexiCellRenderer;
 import org.olat.ims.qti21.ui.assessment.components.NotCorrectedFlexiCellRenderer;
 import org.olat.ims.qti21.ui.assessment.components.ToReviewFlexiCellRenderer;
@@ -97,9 +102,9 @@ public class CorrectionIdentityListController extends FormBasicController {
 
 	private CloseableModalController cmc;
 	private ConfirmSaveTestsController confirmSaveTestCtrl;
+	private ConfirmReopenAssessmentEntryController reopenForCorrectionCtrl;
 	private CorrectionIdentityAssessmentItemListController identityItemListCtrl;
 
-	private final boolean isAdministrativeUser;
 	private List<UserPropertyHandler> userPropertyHandlers;
 
 	private LockResult lockResult;
@@ -126,7 +131,7 @@ public class CorrectionIdentityListController extends FormBasicController {
 		stackPanel.addListener(this);
 		
 		Roles roles = ureq.getUserSession().getRoles();
-		isAdministrativeUser = securityModule.isUserAllowedAdminProps(roles);
+		boolean isAdministrativeUser = securityModule.isUserAllowedAdminProps(roles);
 		userPropertyHandlers = userManager.getUserPropertyHandlersFor(USER_PROPS_ID, isAdministrativeUser);
 
 		initForm(ureq);
@@ -139,13 +144,15 @@ public class CorrectionIdentityListController extends FormBasicController {
 
 	@Override
 	protected void initForm(FormItemContainer formLayout, Controller listener, UserRequest ureq) {
+		if(model.hasErrors() && formLayout instanceof FormLayoutContainer) {
+			String errorMsg = getErrorMessage();
+			((FormLayoutContainer)formLayout).contextPut("errorMsg", errorMsg);
+		}
+		
 		FlexiTableColumnModel columnsModel = FlexiTableDataModelFactory.createFlexiTableColumnModel();
 		if(anonymous) {
 			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(IdentityCols.user, "select"));
 		} else {
-			if(isAdministrativeUser) {
-				columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(IdentityCols.username, "select"));
-			}
 			int colPos = USER_PROPS_OFFSET;
 			for (UserPropertyHandler userPropertyHandler : userPropertyHandlers) {
 				if (userPropertyHandler == null) continue;
@@ -162,7 +169,7 @@ public class CorrectionIdentityListController extends FormBasicController {
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(IdentityCols.score, new ScoreCellRenderer()));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(IdentityCols.answered));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(IdentityCols.notAnswered));
-		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(IdentityCols.autoCorrected, new CorrectedFlexiCellRenderer()));
+		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(IdentityCols.autoCorrected, new AutoCorrectedFlexiCellRenderer()));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(IdentityCols.corrected, new CorrectedFlexiCellRenderer()));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(IdentityCols.notCorrected, new NotCorrectedFlexiCellRenderer()));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(IdentityCols.toReview, new ToReviewFlexiCellRenderer()));
@@ -174,6 +181,16 @@ public class CorrectionIdentityListController extends FormBasicController {
 		tableEl.setSelectAllEnable(true);
 		
 		saveTestsButton = uifactory.addFormLink("save.tests", formLayout, Link.BUTTON);
+	}
+	
+	public String getErrorMessage() {
+		StringBuilder sb = new StringBuilder(1024);
+		List<Identity> identities = model.getIdentityWithErrors();
+		for(Identity identity:identities) {
+			if(sb.length() > 0) sb.append(", ");
+			sb.append(userManager.getUserDisplayName(identity));
+		}
+		return translate("error.assessment.test.session.identities", new String[] { sb.toString() });
 	}
 	
 	public void reloadModel() {
@@ -229,6 +246,7 @@ public class CorrectionIdentityListController extends FormBasicController {
 	private void appendStatistics(CorrectionIdentityRow row, AssessmentItemSession itemSession,
 			ItemSessionState itemSessionState, AssessmentItemRef itemRef) {
 		row.addSession();
+		row.addQuestion();
 		if(itemSessionState.isResponded()) {
 			row.addAnswered();
 		} else {
@@ -246,6 +264,12 @@ public class CorrectionIdentityListController extends FormBasicController {
 		boolean manualCorrection = model.isManualCorrection(itemRef);
 		if(!row.isManualCorrection()) {
 			row.setManualCorrection(manualCorrection);
+		}
+		if(!manualCorrection) {
+			row.addAutoCorrectedQuestion();
+			if(!itemSessionState.isResponded()) {
+				row.addAutoCorrectedNotAnswered();
+			}
 		}
 		if(manualCorrection) {
 			if(manualScore == null) {
@@ -304,6 +328,14 @@ public class CorrectionIdentityListController extends FormBasicController {
 			}
 			cmc.deactivate();
 			cleanUp();
+		} else if(reopenForCorrectionCtrl == source) {
+			cmc.deactivate();
+			CorrectionIdentityRow row = (CorrectionIdentityRow)reopenForCorrectionCtrl.getUserObject();
+			cleanUp();
+			if(event == Event.CHANGED_EVENT || event == Event.DONE_EVENT) {
+				model.discardAssessmentEntryDone(row.getIdentity());
+				doOpenCorrection(ureq, row);
+			}
 		} else if(cmc == source) {
 			cleanUp();
 		}
@@ -311,8 +343,10 @@ public class CorrectionIdentityListController extends FormBasicController {
 	}
 	
 	private void cleanUp() {
+		removeAsListenerAndDispose(reopenForCorrectionCtrl);
 		removeAsListenerAndDispose(confirmSaveTestCtrl);
 		removeAsListenerAndDispose(cmc);
+		reopenForCorrectionCtrl = null;
 		confirmSaveTestCtrl = null;
 		cmc = null;
 	}
@@ -345,10 +379,36 @@ public class CorrectionIdentityListController extends FormBasicController {
 		}
 		
 		Identity assessedIdentity = row.getIdentity();
-		boolean readOnly = model.isReadOnly(assessedIdentity); 
+		boolean assessmentEntryDone = model.isAssessmentEntryDone(assessedIdentity);
+		if(assessmentEntryDone) {
+			doReopenForCorrection(ureq, row);
+		} else {
+			doOpenCorrection(ureq, row);
+		}
+	}
+	
+	private void doReopenForCorrection(UserRequest ureq, CorrectionIdentityRow row) {
+		if(guardModalController(reopenForCorrectionCtrl)) return;
+
+		UserCourseEnvironment assessedUserCourseEnv = AssessmentHelper
+				.createAndInitUserCourseEnvironment(row.getIdentity(), model.getCourseEnvironment());
+		reopenForCorrectionCtrl = new ConfirmReopenAssessmentEntryController(ureq, getWindowControl(),
+				assessedUserCourseEnv, model.getCourseNode(), row.getCandidateSession());
+		reopenForCorrectionCtrl.setUserObject(row);
+		listenTo(reopenForCorrectionCtrl);
+		
+		cmc = new CloseableModalController(getWindowControl(), "close", reopenForCorrectionCtrl.getInitialComponent(),
+				true, translate("reopen.assessment.title"));
+		cmc.activate();
+		listenTo(cmc);
+	}
+
+	private void doOpenCorrection(UserRequest ureq, CorrectionIdentityRow row) {
+		Identity assessedIdentity = row.getIdentity();
+		boolean assessmentEntryDone = model.isAssessmentEntryDone(assessedIdentity);
 		String title = anonymous ? row.getUser() : userManager.getUserDisplayName(row.getIdentity());
 		identityItemListCtrl = new CorrectionIdentityAssessmentItemListController(ureq, getWindowControl(), stackPanel,
-				model, assessedIdentity, title, readOnly);
+				model, assessedIdentity, title, assessmentEntryDone);
 		listenTo(identityItemListCtrl);
 		
 		String crumb;

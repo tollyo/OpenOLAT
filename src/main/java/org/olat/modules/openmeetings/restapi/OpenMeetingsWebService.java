@@ -20,7 +20,6 @@
 package org.olat.modules.openmeetings.restapi;
 
 import java.io.File;
-
 import java.util.Date;
 
 import javax.ws.rs.GET;
@@ -34,16 +33,17 @@ import javax.ws.rs.core.Request;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
+import org.olat.basesecurity.BaseSecurity;
 import org.olat.core.CoreSpringFactory;
+import org.olat.core.id.Identity;
 import org.olat.modules.openmeetings.OpenMeetingsModule;
 import org.olat.modules.openmeetings.manager.OpenMeetingsManager;
 import org.olat.user.DisplayPortraitManager;
-import org.olat.user.UserManager;
 import org.springframework.stereotype.Component;
 
+import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 
 /**
  * 
@@ -51,6 +51,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
  * @author srosse, stephane.rosse@frentix.com, http://www.frentix.com
  *
  */
+@Hidden
 @Component
 @Path("openmeetings")
 public class OpenMeetingsWebService {
@@ -59,9 +60,7 @@ public class OpenMeetingsWebService {
 	
 	/**
 	 * Retrieves the portrait of an user
-	 * @response.representation.200.mediaType application/octet-stream
-	 * @response.representation.200.doc The portrait as image
-   * @response.representation.404.doc The identity or the portrait not found
+	 * 
 	 * @param identityToken The identity key of the user being searched
 	 * @param request The REST request
 	 * @return The image
@@ -69,9 +68,8 @@ public class OpenMeetingsWebService {
 	@GET
 	@Path("{identityToken}/portrait")
 	@Operation(summary = "Retrieve the portrait of an user", description = "Retrieves the portrait of an user")
-	@ApiResponses({
-			@ApiResponse(responseCode = "200", description = "The portrait as image"),
-			@ApiResponse(responseCode = "404", description = "The identity or the portrait not found") })	
+	@ApiResponse(responseCode = "200", description = "The portrait as image")
+	@ApiResponse(responseCode = "404", description = "The identity or the portrait not found")
 	@Produces({"image/jpeg","image/jpg",MediaType.APPLICATION_OCTET_STREAM})
 	public Response getPortrait(@PathParam("identityToken") String identityToken, @Context Request request) {
 		OpenMeetingsModule module = CoreSpringFactory.getImpl(OpenMeetingsModule.class);
@@ -84,12 +82,12 @@ public class OpenMeetingsWebService {
 		if(identityKey == null) {
 			return Response.serverError().status(Status.NOT_FOUND).build();
 		}
-		String username = CoreSpringFactory.getImpl(UserManager.class).getUsername(identityKey);
-		if(username == null) {
+		Identity identity = CoreSpringFactory.getImpl(BaseSecurity.class).loadIdentityByKey(identityKey);
+		if(identity == null) {
 			return Response.serverError().status(Status.NOT_FOUND).build();
 		}
 		
-		File portrait = CoreSpringFactory.getImpl(DisplayPortraitManager.class).getBigPortrait(username);
+		File portrait = CoreSpringFactory.getImpl(DisplayPortraitManager.class).getBigPortrait(identity);
 		if(portrait == null || !portrait.exists()) {
 			return Response.serverError().status(Status.NOT_FOUND).build();
 		}

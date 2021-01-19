@@ -76,7 +76,6 @@ public class CourseEditorPageFragment {
 	
 	public static CourseEditorPageFragment getEditor(WebDriver browser) {
 		OOGraphene.waitElement(editorBy, browser);
-		OOGraphene.closeBlueMessageWindow(browser);
 		return new CourseEditorPageFragment(browser);
 	}
 	
@@ -145,6 +144,12 @@ public class CourseEditorPageFragment {
 	public CourseEditorPageFragment selectTabScore() {
 		By scoreTabBy = By.cssSelector("fieldset.o_sel_structure_score");
 		return selectTab(scoreTabBy);
+	}
+	
+	public LearnPathCourseElementEditorPage selectTabLearnPath() {
+		By learnPathTabBy = By.cssSelector("fieldset.o_sel_learnpath_element");
+		selectTab(learnPathTabBy);
+		return new LearnPathCourseElementEditorPage(browser);
 	}
 	
 	private CourseEditorPageFragment selectTab(By tabBy) {
@@ -292,6 +297,26 @@ public class CourseEditorPageFragment {
 		return this;
 	}
 	
+	public CourseEditorPageFragment deleteElement() {
+		if(!browser.findElement(changeNodeToolsMenu).isDisplayed()) {
+			openChangeNodeToolsMenu();
+		}
+		
+		By deleteNodeLinkBy = By.cssSelector("a.o_sel_course_editor_delete_node");
+		browser.findElement(deleteNodeLinkBy).click();
+		OOGraphene.waitModalDialog(browser);
+		
+		By confirmBy = By.xpath("//div[contains(@class,'modal-dialog')]//a[contains(@onclick,'link_0')]");
+		browser.findElement(confirmBy).click();
+		OOGraphene.waitBusy(browser);
+		OOGraphene.waitAndCloseBlueMessageWindow(browser);
+		
+		By undeleteButtonBy = By.xpath("//a[contains(@onclick,'undeletenode.button')]");
+		OOGraphene.waitElement(undeleteButtonBy, browser);
+		
+		return this;
+	}
+	
 	public CourseEditorPageFragment selectNode(String nodeTitle) {
 		By targetNodeBy = By.xpath("//div[contains(@class,'o_editor_menu')]//a[contains(@title,'" + nodeTitle + "')]");
 		browser.findElement(targetNodeBy).click();
@@ -316,7 +341,7 @@ public class CourseEditorPageFragment {
 	 * @return Itself
 	 */
 	public CourseEditorPageFragment selectTabLearnContent() {
-		OOGraphene.selectTab("o_node_config", (b) -> {
+		OOGraphene.selectTab("o_node_config", b -> {
 			for(By chooseRepoEntriesButton: chooseRepoEntriesButtonList) {
 				List<WebElement> chooseRepoEntry = b.findElements(chooseRepoEntriesButton);
 				if(!chooseRepoEntry.isEmpty()) {
@@ -398,31 +423,20 @@ public class CourseEditorPageFragment {
 		OOGraphene.waitBusy(browser);
 		//popup
 		By referenceableEntriesBy = By.className("o_sel_search_referenceable_entries");
-		OOGraphene.waitElement(referenceableEntriesBy, 1, browser);
+		OOGraphene.waitElement(referenceableEntriesBy, browser);
 		WebElement popup = browser.findElement(referenceableEntriesBy);
 		popup.findElement(By.cssSelector("a.o_sel_repo_popup_my_resources")).click();
 		OOGraphene.waitBusy(browser);
 		
 		//find the row
-		WebElement selectRow = null;
-		List<WebElement> rows = popup.findElements(By.cssSelector("div.o_segments_content table.o_table tr"));
-		for(WebElement row:rows) {
-			String text = row.getText();
-			if(text.contains(resourceTitle)) {
-				selectRow = row;
-				break;
-			}
-		}
-		Assert.assertNotNull(selectRow);
-		
-		//find the select in the row
-		selectRow.findElement(By.xpath("//a[contains(@onclick,'rtbSelectLink')]")).click();
+		By rowBy = By.xpath("//div[contains(@class,'')]//div[contains(@class,'o_segments_content')]//table[contains(@class,'o_table')]//tr/td/a[text()[contains(.,'" + resourceTitle + "')]]");
+		OOGraphene.waitElement(rowBy, browser);
+		browser.findElement(rowBy).click();
 		OOGraphene.waitBusy(browser);
 		
 		//double check that the resource is selected (search the preview link)
 		By previewLink = By.xpath("//a/span[text()[contains(.,'" + resourceTitle + "')]]");
-		browser.findElement(previewLink);
-
+		OOGraphene.waitElement(previewLink, browser);
 		return this;
 	}
 	
@@ -463,28 +477,33 @@ public class CourseEditorPageFragment {
 	}
 	
 	private CourseEditorPageFragment createResource(By chooseButton, String resourceTitle, String resourceType) {
-		OOGraphene.closeBlueMessageWindow(browser);
-		
 		browser.findElement(chooseButton).click();
 		OOGraphene.waitBusy(browser);
+		OOGraphene.waitModalDialog(browser);
+		
 		//popup
-		WebElement popup = browser.findElement(By.className("o_sel_search_referenceable_entries"));
-		popup.findElement(By.cssSelector("a.o_sel_repo_popup_my_resources")).click();
+		By myResourcesBy = By.cssSelector(".modal-body .o_sel_search_referenceable_entries a.o_sel_repo_popup_my_resources");
+		OOGraphene.waitElement(myResourcesBy, browser);
+		browser.findElement(myResourcesBy).click();
 		OOGraphene.waitBusy(browser);
+		By mySelectedResourcesBy = By.cssSelector(".modal-body .o_sel_search_referenceable_entries a.btn-primary.o_sel_repo_popup_my_resources");
+		OOGraphene.waitElement(mySelectedResourcesBy, browser);
 		
 		//click create
-		List<WebElement> createEls = popup.findElements(By.className("o_sel_repo_popup_create_resource"));
+		By createResourceBy = By.cssSelector(".o_sel_search_referenceable_entries .o_sel_repo_popup_create_resource");
+		List<WebElement> createEls = browser.findElements(createResourceBy);
 		if(createEls.isEmpty()) {
 			//open drop down
-			popup.findElement(By.className("o_sel_repo_popup_create_resources")).click();
+			By createResourcesBy = By.cssSelector("button.o_sel_repo_popup_create_resources");
+			browser.findElement(createResourcesBy).click();
 			//choose the right type
 			By selectType = By.xpath("//ul[contains(@class,'o_sel_repo_popup_create_resources')]//a[contains(@onclick,'" + resourceType + "')]");
-			popup.findElement(selectType).click();
-			OOGraphene.waitBusy(browser);
+			OOGraphene.waitElement(selectType, browser);
+			browser.findElement(selectType).click();
 		} else {
-			popup.findElement(By.className("o_sel_repo_popup_create_resource")).click();
-			OOGraphene.waitBusy(browser);
+			browser.findElement(createResourceBy).click();	
 		}
+		OOGraphene.waitBusy(browser);
 
 		//fill the create form
 		return fillCreateForm(resourceTitle);
@@ -493,6 +512,7 @@ public class CourseEditorPageFragment {
 	private CourseEditorPageFragment fillCreateForm(String displayName) {
 		OOGraphene.waitModalDialog(browser);
 		By inputBy = By.cssSelector("div.modal.o_sel_author_create_popup div.o_sel_author_displayname input");
+		OOGraphene.waitElement(inputBy, browser);
 		browser.findElement(inputBy).sendKeys(displayName);
 		By submitBy = By.cssSelector("div.modal.o_sel_author_create_popup .o_sel_author_create_submit");
 		browser.findElement(submitBy).click();
@@ -502,9 +522,10 @@ public class CourseEditorPageFragment {
 	}
 	
 	/**
-	 * Don't forget to set access
+	 * Don't forget to set access.<br>
+	 * Click the bread crumb and publish the course.
 	 * 
-	 * @return
+	 * @return Itself
 	 */
 	public CoursePageFragment autoPublish() {
 		//back
@@ -525,11 +546,10 @@ public class CourseEditorPageFragment {
 	 * @return
 	 */
 	public PublisherPageFragment publish() {
-		WebElement publishButton = browser.findElement(publishButtonBy);
-		Assert.assertTrue(publishButton.isDisplayed());
-		publishButton.click();
+		OOGraphene.waitElement(publishButtonBy, browser);
+		browser.findElement(publishButtonBy).click();
 		OOGraphene.waitBusyAndScrollTop(browser);
-		OOGraphene.waitElement(By.cssSelector("div.o_sel_publish_nodes"), 5, browser);
+		OOGraphene.waitElement(By.cssSelector("div.o_sel_publish_nodes"), browser);
 		return new PublisherPageFragment(browser);
 	}
 	
@@ -541,7 +561,6 @@ public class CourseEditorPageFragment {
 	public CoursePageFragment clickToolbarBack() {
 		browser.findElement(toolbarBackBy).click();
 		OOGraphene.waitBusy(browser);
-		OOGraphene.closeBlueMessageWindow(browser);
 		
 		By mainId = By.id("o_main");
 		OOGraphene.waitElement(mainId, 5, browser);

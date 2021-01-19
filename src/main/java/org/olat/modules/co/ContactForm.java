@@ -61,6 +61,7 @@ import org.olat.core.util.Util;
 import org.olat.core.util.filter.FilterFactory;
 import org.olat.core.util.mail.ContactList;
 import org.olat.core.util.mail.EmailAddressValidator;
+import org.olat.core.util.mail.MailHelper;
 import org.olat.core.util.mail.MailModule;
 import org.olat.core.util.mail.MailTemplate;
 import org.olat.user.UserManager;
@@ -175,7 +176,7 @@ public class ContactForm extends FormBasicController {
 			templateEl.setVisible(false);
 		} else {
 			templateEl.setVisible(templates.size() > 1);
-			templateEl.setAllowNoSelection(templates.size() == 1);
+			templateEl.enableNoneSelection();
 			
 			KeyValues templatesKeyValues = new KeyValues();
 			for(int i=0; i<templates.size(); i++) {
@@ -217,6 +218,12 @@ public class ContactForm extends FormBasicController {
 		defaultEmailTo += tto.getValue();
 		tto.setValue(defaultEmailTo);
 		ttoBig.setValue(defaultEmailTo);
+	}
+	
+	
+	public void setBody(MailTemplate template) {
+		setBody(template.getBodyTemplate());
+		MailHelper.setVariableNamesAsHelp(tbody, template, getLocale());
 	}
 
 	public void setBody(String defaultBody) {
@@ -419,7 +426,7 @@ public class ContactForm extends FormBasicController {
 			File uploadedFile = (File)source.getUserObject();
 			if(uploadedFile != null && uploadedFile.exists()) {
 				attachmentSize -= uploadedFile.length();
-				uploadedFile.delete();
+				FileUtils.deleteFile(uploadedFile);
 			}
 			attachmentLinks.remove(source);
 			uploadCont.remove(source);
@@ -441,7 +448,7 @@ public class ContactForm extends FormBasicController {
 		if(index >= 0 && index < mailTemplates.size()) {
 			MailTemplate template = mailTemplates.get(index);
 			setSubject(template.getSubjectTemplate());
-			setBody(template.getBodyTemplate());
+			setBody(template);
 		}
 	}
 	
@@ -473,7 +480,7 @@ public class ContactForm extends FormBasicController {
 		
 		templateEl = uifactory.addDropdownSingleselect("ttemplates", NLS_CONTACT_TEMPLATES, formLayout, new String[0], new String[0]);
 		templateEl.setVisible(false);
-		templateEl.setAllowNoSelection(true);
+		templateEl.enableNoneSelection();
 		templateEl.addActionListener(FormEvent.ONCHANGE);
 		
 		String fullName = userManager.getUserDisplayName(emailFrom);
@@ -507,7 +514,7 @@ public class ContactForm extends FormBasicController {
 		uploadCont.setRootForm(mainForm);
 		formLayout.add(uploadCont);
 		
-		attachmentEl = uifactory.addFileElement(getWindowControl(), "file_upload_1", NLS_CONTACT_ATTACHMENT, formLayout);
+		attachmentEl = uifactory.addFileElement(getWindowControl(), getIdentity(), "file_upload_1", NLS_CONTACT_ATTACHMENT, formLayout);
 		attachmentEl.setLabel(NLS_CONTACT_ATTACHMENT, null);
 		attachmentEl.addActionListener(FormEvent.ONCHANGE);
 		attachmentEl.setExampleKey(NLS_CONTACT_ATTACHMENT_EXPL, new String[]{Integer.toString(contactAttachmentMaxSizeInMb)});

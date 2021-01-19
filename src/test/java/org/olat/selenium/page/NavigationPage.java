@@ -22,6 +22,7 @@ package org.olat.selenium.page;
 import java.util.List;
 
 import org.junit.Assert;
+import org.olat.selenium.page.coaching.CoachingPage;
 import org.olat.selenium.page.core.AdministrationPage;
 import org.olat.selenium.page.course.MyCoursesPage;
 import org.olat.selenium.page.graphene.OOGraphene;
@@ -48,6 +49,7 @@ public class NavigationPage {
 	private static final By navigationSitesBy = By.cssSelector("ul.o_navbar_sites");
 	private static final By authoringEnvTabBy = By.cssSelector("li.o_site_author_env > a");
 	private static final By questionPoolTabBy = By.cssSelector("li.o_site_qpool > a");
+	private static final By coachingTabBy = By.cssSelector("li.o_site_coaching > a");
 	private static final By portalBy = By.cssSelector("li.o_site_portal > a");
 	private static final By myCoursesBy = By.cssSelector("li.o_site_repository > a");
 	private static final By userManagementBy = By.cssSelector("li.o_site_useradmin > a");
@@ -78,8 +80,8 @@ public class NavigationPage {
 	}
 	
 	public AuthoringEnvPage openAuthoringEnvironment() {
-		OOGraphene.closeBlueMessageWindow(browser);
 		navigate(authoringEnvTabBy);
+		OOGraphene.waitElement(By.className("o_sel_author_env"), browser);
 		return new AuthoringEnvPage(browser);
 	}
 	
@@ -89,15 +91,25 @@ public class NavigationPage {
 				.assertOnQuestionPool();
 	}
 	
+	public CoachingPage openCoaching() {
+		navigate(coachingTabBy);
+		return new CoachingPage(browser);
+	}
+	
 	public PortalPage openPortal() {
 		navigate(portalBy);
 		return new PortalPage(browser);
 	}
 	
 	public MyCoursesPage openMyCourses() {
-		navigate(myCoursesBy);
-		OOGraphene.waitElement(myCoursesAssertBy, browser);
-		return new MyCoursesPage(browser);
+		try {
+			navigate(myCoursesBy);
+			OOGraphene.waitElement(myCoursesAssertBy, browser);
+			return new MyCoursesPage(browser);
+		} catch (Exception e) {
+			OOGraphene.takeScreenshot("Open my courses", browser);
+			throw e;
+		}
 	}
 	
 	public UserAdminPage openUserManagement() {
@@ -126,7 +138,6 @@ public class NavigationPage {
 	}
 	
 	private void navigate(By linkBy) {
-		OOGraphene.closeBlueMessageWindow(browser);
 		List<WebElement> links = browser.findElements(linkBy);
 		if(links.isEmpty() || !links.get(0).isDisplayed()) {
 			//try to open the more menu
@@ -150,7 +161,6 @@ public class NavigationPage {
 		
 		courseLinks.get(0).click();
 		OOGraphene.waitBusy(browser);
-		OOGraphene.closeBlueMessageWindow(browser);
 	}
 	
 	private void openMoreMenu() {

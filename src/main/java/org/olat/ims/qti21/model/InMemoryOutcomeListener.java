@@ -45,12 +45,12 @@ public class InMemoryOutcomeListener implements OutcomesListener, OutcomesAssess
 	}
 
 	@Override
-	public void updateOutcomes(Float score, Boolean pass, Double completion) {
+	public void updateOutcomes(Float score, Boolean pass, Date start, Double completion) {
 		//
 	}
 
 	@Override
-	public void submit(Float score, Boolean pass, Double completion, Long assessmentId) {
+	public void submit(Float score, Boolean pass, Date start, Double completion, Long assessmentId) {
 		//
 	}
 }

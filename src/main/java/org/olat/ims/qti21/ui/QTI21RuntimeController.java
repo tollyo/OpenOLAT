@@ -33,6 +33,7 @@ import org.olat.core.gui.control.Event;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.control.generic.dtabs.Activateable2;
 import org.olat.core.id.OLATResourceable;
+import org.olat.core.id.context.BusinessControlFactory;
 import org.olat.core.id.context.ContextEntry;
 import org.olat.core.id.context.StateEntry;
 import org.olat.core.logging.activity.ThreadLocalUserActivityLogger;
@@ -40,6 +41,8 @@ import org.olat.core.util.resource.OresHelper;
 import org.olat.fileresource.FileResourceManager;
 import org.olat.ims.qti21.AssessmentTestSession;
 import org.olat.ims.qti21.QTI21Constants;
+import org.olat.ims.qti21.QTI21DeliveryOptions;
+import org.olat.ims.qti21.QTI21DeliveryOptions.PassedType;
 import org.olat.ims.qti21.QTI21Service;
 import org.olat.ims.qti21.model.xml.QtiNodesExtractor;
 import org.olat.ims.qti21.ui.editor.AssessmentTestComposerController;
@@ -90,16 +93,22 @@ public class QTI21RuntimeController extends RepositoryEntryRuntimeController  {
 	protected void initToolsMenuRuntime(Dropdown toolsDropdown) {
 		if (reSecurity.isEntryAdmin() || reSecurity.isCoach()) {
 			assessmentLink = LinkFactory.createToolLink("assessment", translate("command.openassessment"), this, "o_icon_assessment_tool");
+			assessmentLink.setUrl(BusinessControlFactory.getInstance()
+					.getAuthenticatedURLFromBusinessPathStrings(businessPathEntry, "[AssessmentTool:0]"));
 			assessmentLink.setElementCssClass("o_sel_course_assessment_tool");
 			toolsDropdown.addComponent(assessmentLink);
 		}
 		if (reSecurity.isEntryAdmin()) {
 			gradingLink = LinkFactory.createToolLink("grading", translate("command.grading"), this, "o_icon_assessment_tool");
+			gradingLink.setUrl(BusinessControlFactory.getInstance()
+					.getAuthenticatedURLFromBusinessPathStrings(businessPathEntry, "[Grading:0]"));
 			gradingLink.setElementCssClass("o_sel_grading");
 			toolsDropdown.addComponent(gradingLink);
 		}
 		if (reSecurity.isEntryAdmin() || reSecurity.isCoach()) {
 			testStatisticLink = LinkFactory.createToolLink("qtistatistic", translate("command.openteststatistic"), this, "o_icon_statistics_tool");
+			testStatisticLink.setUrl(BusinessControlFactory.getInstance()
+					.getAuthenticatedURLFromBusinessPathStrings(businessPathEntry, "[TestStatistics:0]"));
 			toolsDropdown.addComponent(testStatisticLink);
 		}
 		
@@ -283,12 +292,16 @@ public class QTI21RuntimeController extends RepositoryEntryRuntimeController  {
 		FileResourceManager frm = FileResourceManager.getInstance();
 		File fUnzippedDirRoot = frm.unzipFileResource(testEntry.getOlatResource());
 		ResolvedAssessmentTest resolvedAssessmentTest = qtiService.loadAndResolveAssessmentTest(fUnzippedDirRoot, false, false);
-		
 		AssessmentTest assessmentTest = resolvedAssessmentTest.getRootNodeLookup().extractIfSuccessful();
+		
+		Double cutValue = QtiNodesExtractor.extractCutValue(assessmentTest);
+		QTI21DeliveryOptions deliveryOptions = qtiService.getDeliveryOptions(testEntry);
+		PassedType passedType = deliveryOptions.getPassedType(cutValue);
+		
 		Double maxScore = QtiNodesExtractor.extractMaxScore(assessmentTest);
 		Double minScore = QtiNodesExtractor.extractMinScore(assessmentTest);
 		boolean hasScore = assessmentTest.getOutcomeDeclaration(QTI21Constants.SCORE_IDENTIFIER) != null;
-		boolean hasPassed = assessmentTest.getOutcomeDeclaration(QTI21Constants.PASS_IDENTIFIER) != null;
-		return new QTI21AssessableResource(hasScore, hasPassed, true, true, minScore, maxScore, null);
+		boolean hasPassed = passedType != PassedType.none;
+		return new QTI21AssessableResource(hasScore, hasPassed, true, true, minScore, maxScore, cutValue);
 	}
 }

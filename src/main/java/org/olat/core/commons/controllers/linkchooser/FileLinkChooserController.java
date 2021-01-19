@@ -98,7 +98,8 @@ public class FileLinkChooserController extends BasicController {
 	 *          index.html
 	 */
 	public FileLinkChooserController(UserRequest ureq, WindowControl wControl,
-			VFSContainer rootDir, String uploadRelPath, String absolutePath, String[] suffixes, boolean uriValidation, String fileName) {
+			VFSContainer rootDir, String uploadRelPath, String absolutePath, String[] suffixes,
+			boolean uriValidation, String fileName) {
 		super(ureq, wControl);
 		this.fileName = fileName;
 		this.suffixes = suffixes;

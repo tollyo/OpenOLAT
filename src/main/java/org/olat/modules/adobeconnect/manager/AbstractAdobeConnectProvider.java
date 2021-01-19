@@ -33,10 +33,10 @@ import org.apache.http.HttpEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.util.EntityUtils;
 import org.apache.logging.log4j.Logger;
+import org.olat.core.commons.persistence.DB;
 import org.olat.core.logging.Tracing;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.i18n.I18nModule;
@@ -81,6 +81,8 @@ public abstract class AbstractAdobeConnectProvider implements AdobeConnectSPI {
 	private BreezeSession currentSession;
 	
 	@Autowired
+	private DB dbInstance;
+	@Autowired
 	protected AdobeConnectModule adobeConnectModule;
 	
 	/**
@@ -98,10 +100,14 @@ public abstract class AbstractAdobeConnectProvider implements AdobeConnectSPI {
 	 */
 	@Override
 	public AdobeConnectSco createScoMeeting(String name, String description, String folderScoId,
-			String templateId, Date startDate, Date endDate, Locale locale, AdobeConnectErrors error) {
+			String templateId, Date startDate, Date endDate, Locale locale, AdobeConnectErrors errors) {
 		if(folderScoId == null) {
-			folderScoId = adminFolderScoId(error);
+			folderScoId = adminFolderScoId(errors);
 		}
+		if(folderScoId == null || errors.hasErrors()) {
+			return null;
+		}
+
 		String lang = getLanguage(locale);
 		UriBuilder builder = adobeConnectModule.getAdobeConnectUriBuilder();
 		builder
@@ -123,7 +129,7 @@ public abstract class AbstractAdobeConnectProvider implements AdobeConnectSPI {
 			builder.queryParam("date-end", formatDate(endDate));
 		}
 		
-		List<AdobeConnectSco> createdScos = sendScoRequest(builder, error);
+		List<AdobeConnectSco> createdScos = sendScoRequest(builder, errors);
 		return createdScos == null || createdScos.isEmpty() ? null : createdScos.get(0);
 	}
 	
@@ -146,6 +152,10 @@ public abstract class AbstractAdobeConnectProvider implements AdobeConnectSPI {
 	@Override
 	public AdobeConnectSco createFolder(String name, AdobeConnectErrors errors) {
 		String folderScoId = adminFolderScoId(errors);
+		if(folderScoId == null || errors.hasErrors()) {
+			return null;
+		}
+		
 		UriBuilder builder = adobeConnectModule.getAdobeConnectUriBuilder();
 		builder
 			.queryParam("action", "sco-update")
@@ -159,6 +169,10 @@ public abstract class AbstractAdobeConnectProvider implements AdobeConnectSPI {
 	@Override
 	public List<AdobeConnectSco> getFolderByName(String name, AdobeConnectErrors errors) {
 		String folderScoId = adminFolderScoId(errors);
+		if(folderScoId == null || errors.hasErrors()) {
+			return new ArrayList<>();
+		}
+		
 		UriBuilder builder = adobeConnectModule.getAdobeConnectUriBuilder();
 		builder
 			.queryParam("action", "sco-contents")
@@ -182,6 +196,10 @@ public abstract class AbstractAdobeConnectProvider implements AdobeConnectSPI {
 	public boolean updateScoMeeting(String scoId, String name, String description, String templateId,
 			Date startDate, Date endDate, AdobeConnectErrors errors) {
 		String folderScoId = adminFolderScoId(errors);
+		if(folderScoId == null || errors.hasErrors()) {
+			return false;
+		}
+		
 		UriBuilder builder = adobeConnectModule.getAdobeConnectUriBuilder();
 		builder
 			.queryParam("action", "sco-update")
@@ -201,19 +219,21 @@ public abstract class AbstractAdobeConnectProvider implements AdobeConnectSPI {
 		if(endDate != null) {
 			builder.queryParam("date-end", formatDate(endDate));
 		}
-		
+
 		boolean ok = false;
 		HttpGet get = createAdminMethod(builder, errors);
-		try(CloseableHttpClient httpClient = HttpClientBuilder.create().build();
-				CloseableHttpResponse response = httpClient.execute(get)) {
-			int statusCode = response.getStatusLine().getStatusCode();
-			if(statusCode == 200 || statusCode == 201) {
-				ok = AdobeConnectUtils.isStatusOk(response.getEntity());
-			} else {
-				EntityUtils.consume(response.getEntity());
+		if(get != null) {
+			try(CloseableHttpClient httpClient = buildHttpClient();
+					CloseableHttpResponse response = httpClient.execute(get)) {
+				int statusCode = response.getStatusLine().getStatusCode();
+				if(statusCode == 200 || statusCode == 201) {
+					ok = AdobeConnectUtils.isStatusOk(response.getEntity());
+				} else {
+					EntityUtils.consume(response.getEntity());
+				}
+			} catch(Exception e) {
+				log.error("", e);
 			}
-		} catch(Exception e) {
-			log.error("", e);
 		}
 		return ok;
 	}
@@ -274,19 +294,21 @@ public abstract class AbstractAdobeConnectProvider implements AdobeConnectSPI {
 		builder
 			.queryParam("action", "sco-delete")
 			.queryParam("sco-id", meeting.getScoId());
-		
+
 		boolean ok = false;
 		HttpGet get = createAdminMethod(builder, error);
-		try(CloseableHttpClient httpClient = HttpClientBuilder.create().build();
-				CloseableHttpResponse response = httpClient.execute(get)) {
-			int statusCode = response.getStatusLine().getStatusCode();
-			if(statusCode >= 200 && statusCode < 400) {
-				ok = AdobeConnectUtils.isStatusOk(response.getEntity());
-			} else {
-				EntityUtils.consume(response.getEntity());
+		if(get != null) {
+			try(CloseableHttpClient httpClient = buildHttpClient();
+					CloseableHttpResponse response = httpClient.execute(get)) {
+				int statusCode = response.getStatusLine().getStatusCode();
+				if(statusCode >= 200 && statusCode < 400) {
+					ok = AdobeConnectUtils.isStatusOk(response.getEntity());
+				} else {
+					EntityUtils.consume(response.getEntity());
+				}
+			} catch(Exception e) {
+				log.error("", e);
 			}
-		} catch(Exception e) {
-			log.error("", e);
 		}
 		return ok;
 	}
@@ -310,15 +332,17 @@ public abstract class AbstractAdobeConnectProvider implements AdobeConnectSPI {
 
 		boolean ok = false;
 		HttpGet get = createAdminMethod(builder, error);
-		try(CloseableHttpClient httpClient = HttpClientBuilder.create().build();
-				CloseableHttpResponse response = httpClient.execute(get)) {
-			int statusCode = response.getStatusLine().getStatusCode();
-			if(statusCode >= 200 && statusCode < 400) {
-				ok = true;
+		if(get != null) {
+			try(CloseableHttpClient httpClient = buildHttpClient();
+					CloseableHttpResponse response = httpClient.execute(get)) {
+				int statusCode = response.getStatusLine().getStatusCode();
+				if(statusCode >= 200 && statusCode < 400) {
+					ok = true;
+				}
+				EntityUtils.consume(response.getEntity());
+			} catch(Exception e) {
+				log.error("", e);
 			}
-			EntityUtils.consume(response.getEntity());
-		} catch(Exception e) {
-			log.error("", e);
 		}
 		return ok;
 	}
@@ -342,15 +366,17 @@ public abstract class AbstractAdobeConnectProvider implements AdobeConnectSPI {
 		
 		boolean ok = false;
 		HttpGet get = createAdminMethod(builder, error);
-		try(CloseableHttpClient httpClient = HttpClientBuilder.create().build();
-				CloseableHttpResponse response = httpClient.execute(get)) {
-			int statusCode = response.getStatusLine().getStatusCode();
-			if(statusCode >= 200 && statusCode < 400) {
-				ok = true;
+		if(get != null) {
+			try(CloseableHttpClient httpClient = buildHttpClient();
+					CloseableHttpResponse response = httpClient.execute(get)) {
+				int statusCode = response.getStatusLine().getStatusCode();
+				if(statusCode >= 200 && statusCode < 400) {
+					ok = true;
+				}
+				EntityUtils.consume(response.getEntity());
+			} catch(Exception e) {
+				log.error("", e);
 			}
-			EntityUtils.consume(response.getEntity());
-		} catch(Exception e) {
-			log.error("", e);
 		}
 		return ok;
 	}
@@ -373,17 +399,19 @@ public abstract class AbstractAdobeConnectProvider implements AdobeConnectSPI {
 
 		boolean ok = false;
 		HttpGet get = createAdminMethod(builder, errors);
-		try(CloseableHttpClient httpClient = HttpClientBuilder.create().build();
-				CloseableHttpResponse response = httpClient.execute(get)) {
-			int statusCode = response.getStatusLine().getStatusCode();
-			if(statusCode >= 200 && statusCode < 400) {
-				List<AdobeConnectPermission> permissions = parsePermissions(response.getEntity(), errors);
-				ok = permissions != null && !permissions.isEmpty();
-			} else {
-				EntityUtils.consume(response.getEntity());
+		if(get != null) {
+			try(CloseableHttpClient httpClient = buildHttpClient();
+					CloseableHttpResponse response = httpClient.execute(get)) {
+				int statusCode = response.getStatusLine().getStatusCode();
+				if(statusCode >= 200 && statusCode < 400) {
+					List<AdobeConnectPermission> permissions = parsePermissions(response.getEntity(), errors);
+					ok = permissions != null && !permissions.isEmpty();
+				} else {
+					EntityUtils.consume(response.getEntity());
+				}
+			} catch(Exception e) {
+				log.error("", e);
 			}
-		} catch(Exception e) {
-			log.error("", e);
 		}
 		return ok;
 	}
@@ -435,16 +463,18 @@ public abstract class AbstractAdobeConnectProvider implements AdobeConnectSPI {
 
 		List<AdobeConnectSco> shortCuts = null;
 		HttpGet get = createAdminMethod(builder, errors);
-		try(CloseableHttpClient httpClient = HttpClientBuilder.create().build();
-				CloseableHttpResponse response = httpClient.execute(get)) {
-			int statusCode = response.getStatusLine().getStatusCode();
-			if(statusCode == 200) {
-				shortCuts = parseScos(response.getEntity(), errors);
-			} else {
-				EntityUtils.consume(response.getEntity());
+		if(get != null) {
+			try(CloseableHttpClient httpClient = buildHttpClient();
+					CloseableHttpResponse response = httpClient.execute(get)) {
+				int statusCode = response.getStatusLine().getStatusCode();
+				if(statusCode == 200) {
+					shortCuts = parseScos(response.getEntity(), errors);
+				} else {
+					EntityUtils.consume(response.getEntity());
+				}
+			} catch(Exception e) {
+				log.error("", e);
 			}
-		} catch(Exception e) {
-			log.error("", e);
 		}
 		return shortCuts;
 	}
@@ -462,16 +492,18 @@ public abstract class AbstractAdobeConnectProvider implements AdobeConnectSPI {
 		
 		AdobeConnectPrincipal user = null;
 		HttpGet get = createAdminMethod(builder, errors);
-		try(CloseableHttpClient httpClient = HttpClientBuilder.create().build();
-			CloseableHttpResponse response = httpClient.execute(get)) {
-			int statusCode = response.getStatusLine().getStatusCode();
-			if(statusCode == 200) {
-				user = parseCommonInfo(response.getEntity(), errors);
-			} else {
-				EntityUtils.consume(response.getEntity());
+		if(get != null) {
+			try(CloseableHttpClient httpClient = buildHttpClient();
+				CloseableHttpResponse response = httpClient.execute(get)) {
+				int statusCode = response.getStatusLine().getStatusCode();
+				if(statusCode == 200) {
+					user = parseCommonInfo(response.getEntity(), errors);
+				} else {
+					EntityUtils.consume(response.getEntity());
+				}
+			} catch(Exception e) {
+				log.error("", e);
 			}
-		} catch(Exception e) {
-			log.error("", e);
 		}
 		return user;
 	}
@@ -533,7 +565,7 @@ public abstract class AbstractAdobeConnectProvider implements AdobeConnectSPI {
 
 		BreezeSession session = null;
 		HttpGet getInfo = new HttpGet(uric);
-		try(CloseableHttpClient httpClient = HttpClientBuilder.create().build();
+		try(CloseableHttpClient httpClient = buildHttpClient();
 			CloseableHttpResponse response = httpClient.execute(getInfo)) {
 			int statusCode = response.getStatusLine().getStatusCode();
 			if(statusCode == 200) {
@@ -542,6 +574,11 @@ public abstract class AbstractAdobeConnectProvider implements AdobeConnectSPI {
 			EntityUtils.consumeQuietly(response.getEntity());
 		} catch(Exception e) {
 			log.error("", e);
+		}
+		
+		if(session == null) {
+			errors.append(new AdobeConnectError(AdobeConnectErrorCodes.serverNotAvailable));
+			return null;
 		}
 		
 		UriBuilder builder = adobeConnectModule.getAdobeConnectUriBuilder();
@@ -557,7 +594,7 @@ public abstract class AbstractAdobeConnectProvider implements AdobeConnectSPI {
 			.build();
 		
 		HttpGet getLogin = new HttpGet(uri);
-		try(CloseableHttpClient httpClient = HttpClientBuilder.create().build();
+		try(CloseableHttpClient httpClient = buildHttpClient();
 			CloseableHttpResponse response = httpClient.execute(getLogin)) {
 			int statusCode = response.getStatusLine().getStatusCode();
 			if(statusCode == 200) {
@@ -579,33 +616,42 @@ public abstract class AbstractAdobeConnectProvider implements AdobeConnectSPI {
 	protected List<AdobeConnectSco> sendScoRequest(UriBuilder builder, AdobeConnectErrors errors) {
 		List<AdobeConnectSco> scos = null;
 		HttpGet get = createAdminMethod(builder, errors);
-		try(CloseableHttpClient httpClient = HttpClientBuilder.create().build();
-				CloseableHttpResponse response = httpClient.execute(get)) {
-			int statusCode = response.getStatusLine().getStatusCode();
-			if(statusCode == 200 || statusCode == 201) {
-				scos = parseScos(response.getEntity(), errors);
-			} else {
-				EntityUtils.consume(response.getEntity());
+		if(get != null) {
+			try(CloseableHttpClient httpClient = buildHttpClient();
+					CloseableHttpResponse response = httpClient.execute(get)) {
+				int statusCode = response.getStatusLine().getStatusCode();
+				if(statusCode == 200 || statusCode == 201) {
+					scos = parseScos(response.getEntity(), errors);
+				} else {
+					EntityUtils.consume(response.getEntity());
+				}
+			} catch(Exception e) {
+				log.error("", e);
 			}
-		} catch(Exception e) {
-			log.error("", e);
 		}
 		return scos;
+	}
+
+	protected CloseableHttpClient buildHttpClient() {
+		dbInstance.commit();// free connection
+		return adobeConnectModule.httpClientBuilder().build();
 	}
 	
 	protected List<AdobeConnectPrincipal> sendPrincipalRequest(UriBuilder builder, AdobeConnectErrors errors) {
 		List<AdobeConnectPrincipal> users = null;
 		HttpGet get = createAdminMethod(builder, errors);
-		try(CloseableHttpClient httpClient = HttpClientBuilder.create().build();
-				CloseableHttpResponse response = httpClient.execute(get)) {
-			int statusCode = response.getStatusLine().getStatusCode();
-			if(statusCode == 200 || statusCode == 201) {
-				users = parsePrincipals(response.getEntity(), errors);
-			} else {
-				EntityUtils.consume(response.getEntity());
+		if(get != null) {
+			try(CloseableHttpClient httpClient = buildHttpClient();
+					CloseableHttpResponse response = httpClient.execute(get)) {
+				int statusCode = response.getStatusLine().getStatusCode();
+				if(statusCode == 200 || statusCode == 201) {
+					users = parsePrincipals(response.getEntity(), errors);
+				} else {
+					EntityUtils.consume(response.getEntity());
+				}
+			} catch(Exception e) {
+				log.error("", e);
 			}
-		} catch(Exception e) {
-			log.error("", e);
 		}
 		return users;
 	}
@@ -683,9 +729,12 @@ public abstract class AbstractAdobeConnectProvider implements AdobeConnectSPI {
 	
 	protected HttpGet createAdminMethod(UriBuilder builder, AdobeConnectErrors errors) {
 		BreezeSession session = getAdminSession(errors);
-		builder.queryParam("session", session.getSession());
-		HttpGet get = new HttpGet(builder.build());
-		get.setHeader(new BasicHeader("Cookie", COOKIE + session.getSession()));
+		HttpGet get = null;
+		if(session != null) {
+			builder.queryParam("session", session.getSession());
+			get = new HttpGet(builder.build());
+			get.setHeader(new BasicHeader("Cookie", COOKIE + session.getSession()));
+		}
 		return get;
 	}
 

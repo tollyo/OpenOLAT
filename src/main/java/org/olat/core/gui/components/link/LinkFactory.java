@@ -126,6 +126,12 @@ public class LinkFactory {
 		link.setTranslator(translator);
 		return link;
 	}
+
+	public static Link createLink(String name, Translator translator, ComponentEventListener listener, int presentation) {
+		Link link = new Link(name, name, name, presentation, null, listener);
+		link.setTranslator(translator);
+		return link;
+	}
 	
 	public static Link createLink(String name, String cmd, Translator translator, VelocityContainer vc, ComponentEventListener listener, int presentation) {
 		Link link = new Link(name, cmd, name, presentation, vc, listener);
@@ -278,5 +284,13 @@ public class LinkFactory {
 	 */
 	public static Link createButtonXSmall(String name, VelocityContainer vc, ComponentEventListener listener){
 		return new Link(name, name, name, Link.BUTTON_XSMALL, vc, listener);
+	}
+	
+	public static ExternalLink createExternalLink(String name, String label, String url) {
+		ExternalLink link = new ExternalLink(name, label);
+		link.setDomReplacementWrapperRequired(false);
+		link.setTarget("_blank");
+		link.setUrl(url);
+		return link;
 	}
 }

@@ -50,7 +50,6 @@ import org.olat.course.run.scoring.LastModificationsEvaluator;
 import org.olat.course.run.scoring.ObligationEvaluator;
 import org.olat.course.run.scoring.PassedEvaluator;
 import org.olat.course.run.scoring.RootPassedEvaluator;
-import org.olat.course.run.scoring.ScoreCalculator;
 import org.olat.course.run.scoring.ScoreEvaluator;
 import org.olat.course.run.scoring.StatusEvaluator;
 import org.olat.course.run.userview.UserCourseEnvironment;
@@ -80,8 +79,8 @@ public class STAssessmentHandler implements AssessmentHandler {
 	private static final ScoreEvaluator AVG_SCORE_EVALUATOR = new CumulatingScoreEvaluator(true);
 	private static final PassedEvaluator CONDITION_PASSED_EVALUATOR = new ConditionPassedEvaluator();
 	private static final RootPassedEvaluator ROOT_PASSED_EVALUATOR = new STRootPassedEvaluator();
-	private static final StatusEvaluator SCORE_STATUS_EVALUATOR = new ScoreStatusEvaluator();
-	private static final StatusEvaluator LEARNING_PATH_STATUS_EVALUATOR = new STStatusEvaluator();
+	private static final StatusEvaluator SCORE_STATUS_EVALUATOR = new STConditionStatusEvaluator();
+	private static final StatusEvaluator LEARNING_PATH_STATUS_EVALUATOR = new STLearningPathStatusEvaluator();
 	private static final FullyAssessedEvaluator FULLY_ASSESSED_EVALUATOR = new STFullyAssessedEvaluator();
 	private static final LastModificationsEvaluator LAST_MODIFICATION_EVALUATOR = new STLastModificationsEvaluator();
 	
@@ -96,10 +95,7 @@ public class STAssessmentHandler implements AssessmentHandler {
 			STCourseNode stCourseNode = (STCourseNode) courseNode;
 			STCourseNode root = getRoot(courseNode);
 			boolean isRoot = courseNode.getIdent().equals(root.getIdent());
-			ScoreCalculator scoreCalclualtor = root.getModuleConfiguration().getBooleanSafe(STCourseNode.CONFIG_SCORE_CALCULATOR_SUPPORTED)
-					? stCourseNode.getScoreCalculator()
-					: null;
-			return new STAssessmentConfig(isRoot, root.getModuleConfiguration(), scoreCalclualtor);
+			return new STAssessmentConfig(stCourseNode, isRoot, root.getModuleConfiguration());
 		}
 		return NonAssessmentConfig.create();
 	}
@@ -134,7 +130,6 @@ public class STAssessmentHandler implements AssessmentHandler {
 			AccountingEvaluatorsBuilder builder = AccountingEvaluatorsBuilder.builder()
 					.withObligationEvaluator(MANDATORY_OBLIGATION_EVALUATOR)
 					.withDurationEvaluator(CUMULATION_DURATION_EVALUATOR)
-					.withPassedEvaluator(CONDITION_PASSED_EVALUATOR)
 					.withStatusEvaluator(LEARNING_PATH_STATUS_EVALUATOR)
 					.withFullyAssessedEvaluator(FULLY_ASSESSED_EVALUATOR)
 					.withLastModificationsEvaluator(LAST_MODIFICATION_EVALUATOR)

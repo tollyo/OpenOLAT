@@ -29,7 +29,6 @@ import javax.ws.rs.core.UriBuilder;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.util.EntityUtils;
 import org.apache.logging.log4j.Logger;
 import org.olat.basesecurity.Authentication;
@@ -74,16 +73,18 @@ public class DFNprovider extends AbstractAdobeConnectProvider {
 
 		List<AdobeConnectPrincipal> users = null;
 		HttpGet get = createAdminMethod(builder, errors);
-		try(CloseableHttpClient httpClient = HttpClientBuilder.create().build();
-				CloseableHttpResponse response = httpClient.execute(get)) {
-			int statusCode = response.getStatusLine().getStatusCode();
-			if(statusCode == 200 || statusCode == 201) {
-				users = parsePrincipals(response.getEntity(), errors);
-			} else {
-				EntityUtils.consume(response.getEntity());
+		if(get != null) {
+			try(CloseableHttpClient httpClient = buildHttpClient();
+					CloseableHttpResponse response = httpClient.execute(get)) {
+				int statusCode = response.getStatusLine().getStatusCode();
+				if(statusCode == 200 || statusCode == 201) {
+					users = parsePrincipals(response.getEntity(), errors);
+				} else {
+					EntityUtils.consume(response.getEntity());
+				}
+			} catch(Exception e) {
+				log.error("", e);
 			}
-		} catch(Exception e) {
-			log.error("", e);
 		}
 		return users != null && !users.isEmpty() ? users.get(0) : null;
 	}
@@ -97,18 +98,20 @@ public class DFNprovider extends AbstractAdobeConnectProvider {
 			.queryParam("first-name", orDefault(identity.getUser().getFirstName(), "John"))
 			.queryParam("last-name", orDefault(identity.getUser().getLastName(), "Doe"));
 
-		HttpGet get = createAdminMethod(builder, errors);
 		List<AdobeConnectPrincipal> users = null;
-		try(CloseableHttpClient httpClient = HttpClientBuilder.create().build();
-				CloseableHttpResponse response = httpClient.execute(get)) {
-			int statusCode = response.getStatusLine().getStatusCode();
-			if(statusCode == 200 || statusCode == 201) {
-				users = parsePrincipals(response.getEntity(), errors);
-			} else {
-				EntityUtils.consume(response.getEntity());
+		HttpGet get = createAdminMethod(builder, errors);
+		if(get != null) {
+			try(CloseableHttpClient httpClient = buildHttpClient();
+					CloseableHttpResponse response = httpClient.execute(get)) {
+				int statusCode = response.getStatusLine().getStatusCode();
+				if(statusCode == 200 || statusCode == 201) {
+					users = parsePrincipals(response.getEntity(), errors);
+				} else {
+					EntityUtils.consume(response.getEntity());
+				}
+			} catch(Exception e) {
+				log.error("", e);
 			}
-		} catch(Exception e) {
-			log.error("", e);
 		}
 		return users != null && !users.isEmpty() ? users.get(0) : null;
 	}
@@ -124,19 +127,21 @@ public class DFNprovider extends AbstractAdobeConnectProvider {
 		builder
 			.queryParam("action", "lms-user-login")
 			.queryParam("login", authentication.getAuthusername());
-
-		HttpGet get = createAdminMethod(builder, errors);
+		
 		BreezeSession session = null;
-		try(CloseableHttpClient httpClient = HttpClientBuilder.create().build();
-				CloseableHttpResponse response = httpClient.execute(get)) {
-			int statusCode = response.getStatusLine().getStatusCode();
-			if(statusCode == 200) {
-				session = AdobeConnectUtils.getBreezeSessionFromXml(response);
-			} else {
-				EntityUtils.consume(response.getEntity());
+		HttpGet get = createAdminMethod(builder, errors);
+		if(get != null) {
+			try(CloseableHttpClient httpClient = buildHttpClient();
+					CloseableHttpResponse response = httpClient.execute(get)) {
+				int statusCode = response.getStatusLine().getStatusCode();
+				if(statusCode == 200) {
+					session = AdobeConnectUtils.getBreezeSessionFromXml(response);
+				} else {
+					EntityUtils.consume(response.getEntity());
+				}
+			} catch(Exception e) {
+				log.error("", e);
 			}
-		} catch(Exception e) {
-			log.error("", e);
 		}
 		return session;
 	}

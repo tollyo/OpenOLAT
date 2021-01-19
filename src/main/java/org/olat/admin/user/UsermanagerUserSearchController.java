@@ -33,6 +33,12 @@ import org.olat.basesecurity.BaseSecurityModule;
 import org.olat.basesecurity.SearchIdentityParams;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
+import org.olat.core.gui.components.link.Link;
+import org.olat.core.gui.components.link.LinkFactory;
+import org.olat.core.gui.components.segmentedview.SegmentViewComponent;
+import org.olat.core.gui.components.segmentedview.SegmentViewEvent;
+import org.olat.core.gui.components.segmentedview.SegmentViewFactory;
+import org.olat.core.gui.components.segmentedview.SegmentViewRendererType;
 import org.olat.core.gui.components.stack.TooledStackedPanel;
 import org.olat.core.gui.components.velocity.VelocityContainer;
 import org.olat.core.gui.control.Controller;
@@ -50,6 +56,7 @@ import org.olat.core.logging.activity.ThreadLocalUserActivityLogger;
 import org.olat.core.util.resource.OresHelper;
 import org.olat.user.UserManager;
 import org.olat.user.ui.admin.UserSearchTableController;
+import org.olat.user.ui.admin.UserSearchTableSettings;
 import org.olat.util.logging.activity.LoggingResourceable;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -71,11 +78,14 @@ public class UsermanagerUserSearchController extends BasicController implements 
 	private TooledStackedPanel stackedPanel;
 
 	private UsermanagerUserSearchForm searchFormCtrl;
+	private UsermanagerUserBulkSearchForm listFormCtrl;
 	private UserSearchTableController tableCtr;
 
+	private final boolean showDelete;
 	private final boolean showEmailButton;
+	private final boolean showTableSearch;
+	private final boolean showStatusFilters;
 	private final boolean showOrganisationMove;
-	private final boolean isAdministrativeUser;
 	private List<Organisation> manageableOrganisations;
 	private SearchIdentityParams identityQueryParams;
 	
@@ -86,6 +96,11 @@ public class UsermanagerUserSearchController extends BasicController implements 
 	@Autowired
 	private BaseSecurityModule securityModule;
 
+	private Link listSearchLink;
+	private Link fieldsSearchLink;
+	private VelocityContainer userSearchVC;
+	private SegmentViewComponent segmentView;
+	
 	/**
 	 * Constructor to trigger the user search workflow using a generic search form
 	 * 
@@ -99,16 +114,29 @@ public class UsermanagerUserSearchController extends BasicController implements 
 		
 		this.stackedPanel = stackedPanel;
 		this.manageableOrganisations = manageableOrganisations;
+		showStatusFilters = true;
 		showEmailButton = true;
+		showDelete = true;
 		showOrganisationMove = false;
-		
-		isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
+		showTableSearch = true;
 
+		userSearchVC = createVelocityContainer("usermanagerUsersearchTabs");
+		
+		segmentView = SegmentViewFactory.createSegmentView("segments", userSearchVC, this);
+		segmentView.setRendererType(SegmentViewRendererType.linked);
+		fieldsSearchLink = LinkFactory.createLink("search.fields", userSearchVC, this);
+		segmentView.addSegment(fieldsSearchLink, true);
+		listSearchLink = LinkFactory.createLink("search.list", userSearchVC, this);
+		segmentView.addSegment(listSearchLink, false);
+		
+		boolean isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
 		searchFormCtrl = new UsermanagerUserSearchForm(ureq, wControl, isAdministrativeUser, manageableOrganisations);
 		listenTo(searchFormCtrl);
 		
-		VelocityContainer userSearchVC = createVelocityContainer("usermanagerUsersearch");
-		userSearchVC.put("usersearch", searchFormCtrl.getInitialComponent());
+		listFormCtrl = new UsermanagerUserBulkSearchForm(ureq, wControl, manageableOrganisations);
+		listenTo(listFormCtrl);
+		doOpenFieldsSearch();
+		
 		putInitialPanel(userSearchVC);
 	}
 	
@@ -126,18 +154,21 @@ public class UsermanagerUserSearchController extends BasicController implements 
 	 * @param searchCreatedBefore
 	 */
 	public UsermanagerUserSearchController(UserRequest ureq, WindowControl wControl, TooledStackedPanel stackedPanel,
-			SearchIdentityParams predefinedQuery, boolean showEmailButton, boolean showOrganisationMove) {
+			SearchIdentityParams predefinedQuery, boolean showEmailButton, boolean showOrganisationMove, boolean showDelete,
+			boolean showStatusFilters, boolean showTableSearch) {
 		super(ureq, wControl);
 		setTranslator(userManager.getPropertyHandlerTranslator(getTranslator()));
+		this.showDelete = showDelete;
 		this.stackedPanel = stackedPanel;
 		this.showEmailButton = showEmailButton;
+		this.showTableSearch = showTableSearch;
+		this.showStatusFilters = showStatusFilters;
 		this.showOrganisationMove = showOrganisationMove;
 
 		identityQueryParams = predefinedQuery;
-		isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
 		
 		tableCtr = new UserSearchTableController(ureq, getWindowControl(), stackedPanel,
-				showEmailButton, showOrganisationMove, true);
+				UserSearchTableSettings.withVCard(showEmailButton, showOrganisationMove, showDelete, showStatusFilters, true));
 		listenTo(tableCtr);
 		tableCtr.loadModel(identityQueryParams);
 		putInitialPanel(tableCtr.getInitialComponent());
@@ -154,25 +185,33 @@ public class UsermanagerUserSearchController extends BasicController implements 
 	 * @param showEmailButton
 	 */
 	public UsermanagerUserSearchController(UserRequest ureq, WindowControl wControl, TooledStackedPanel stackedPanel,
-			List<Identity> identitiesList, boolean showEmailButton, boolean showTitle) {
+			List<Identity> identitiesList, boolean showEmailButton, boolean showDelete, boolean showTitle) {
 		super(ureq, wControl);
 		setTranslator(userManager.getPropertyHandlerTranslator(getTranslator()));
+		this.showDelete = showDelete;
 		this.stackedPanel = stackedPanel;
 		this.showEmailButton = showEmailButton;
+		showStatusFilters = false;
+		showTableSearch = false;
 		showOrganisationMove = false;
 		
-		isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
-
-		tableCtr = new UserSearchTableController(ureq, getWindowControl(), stackedPanel, showEmailButton, false, true);
+		tableCtr = new UserSearchTableController(ureq, getWindowControl(), stackedPanel,
+				UserSearchTableSettings.withVCard(showEmailButton, false, showDelete, true, true));
 		listenTo(tableCtr);
 		tableCtr.loadModel(identitiesList);
 		
 		if(showTitle) {
-			VelocityContainer userSearchVC = createVelocityContainer("usermanagerUsersearch");
+			userSearchVC = createVelocityContainer("usermanagerUsersearch");
 			userSearchVC.put("usersearch", tableCtr.getInitialComponent());
 			putInitialPanel(userSearchVC);
 		} else {
 			putInitialPanel(tableCtr.getInitialComponent());
+		}
+	}
+	
+	public void reloadTable() {
+		if(tableCtr != null) {
+			tableCtr.reloadTable();
 		}
 	}
 	
@@ -206,7 +245,30 @@ public class UsermanagerUserSearchController extends BasicController implements 
 
 	@Override
 	public void event(UserRequest ureq, Component source, Event event) {
-		//
+		if(source == segmentView) {
+			if(event instanceof SegmentViewEvent) {
+				SegmentViewEvent sve = (SegmentViewEvent)event;
+				String segmentCName = sve.getComponentName();
+				Component clickedLink = userSearchVC.getComponent(segmentCName);
+				if (clickedLink == fieldsSearchLink) {
+					doOpenFieldsSearch();
+				} else if (clickedLink == listSearchLink) {
+					doOpenListSearch();
+				}
+			}
+		}
+	}
+	
+	private void doOpenFieldsSearch() {
+		userSearchVC.put("usersearch", searchFormCtrl.getInitialComponent());
+		fieldsSearchLink.setCustomDisplayText(translate("search.fields.selected"));
+		listSearchLink.setCustomDisplayText(translate("search.list"));
+	}
+	
+	private void doOpenListSearch() {
+		userSearchVC.put("usersearch", listFormCtrl.getInitialComponent());
+		fieldsSearchLink.setCustomDisplayText(translate("search.fields"));
+		listSearchLink.setCustomDisplayText(translate("search.list.selected"));
 	}
 	
 	private void doActivateUser(UserRequest ureq, List<ContextEntry> entries) {
@@ -219,20 +281,36 @@ public class UsermanagerUserSearchController extends BasicController implements 
 		searchState.setDelegate(states);
 		searchFormCtrl.setStateEntry(searchState);
 		
-		doPushSearch(ureq);
+		doPushSearch(ureq, showTableSearch);
 		tableCtr.activate(ureq, entries, null);
 	}
 	
-	private void doPushSearch(UserRequest ureq) {
+	private void doPushList(UserRequest ureq) {
+		List<Identity> identities = listFormCtrl.getUserList();
+
+		removeAsListenerAndDispose(tableCtr);
+		OLATResourceable ores = OresHelper.createOLATResourceableInstance("table", 0l);
+		ThreadLocalUserActivityLogger.addLoggingResourceInfo(LoggingResourceable.wrapBusinessPath(ores));
+		WindowControl bwControl = addToHistory(ureq, ores, null);
+		tableCtr = new UserSearchTableController(ureq, bwControl, stackedPanel,
+				UserSearchTableSettings.withVCard(showEmailButton, showOrganisationMove, showDelete, showStatusFilters, true));
+		listenTo(tableCtr);
+		tableCtr.loadModel(identities);
+		stackedPanel.pushController("Results", tableCtr);
+	}
+	
+	private void doPushSearch(UserRequest ureq, boolean withTableSearch) {
 		identityQueryParams = searchFormCtrl.getSearchIdentityParams();
 		if(identityQueryParams.getOrganisations() == null || identityQueryParams.getOrganisations().isEmpty()) {
 			identityQueryParams.setOrganisations(manageableOrganisations);
 		}
-		
+
+		removeAsListenerAndDispose(tableCtr);
 		OLATResourceable ores = OresHelper.createOLATResourceableInstance("table", 0l);
 		ThreadLocalUserActivityLogger.addLoggingResourceInfo(LoggingResourceable.wrapBusinessPath(ores));
 		WindowControl bwControl = addToHistory(ureq, ores, null);
-		tableCtr = new UserSearchTableController(ureq, bwControl, stackedPanel, showEmailButton, showOrganisationMove, true);
+		tableCtr = new UserSearchTableController(ureq, bwControl, stackedPanel,
+				UserSearchTableSettings.withVCard(showEmailButton, showOrganisationMove, showDelete, showStatusFilters, withTableSearch));
 		listenTo(tableCtr);
 		tableCtr.loadModel(identityQueryParams);
 		stackedPanel.pushController("Results", tableCtr);
@@ -250,7 +328,13 @@ public class UsermanagerUserSearchController extends BasicController implements 
 	public void event(UserRequest ureq, Controller source, Event event) {
 		if (source == searchFormCtrl) {
 			if (event == Event.DONE_EVENT) {
-				doPushSearch(ureq);
+				doPushSearch(ureq, false);
+			} else if (event == Event.CANCELLED_EVENT) {
+				fireEvent(ureq, Event.CANCELLED_EVENT);
+			}
+		} else if (source == listFormCtrl) {
+			if (event == Event.DONE_EVENT) {
+				doPushList(ureq);
 			} else if (event == Event.CANCELLED_EVENT) {
 				fireEvent(ureq, Event.CANCELLED_EVENT);
 			}

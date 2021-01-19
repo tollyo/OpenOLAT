@@ -20,13 +20,16 @@
 package org.olat.basesecurity.manager;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.Logger;
 import org.olat.basesecurity.Group;
@@ -40,6 +43,7 @@ import org.olat.basesecurity.OrganisationService;
 import org.olat.basesecurity.OrganisationStatus;
 import org.olat.basesecurity.OrganisationType;
 import org.olat.basesecurity.OrganisationTypeRef;
+import org.olat.basesecurity.RightProvider;
 import org.olat.basesecurity.model.IdentityToRoleKey;
 import org.olat.basesecurity.model.OrganisationImpl;
 import org.olat.basesecurity.model.OrganisationMember;
@@ -79,6 +83,10 @@ public class OrganisationServiceImpl implements OrganisationService, Initializin
 	private OrganisationTypeDAO organisationTypeDao;
 	@Autowired
 	private OrganisationTypeToTypeDAO organisationTypeToTypeDao;
+	@Autowired
+	private OrganisationRoleRightDAO organisationRoleRightDAO;
+	@Autowired
+	private List<RightProvider> allRights;
 
 	@Override
 	public void afterPropertiesSet() throws Exception {
@@ -99,7 +107,8 @@ public class OrganisationServiceImpl implements OrganisationService, Initializin
 		Organisation organisation = organisationDao.createAndPersistOrganisation(displayName, identifier, description, parentOrganisation, type);
 		if(parentOrganisation != null) {
 			Group organisationGroup = organisation.getGroup();
-			List<GroupMembership> memberships = groupDao.getMemberships(parentOrganisation.getGroup());
+			List<GroupMembership> memberships = groupDao.getMemberships(parentOrganisation.getGroup(),
+					GroupMembershipInheritance.inherited, GroupMembershipInheritance.root);
 			for(GroupMembership membership:memberships) {
 				if(membership.getInheritanceMode() == GroupMembershipInheritance.inherited
 						|| membership.getInheritanceMode() == GroupMembershipInheritance.root) {
@@ -127,6 +136,11 @@ public class OrganisationServiceImpl implements OrganisationService, Initializin
 
 	@Override
 	public void deleteOrganisation(OrganisationRef organisation, OrganisationRef organisationAlt) {
+		// Delete all rights for this organisation
+		Organisation org = getOrganisation(organisation);
+		for (OrganisationRoles role : OrganisationRoles.values()) {
+			setGrantedOrganisationRights(org, role, Collections.emptyList());
+		}
 		OrganisationImpl reloadedOrganisation = (OrganisationImpl)organisationDao.loadByKey(organisation.getKey());
 		if(DEFAULT_ORGANISATION_IDENTIFIER.equals(reloadedOrganisation.getIdentifier())) {
 			log.error("Someone try to delete the default organisation");
@@ -170,6 +184,12 @@ public class OrganisationServiceImpl implements OrganisationService, Initializin
 
 	@Override
 	public void moveOrganisation(OrganisationRef organisationToMove, OrganisationRef newParentRef) {
+		// Delete all rights
+		Organisation org = getOrganisation(organisationToMove);
+		for (OrganisationRoles role : OrganisationRoles.values()) {
+			setGrantedOrganisationRights(org, role, Collections.emptyList());
+		}
+
 		OrganisationImpl toMove = (OrganisationImpl)organisationDao.loadByKey(organisationToMove.getKey());
 		Organisation newParent = organisationDao.loadByKey(newParentRef.getKey());
 		if(newParent == null || newParent.equals(toMove.getParent())) {
@@ -213,7 +233,8 @@ public class OrganisationServiceImpl implements OrganisationService, Initializin
 		}
 		
 		// propagate inheritance of the new parent
-		List<GroupMembership> memberships = groupDao.getMemberships(newParent.getGroup());
+		List<GroupMembership> memberships = groupDao.getMemberships(newParent.getGroup(),
+				GroupMembershipInheritance.inherited, GroupMembershipInheritance.root);
 		List<GroupMembership> membershipsToPropagate = new ArrayList<>();
 		for(GroupMembership membership:memberships) {
 			if(membership.getInheritanceMode() == GroupMembershipInheritance.inherited || membership.getInheritanceMode() == GroupMembershipInheritance.root) {
@@ -294,7 +315,6 @@ public class OrganisationServiceImpl implements OrganisationService, Initializin
 	
 	@Override
 	public boolean isMultiOrganisations() {
-		// TODO Auto-generated method stub
 		return  organisationDao.count(OrganisationStatus.notDelete()) > 1;
 	}
 
@@ -563,5 +583,36 @@ public class OrganisationServiceImpl implements OrganisationService, Initializin
 	public List<OrganisationMembershipStats> getOrganisationStatistics(OrganisationRef organisation,
 			List<IdentityRef> identities) {
 		return organisationDao.getStatistics(organisation, identities);
+	}
+
+	@Override
+	public List<RightProvider> getAllOrganisationRights(OrganisationRoles role) {
+		return allRights.stream()
+				.filter(right -> right.getOrganisationRoles().contains(role))
+				.sorted(Comparator.comparing(RightProvider::getOrganisationPosition))
+				.collect(Collectors.toList());
+	}
+
+	@Override
+	public List<RightProvider> getGrantedOrganisationRights(Organisation organisation, OrganisationRoles role) {
+		List<String> organisationRights = organisationRoleRightDAO.getGrantedOrganisationRights(organisation.getRoot() != null ? organisation.getRoot() : organisation, role);
+
+		return allRights.stream().filter(right -> organisationRights.contains(right.getRight())).collect(Collectors.toList());
+	}
+
+	@Override
+	public void setGrantedOrganisationRights(Organisation organisation, OrganisationRoles role, Collection<String> rights) {
+		// Get all rights
+		List<String> grantedRights = organisationRoleRightDAO.getGrantedOrganisationRights(organisation, role);
+		List<String> deleteRights = grantedRights.stream().filter(grantedRight -> !rights.contains(grantedRight)).collect(Collectors.toList());
+		List<String> addRights = rights.stream().filter(addRight -> !grantedRights.contains(addRight)).collect(Collectors.toList());
+
+		// Remove rights, which are not granted anymore
+		organisationRoleRightDAO.deleteGrantedOrganisationRights(organisation, role, deleteRights);
+
+		// Add rights, which are not granted yet
+		for (String right : addRights) {
+			organisationRoleRightDAO.createOrganisationRoleRight(organisation, role, right);
+		}
 	}
 }

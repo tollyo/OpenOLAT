@@ -31,21 +31,18 @@ import java.util.Locale;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import org.olat.admin.user.delete.service.UserDeletionManager;
+import org.apache.logging.log4j.Logger;
 import org.olat.basesecurity.AuthHelper;
+import org.olat.basesecurity.BaseSecurity;
 import org.olat.core.dispatcher.Dispatcher;
 import org.olat.core.dispatcher.DispatcherModule;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.UserRequestImpl;
 import org.olat.core.gui.Windows;
-import org.olat.core.gui.components.Window;
-import org.olat.core.gui.control.ChiefController;
-import org.olat.core.gui.render.StringOutput;
-import org.olat.core.gui.render.URLBuilder;
+import org.olat.core.gui.media.ServletUtil;
 import org.olat.core.id.Identity;
 import org.olat.core.id.context.BusinessControl;
 import org.olat.core.id.context.BusinessControlFactory;
-import org.apache.logging.log4j.Logger;
 import org.olat.core.logging.Tracing;
 import org.olat.core.logging.activity.ThreadLocalUserActivityLoggerInstaller;
 import org.olat.core.util.StringHelper;
@@ -82,9 +79,9 @@ public class RESTDispatcher implements Dispatcher {
 	private static final Logger log = Tracing.createLoggerFor(RESTDispatcher.class);
 	
 	private LoginModule loginModule;
+	private BaseSecurity securityManager;
 	private RestSecurityBean restSecurityBean;
 	private UserSessionManager userSessionManager;
-	private UserDeletionManager userDeletionManager;
 	
 	/**
 	 * [used by Spring]
@@ -112,10 +109,10 @@ public class RESTDispatcher implements Dispatcher {
 
 	/**
 	 * [used by Spring]
-	 * @param userDeletionManager
+	 * @param securityManager The base security manager
 	 */
-	public void setUserDeletionManager(UserDeletionManager userDeletionManager) {
-		this.userDeletionManager = userDeletionManager;
+	public void setSecurityManager(BaseSecurity securityManager) {
+		this.securityManager = securityManager;
 	}
 
 	@Override
@@ -123,10 +120,11 @@ public class RESTDispatcher implements Dispatcher {
 		//
 		// create a ContextEntries String which can be used to create a BusinessControl -> move to 
 		//
-		String uriPrefix = DispatcherModule.getLegacyUriPrefix(request);
+		final String uriPrefix = DispatcherModule.getLegacyUriPrefix(request);
 		final String origUri = request.getRequestURI();
-		String encodedRestPart = origUri.substring(uriPrefix.length());
+		final String encodedRestPart = origUri.substring(uriPrefix.length());
 		String restPart = encodedRestPart;
+		
 		try {
 			restPart = URLDecoder.decode(encodedRestPart, "UTF8");
 		} catch (UnsupportedEncodingException e) {
@@ -137,15 +135,11 @@ public class RESTDispatcher implements Dispatcher {
 		if (split.length % 2 != 0) {
 			//The URL is not a valid business path
 			DispatcherModule.sendBadRequest(origUri, response);
-			log.warn("URL is not valid: "+restPart);
+			log.warn("URL is not valid: {}", restPart);
 			return;
 		}
 		String businessPath = BusinessControlFactory.getInstance().formatFromSplittedURI(split);
-		if(log.isDebugEnabled()) {
-			log.debug("REQUEST URI: " + origUri);
-			log.debug("REQUEST PREFIX " + restPart);
-			log.debug("calc buspath " + businessPath);
-		}
+		log.debug("REQUEST URI: {} PREFIX: {} Business path: {}", origUri,  restPart,  businessPath);
 		
 		//check if the businesspath is valid
 		try {
@@ -168,6 +162,9 @@ public class RESTDispatcher implements Dispatcher {
 		if(usess != null) {
 			ThreadLocalUserActivityLoggerInstaller.initUserActivityLogger(request);
 			Tracing.setUserSession(usess);
+		} else {
+			DispatcherModule.sendForbidden(request.getPathInfo(), response);
+			return;
 		}
 		UserRequest ureq = null;
 		try {
@@ -181,7 +178,7 @@ public class RESTDispatcher implements Dispatcher {
 			//showing redscreens for non valid URL is wrong instead
 			//a 404 message must be shown -> e.g. robots correct their links.
 			if(log.isDebugEnabled()){
-				log.debug("Bad Request "+request.getPathInfo());
+				log.debug("Bad Request {}", request.getPathInfo());
 			}
 			DispatcherModule.sendBadRequest(request.getPathInfo(), response);
 			return;
@@ -193,11 +190,10 @@ public class RESTDispatcher implements Dispatcher {
 			// Lookup identity that is associated with this token
 			Identity restIdentity = restSecurityBean.getIdentity(xOlatToken);			
 			Tracing.setIdentity(restIdentity);
-			if(log.isDebugEnabled()) {
-				if (restIdentity == null)
-					log.debug("Found SSO token " + RestSecurityHelper.SEC_TOKEN + " in url, but token is not bound to an identity");
-				else
-					log.debug("Found SSO token " + RestSecurityHelper.SEC_TOKEN + " in url which is bound to identity::" + restIdentity.getKey());
+			if (restIdentity == null) {
+				log.debug("Found SSO token {} in url, but token is not bound to an identity", RestSecurityHelper.SEC_TOKEN);
+			} else {
+				log.debug("Found SSO token {} in url which is bound to identity:: {}", RestSecurityHelper.SEC_TOKEN, restIdentity.getKey());
 			}
 			//
 			if (restIdentity != null) {
@@ -214,56 +210,35 @@ public class RESTDispatcher implements Dispatcher {
 					// standard OLAT session
 					int loginStatus = AuthHelper.doLogin(restIdentity, RestSecurityHelper.SEC_TOKEN, ureq);			
 					if (loginStatus == AuthHelper.LOGIN_OK) {
-						//fxdiff: FXOLAT-268 update last login date and register active user
-						userDeletionManager.setIdentityAsActiv(restIdentity);
+						securityManager.setIdentityLastLogin(restIdentity);
 					} else {
 						//error, redirect to login screen
 						DispatcherModule.redirectToDefaultDispatcher(response);
 					}
-				} else if (Windows.getWindows(usess).getChiefController() == null) {
-					// Session is already available, but no main window (Head-less REST
-					// session). Only create the base chief controller and the window
-					Window currentWindow = AuthHelper.createAuthHome(ureq).getWindow();
-					//the user is authenticated successfully with a security token, we can set the authenticated path
-					currentWindow.setUriPrefix(WebappHelper.getServletContextPath() + DispatcherModule.PATH_AUTHENTICATED);
-					Windows ws = Windows.getWindows(ureq);
-					ws.registerWindow(currentWindow);
-					// no need to call setIdentityAsActive as this was already done by RestApiLoginFilter...
+				} else if (Windows.getWindows(usess).getChiefController(ureq) == null) {
+					redirectAuthenticatedTo(usess, ureq, encodedRestPart);
+					return;
 				}
 			}
 		}
 		
 		boolean auth = usess.isAuthenticated();
 		if (auth) {
-			if (Windows.getWindows(usess).getChiefController() == null) {
-				// Session is already available, but no main window (Head-less REST
-				// session). Only create the base chief controller and the window
-				setBusinessPathInUserSession(usess, businessPath, ureq.getParameter(WINDOW_SETTINGS));
-
-				AuthHelper.createAuthHome(ureq);
-				String url = getRedirectToURL(usess) + ";jsessionid=" + usess.getSessionInfo().getSession().getId();
-				DispatcherModule.redirectTo(response, url);
-			} else {
-				//redirect to the authenticated dispatcher which support REST url
-				String url = WebappHelper.getServletContextPath() + DispatcherModule.PATH_AUTHENTICATED + encodedRestPart;
-				DispatcherModule.redirectTo(response, url);
-			}
+			redirectAuthenticatedTo(usess, ureq, encodedRestPart);
 		} else {
 			//prepare for redirect
 			setBusinessPathInUserSession(usess, businessPath, ureq.getParameter(WINDOW_SETTINGS));
 			String invitationAccess = ureq.getParameter(AuthenticatedDispatcher.INVITATION);
 			if (invitationAccess != null && loginModule.isInvitationEnabled()) {
 			// try to log in as anonymous
-				// use the language from the lang paramter if available, otherwhise use the system default locale
+				// use the language from the lang parameter if available, otherwise use the system default locale
 				Locale guestLoc = getLang(ureq);
 				int loginStatus = AuthHelper.doInvitationLogin(invitationAccess, ureq, guestLoc);
 				if ( loginStatus == AuthHelper.LOGIN_OK) {
 					Identity invite = usess.getIdentity();
-					//fxdiff: FXOLAT-268 update last login date and register active user
-					userDeletionManager.setIdentityAsActiv(invite);					
+					securityManager.setIdentityLastLogin(invite);					
 					//logged in as invited user, continue
-					String url = getRedirectToURL(usess);
-					DispatcherModule.redirectTo(response, url);
+					ServletUtil.serveResource(request, response, ureq.getDispatchResult().getResultingMediaResource());
 				} else if (loginStatus == AuthHelper.LOGIN_NOTAVAILABLE) {
 					DispatcherModule.redirectToServiceNotAvailable(response);
 				} else {
@@ -276,13 +251,12 @@ public class RESTDispatcher implements Dispatcher {
 					DispatcherModule.redirectToDefaultDispatcher(response);
 				} else if (guestAccess.equals(AuthenticatedDispatcher.TRUE)) {
 					// try to log in as anonymous
-					// use the language from the lang paramter if available, otherwhise use the system default locale
+					// use the language from the lang parameter if available, otherwise use the system default locale
 					Locale guestLoc = getLang(ureq);
 					int loginStatus = AuthHelper.doAnonymousLogin(ureq, guestLoc);
 					if ( loginStatus == AuthHelper.LOGIN_OK) {
 						//logged in as anonymous user, continue
-						String url = getRedirectToURL(usess);
-						DispatcherModule.redirectTo(response, url);
+						ServletUtil.serveResource(request, response, ureq.getDispatchResult().getResultingMediaResource());
 					} else if (loginStatus == AuthHelper.LOGIN_NOTAVAILABLE) {
 						DispatcherModule.redirectToServiceNotAvailable(response);
 					} else {
@@ -292,6 +266,14 @@ public class RESTDispatcher implements Dispatcher {
 				}
 			}
 		}
+	}
+	
+	private void redirectAuthenticatedTo(UserSession usess, UserRequest ureq, String encodedRestPart) {
+		String url = WebappHelper.getServletContextPath() + DispatcherModule.PATH_AUTHENTICATED + encodedRestPart;
+		if(usess != null && !ureq.getHttpReq().isRequestedSessionIdFromCookie()) {
+			url += ";jsessionid=" + usess.getSessionInfo().getSession().getId();
+		}
+		DispatcherModule.redirectTo(ureq.getHttpResp(), url);
 	}
 	
 	/**
@@ -328,16 +310,5 @@ public class RESTDispatcher implements Dispatcher {
 			guestLoc = I18nManager.getInstance().getLocaleOrDefault(guestLang);
 		}
 		return guestLoc;
-	}
-	
-	private String getRedirectToURL(UserSession usess) {
-		ChiefController cc = Windows.getWindows(usess).getChiefController();
-		Window w = cc.getWindow();
-
-		URLBuilder ubu = new URLBuilder(WebappHelper.getServletContextPath() + DispatcherModule.PATH_AUTHENTICATED, w.getInstanceId(), String.valueOf(w.getTimestamp()));
-		StringOutput sout = new StringOutput(30);
-		ubu.buildURI(sout, null, null);
-		
-		return sout.toString();
 	}
 }

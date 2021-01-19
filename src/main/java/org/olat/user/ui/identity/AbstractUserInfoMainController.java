@@ -25,6 +25,7 @@ import java.util.List;
 import org.olat.commons.calendar.CalendarManager;
 import org.olat.commons.calendar.CalendarModule;
 import org.olat.commons.calendar.model.CalendarUserConfiguration;
+import org.olat.commons.calendar.ui.CalendarController;
 import org.olat.commons.calendar.ui.WeeklyCalendarController;
 import org.olat.commons.calendar.ui.components.KalendarRenderWrapper;
 import org.olat.core.commons.modules.bc.FolderConfig;
@@ -43,9 +44,7 @@ import org.olat.core.util.vfs.VFSManager;
 import org.olat.core.util.vfs.callbacks.ReadOnlyCallback;
 import org.olat.core.util.vfs.callbacks.VFSSecurityCallback;
 import org.olat.modules.co.ContactFormController;
-import org.olat.portfolio.manager.InvitationDAO;
-import org.olat.portfolio.ui.EPMapRunController;
-import org.olat.portfolio.ui.EPMapRunViewOption;
+import org.olat.modules.portfolio.manager.InvitationDAO;
 import org.olat.user.HomePageConfig;
 import org.olat.user.HomePageConfigManager;
 import org.olat.user.HomePageDisplayController;
@@ -64,13 +63,11 @@ public abstract class AbstractUserInfoMainController extends BasicController {
 	protected static final String CMD_CALENDAR = "calendar";
 	protected static final String CMD_FOLDER = "userfolder";
 	protected static final String CMD_CONTACT = "contact";
-	protected static final String CMD_PORTFOLIO = "portfolio";
 	
 	protected final Identity chosenIdentity;
 	protected final boolean isInvitee;
 	protected final boolean isDeleted;
 	
-	private EPMapRunController portfolioController;
 	private FolderRunController folderRunController;
 	private WeeklyCalendarController calendarController;
 	private ContactFormController contactFormController;
@@ -100,7 +97,7 @@ public abstract class AbstractUserInfoMainController extends BasicController {
 	protected HomePageDisplayController doOpenHomepage(UserRequest ureq) {
 		removeAsListenerAndDispose(homePageDisplayController);
 		
-		HomePageConfig homePageConfig = homePageConfigManager.loadConfigFor(chosenIdentity.getName());
+		HomePageConfig homePageConfig = homePageConfigManager.loadConfigFor(chosenIdentity);
 		removeAsListenerAndDispose(homePageDisplayController);
 		homePageDisplayController = new HomePageDisplayController(ureq, getWindowControl(), chosenIdentity, homePageConfig);
 		listenTo(homePageDisplayController);
@@ -129,7 +126,7 @@ public abstract class AbstractUserInfoMainController extends BasicController {
 		WindowControl bwControl = addToHistory(ureq, ores, null);
 		OLATResourceable callerOres = OresHelper.createOLATResourceableInstance(chosenIdentity.getName(), chosenIdentity.getKey());
 		calendarController = new WeeklyCalendarController(ureq, bwControl, calendars,
-				WeeklyCalendarController.CALLER_PROFILE, callerOres, false);
+				CalendarController.CALLER_PROFILE, callerOres, false);
 		listenTo(calendarController);
 		return calendarController;
 	}
@@ -137,7 +134,7 @@ public abstract class AbstractUserInfoMainController extends BasicController {
 	protected FolderRunController doOpenFolder(UserRequest ureq) {
 		removeAsListenerAndDispose(folderRunController);
 
-		String chosenUserFolderRelPath = FolderConfig.getUserHome(chosenIdentity.getName()) + "/public";
+		String chosenUserFolderRelPath = FolderConfig.getUserHome(chosenIdentity) + "/public";
 		
 		String fullName = userManager.getUserDisplayName(chosenIdentity);
 		VFSContainer rootFolder = VFSManager.olatRootContainer(chosenUserFolderRelPath, null);
@@ -169,16 +166,6 @@ public abstract class AbstractUserInfoMainController extends BasicController {
 		contactFormController = new ContactFormController(ureq, bwControl, true, false, false, cmsg);
 		listenTo(contactFormController);
 		return contactFormController;
-	}
-	
-	protected EPMapRunController doOpenPortfolio(UserRequest ureq) {
-		removeAsListenerAndDispose(portfolioController);
-		
-		OLATResourceable ores = OresHelper.createOLATResourceableType(CMD_PORTFOLIO);
-		WindowControl bwControl = addToHistory(ureq, ores, null);
-		portfolioController = new EPMapRunController(ureq, bwControl, false, EPMapRunViewOption.OTHER_MAPS, chosenIdentity);
-		listenTo(portfolioController);
-		return portfolioController;
 	}
 
 }

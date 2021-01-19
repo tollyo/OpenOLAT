@@ -62,8 +62,8 @@ public class WysiwygFactory {
 	 *            true: check if file has been created with another tool and
 	 *            warn user about potential data loss; false: ignore other
 	 *            authoring tools
-	 * @param userActivityLogger
-	 *            the userActivity Logger if used
+	 * @param versions
+	 *
 	 * @return
 	 */
 	public static HTMLEditorController createWysiwygController(UserRequest ureq, WindowControl wControl,
@@ -74,21 +74,13 @@ public class WysiwygFactory {
 	public static HTMLEditorController createWysiwygController(UserRequest ureq, WindowControl wControl,
 			VFSContainer rootDir, String filePath, boolean editorCheckEnabled, boolean versions,
 			VFSEdusharingProvider edusharingProvider) {
-		return new HTMLEditorController(ureq, wControl, rootDir, filePath, null, null, editorCheckEnabled, versions,
-				edusharingProvider);
+		return createWysiwygController(ureq, wControl, rootDir, filePath, null, editorCheckEnabled,  versions, edusharingProvider);
 	}
-	
-	public static HTMLEditorController createWysiwygController(
-			UserRequest ureq, WindowControl wControl, VFSContainer rootDir,
-			String filePath, String mediaPath, boolean editorCheckEnabled, boolean versions) {
-		return new HTMLEditorController(ureq, wControl, rootDir, filePath,
-				null, mediaPath, editorCheckEnabled, versions, null);
-	}
-	
+
 	public static HTMLEditorController createWysiwygController(UserRequest ureq, WindowControl wControl,
 			VFSContainer rootDir, String filePath, String mediaPath, boolean editorCheckEnabled, boolean versions,
 			VFSEdusharingProvider edusharingProvider) {
-		return new HTMLEditorController(ureq, wControl, rootDir, filePath, null, mediaPath, editorCheckEnabled,
+		return new HTMLEditorController(ureq, wControl, rootDir, filePath, null, null, mediaPath, editorCheckEnabled,
 				versions, edusharingProvider);
 	}
 
@@ -121,23 +113,23 @@ public class WysiwygFactory {
 			String relFilePath, boolean editorCheckEnabled,
 			CustomLinkTreeModel customLinkTreeModel) {
 		return createWysiwygControllerWithInternalLink(ureq, wControl, baseContainer, relFilePath, editorCheckEnabled,
-				customLinkTreeModel, null);
+				customLinkTreeModel, null, null);
 	}
 	
-	public static HTMLEditorController createWysiwygControllerWithInternalLink(
-			UserRequest ureq, WindowControl wControl, VFSContainer baseContainer,
-			String relFilePath, boolean editorCheckEnabled,
-			CustomLinkTreeModel customLinkTreeModel, VFSEdusharingProvider edusharingProvider) {
+	public static HTMLEditorController createWysiwygControllerWithInternalLink(UserRequest ureq, WindowControl wControl,
+			VFSContainer baseContainer, String relFilePath, boolean editorCheckEnabled,
+			CustomLinkTreeModel customLinkTreeModel, CustomLinkTreeModel toolLinkTreeModel,
+			VFSEdusharingProvider edusharingProvider) {
 		return createWysiwygControllerWithInternalLink(ureq, wControl, baseContainer, relFilePath, editorCheckEnabled,
-				true, customLinkTreeModel, edusharingProvider);
+				true, customLinkTreeModel, toolLinkTreeModel, edusharingProvider);
 	}
 	
-	public static HTMLEditorController createWysiwygControllerWithInternalLink(
-			UserRequest ureq, WindowControl wControl, VFSContainer baseContainer,
-			String relFilePath, boolean editorCheckEnabled, boolean version,
-			CustomLinkTreeModel customLinkTreeModel, VFSEdusharingProvider edusharingProvider) {
+	public static HTMLEditorController createWysiwygControllerWithInternalLink(UserRequest ureq, WindowControl wControl,
+			VFSContainer baseContainer, String relFilePath, boolean editorCheckEnabled, boolean version,
+			CustomLinkTreeModel customLinkTreeModel, CustomLinkTreeModel toolLinkTreeModel,
+			VFSEdusharingProvider edusharingProvider) {
 		return new HTMLEditorController(ureq, wControl, baseContainer, relFilePath,
-				customLinkTreeModel, null, editorCheckEnabled, version, edusharingProvider);
+				customLinkTreeModel, toolLinkTreeModel, null, editorCheckEnabled, version, edusharingProvider);
 	}
 
 	/**

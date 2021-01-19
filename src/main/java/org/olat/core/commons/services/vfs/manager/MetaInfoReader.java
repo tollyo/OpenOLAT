@@ -32,9 +32,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
-import javax.xml.XMLConstants;
 import javax.xml.parsers.SAXParser;
-import javax.xml.parsers.SAXParserFactory;
 
 import org.apache.logging.log4j.Logger;
 import org.olat.basesecurity.BaseSecurity;
@@ -45,6 +43,7 @@ import org.olat.core.logging.Tracing;
 import org.olat.core.util.FileUtils;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.filter.FilterFactory;
+import org.olat.core.util.xml.XMLFactories;
 import org.xml.sax.Attributes;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXParseException;
@@ -63,10 +62,7 @@ public class MetaInfoReader {
 	private static SAXParser saxParser;
 	static {
 		try {
-
-			SAXParserFactory factory = SAXParserFactory.newInstance();
-			factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-			saxParser = factory.newSAXParser();
+			saxParser = XMLFactories.newSAXParser();
 		} catch(Exception ex) {
 			log.error("", ex);
 		}
@@ -97,6 +93,12 @@ public class MetaInfoReader {
 			synchronized(saxParser) {
 				saxParser.parse(bin, new MetaHandler(null));
 			}
+			
+			// check if the lock data are complete, if not, remove the partial lock data
+			if(meta != null && meta.isLocked() && meta.getLockedBy() == null) {
+				meta.setLocked(false);
+				meta.setLockedDate(null);
+			}
 		} catch(Exception ex) {
 			log.error("Error while parsing binaries", ex);
 		}
@@ -110,12 +112,17 @@ public class MetaInfoReader {
 			synchronized(saxParser) {
 				saxParser.parse(bis, new MetaHandler(fMeta));
 			}
+			
+			if(meta != null && meta.isLocked() && meta.getLockedBy() == null) {
+				meta.setLocked(false);
+				meta.setLockedDate(null);
+			}
 		} catch (SAXParseException ex) {
 			if(!parseSAXFiltered(fMeta)) {
-				log.warn("SAX Parser error while parsing " + fMeta, ex);
+				log.warn("SAX Parser error while parsing {}", fMeta, ex);
 			}
 		} catch(Exception ex) {
-			log.error("Error while parsing " + fMeta, ex);
+			log.error("Error while parsing {}", fMeta, ex);
 		}
 		return true;
 	}

@@ -41,6 +41,8 @@ public class ShibbolethAutoAccessHandler extends AutoAccessHandler {
 	public String getType() {
 		return METHOD_TYPE;
 	}
+	
+	
 
 	@Override
 	public String getMethodName(Locale locale) {

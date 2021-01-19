@@ -19,11 +19,17 @@
  */
 package org.olat.resource.accesscontrol.provider.paypalcheckout;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import org.apache.logging.log4j.Logger;
 import org.olat.core.configuration.AbstractSpringModule;
+import org.olat.core.helpers.Settings;
+import org.olat.core.logging.Tracing;
+import org.olat.core.util.StringHelper;
 import org.olat.core.util.coordinate.CoordinatorManager;
+import org.olat.resource.accesscontrol.provider.paypalcheckout.manager.PaypalRESTWebhookProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -37,9 +43,15 @@ import org.springframework.stereotype.Service;
 @Service
 public class PaypalCheckoutModule extends AbstractSpringModule {
 	
+	private static final Logger log = Tracing.createLoggerFor(PaypalCheckoutModule.class);
+	
 	private static final String PAYPAL_CLIENT_ID = "paypal.checkout.v2.client.id";
 	private static final String PAYPAL_CLIENT_SECRET = "paypal.checkout.v2.client.secret";
 	private static final String PAYPAL_CURRENCY = "paypal.checkout.v2.currency";
+	private static final String PAYPAL_SMART_BUTTONS = "paypal.checkout.v2.smart.buttons";
+	private static final String PAYPAL_WEBHOOK_ID = "paypal.webhhok.id";
+	private static final String PAYPAL_ACCEPT_PENDING_REVIEW = "paypal.checkout.v2.accept.pending.review";
+	private static final String PAYPAL_PREFERRED_COUNTRIES = "paypal.preferRed.countries";
 	
 	private static final String[] currencies = new String[] {
 			"AUD",
@@ -74,6 +86,19 @@ public class PaypalCheckoutModule extends AbstractSpringModule {
 	private boolean sandbox;
 	@Value("${paypal.checkout.v2.currency:CHF}")
 	private String paypalCurrency;
+	@Value("${paypal.checkout.v2.smart.buttons:true}")
+	private boolean smartButtons;
+	@Value("${paypal.checkout.v2.exclude.funding:credit,sepa}")
+	private String excludeFundings;
+	@Value("${paypal.checkout.v2.accept.pending.review:false}")
+	private boolean acceptPendingReview;
+	@Value("${paypal.webhhok.id:#{null}}")
+	private String webhookId;
+	@Value("${paypal.preferred.countries:CH}")
+	private String preferredCountries;
+	
+	@Autowired
+	private PaypalRESTWebhookProvider webhookProvider;
 	
 	@Autowired
 	public PaypalCheckoutModule(CoordinatorManager coordinatorManager) {
@@ -90,6 +115,36 @@ public class PaypalCheckoutModule extends AbstractSpringModule {
 		clientId = getStringPropertyValue(PAYPAL_CLIENT_ID, clientId);
 		clientSecret = getStringPropertyValue(PAYPAL_CLIENT_SECRET, clientSecret);
 		paypalCurrency = getStringPropertyValue(PAYPAL_CURRENCY, paypalCurrency);
+		webhookId = getStringPropertyValue(PAYPAL_WEBHOOK_ID, webhookId);
+		smartButtons = "true".equals(getStringPropertyValue(PAYPAL_SMART_BUTTONS, Boolean.toString(smartButtons)));
+		acceptPendingReview = "true".equals(getStringPropertyValue(PAYPAL_ACCEPT_PENDING_REVIEW, Boolean.toString(acceptPendingReview)));
+
+		if(!StringHelper.containsNonWhitespace(webhookId) && StringHelper.containsNonWhitespace(clientId) && StringHelper.containsNonWhitespace(clientSecret)) {
+			updateWebhook(clientId, clientSecret);
+		}
+	}
+	
+	public void updateWebhook() {
+		updateWebhook(clientId, clientSecret);
+	}
+	
+	private void updateWebhook(String id, String secret) {
+		// Webhook only works with a real domain
+		if("localhost".equals(Settings.getServerDomainName())) return;
+		
+		webhookId = webhookProvider.hasWebhook(id, secret, sandbox);
+		if(webhookId == null) {
+			List<String> eventNames = new ArrayList<>();
+			eventNames.add("PAYMENT.CAPTURE.COMPLETED");
+			eventNames.add("PAYMENT.CAPTURE.DENIED");
+			eventNames.add("PAYMENT.CAPTURE.PENDING");
+			webhookId = webhookProvider.createWebhook(id, secret, eventNames, sandbox);
+			if(StringHelper.containsNonWhitespace(webhookId)) {
+				setStringProperty(PAYPAL_WEBHOOK_ID, webhookId, true);
+			}
+		} else {
+			log.info("PayPal webhook successfully retrieved: {}", webhookId);
+		}
 	}
 
 	public String getClientId() {
@@ -121,6 +176,55 @@ public class PaypalCheckoutModule extends AbstractSpringModule {
 	public void setPaypalCurrency(String currency) {
 		this.paypalCurrency = currency;
 		setStringProperty(PAYPAL_CURRENCY, currency, true);
+	}
+	
+	public boolean isSmartButtons() {
+		return smartButtons;
+	}
+
+	public void setSmartButtons(boolean smartButtons) {
+		this.smartButtons = smartButtons;
+		setStringProperty(PAYPAL_SMART_BUTTONS, Boolean.toString(smartButtons), true);
+	}
+	
+	public boolean isAcceptPendingReview() {
+		return acceptPendingReview;
+	}
+	
+	public void setAcceptPendingReview(boolean accept) {
+		this.acceptPendingReview = accept;
+		setStringProperty(PAYPAL_ACCEPT_PENDING_REVIEW, Boolean.toString(accept), true);
+	}
+	
+	/**
+	 * @return An immutable list of countries to prefer
+	 */
+	public List<String> getPreferredCountriesList() {
+		List<String> countries;
+		if(StringHelper.containsNonWhitespace(preferredCountries)) {
+			String[] countriesArr = preferredCountries.split("[,]");
+			countries = List.of(countriesArr);
+		} else {
+			countries = List.of();
+		}
+		return countries;
+	}
+	
+	public String getPreferredCountries() {
+		return preferredCountries;
+	}
+
+	public void setPreferredCountries(String preferredCountries) {
+		this.preferredCountries = preferredCountries;
+		setStringProperty(PAYPAL_PREFERRED_COUNTRIES, preferredCountries, true);
+	}
+
+	public String getExcludeFundings() {
+		return excludeFundings;
+	}
+
+	public void setExcludeFundings(String excludeFundings) {
+		this.excludeFundings = excludeFundings;
 	}
 
 	public boolean isSandbox() {

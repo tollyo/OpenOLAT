@@ -253,7 +253,7 @@ public class MailManagerImpl implements MailManager, InitializingBean  {
 		VFSContainer container = attachmentStorage.getContainer(dir);
 		String uniqueName = VFSManager.similarButNonExistingName(container, name);
 		VFSLeaf file = container.createChildLeaf(uniqueName);
-		VFSManager.copyContent(stream, file);
+		VFSManager.copyContent(stream, file, null);
 		return dir + uniqueName;
 	}
 	
@@ -615,13 +615,7 @@ public class MailManagerImpl implements MailManager, InitializingBean  {
 	public void deleteCustomMailTemplate() {
 		File baseFolder = new File(WebappHelper.getUserDataRoot(), MAIL_TEMPLATE_FOLDER);
 		File customTemplate = new File(baseFolder, "mail_template.html");
-		if (customTemplate.exists()) {
-			try {
-				customTemplate.delete();
-			} catch (Exception e) {
-				log.error("", e);
-			}
-		}
+		org.olat.core.util.FileUtils.deleteFile(customTemplate);
 	}
 
 	@Override
@@ -1846,12 +1840,16 @@ public class MailManagerImpl implements MailManager, InitializingBean  {
 			logRecipients(msg, RecipientType.TO);
 			logRecipients(msg, RecipientType.BCC);
 			logRecipients(msg, RecipientType.CC);
-			log.info("Content    : {}", msg.getContent());
-			
-			//File file = new File("/HotCoffee/tmp/mail_" + CodeHelper.getForeverUniqueID() + ".msg");
-			//OutputStream os = new FileOutputStream(file);
-			//msg.writeTo(os);
-			//IOUtils.closeQuietly(os);
+			Object content = msg.getContent();
+			if(content instanceof MimeMultipart) {
+				MimeMultipart mmp = (MimeMultipart)content;
+				for(int i=0; i<mmp.getCount(); i++) {
+					if(i > 0) log.info("---------------------");
+					log.info("Content    : {}", mmp.getBodyPart(i).getContent());
+				}
+			} else {
+				log.info("Content    : {}", msg.getContent());
+			}
 		} catch (IOException e) {
 			log.error("", e);
 		}

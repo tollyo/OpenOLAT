@@ -36,6 +36,7 @@ import org.olat.search.service.SearchResourceContext;
 import org.olat.user.HomePageConfig;
 import org.olat.user.HomePageConfigManager;
 import org.olat.user.UserManager;
+import org.olat.user.UserModule;
 import org.olat.user.propertyhandlers.UserPropertyHandler;
 
 /**
@@ -61,13 +62,14 @@ public class IdentityDocument extends OlatDocument {
 	 */
 	public static Document createDocument(SearchResourceContext searchResourceContext, Identity identity) {		
 
+		UserModule userModule = CoreSpringFactory.getImpl(UserModule.class);
 		UserManager userMgr = CoreSpringFactory.getImpl(UserManager.class);
 		HomePageConfigManager homepageMgr = CoreSpringFactory.getImpl(HomePageConfigManager.class);
-		HomePageConfig publishConfig = homepageMgr.loadConfigFor(identity.getName());
+		HomePageConfig publishConfig = homepageMgr.loadConfigFor(identity);
 
 		User user = identity.getUser();
 		IdentityDocument identityDocument = new IdentityDocument();
-		identityDocument.setTitle(identity.getName());
+		identityDocument.setTitle(userMgr.getUserDisplayName(identity));
 		identityDocument.setCreatedDate(user.getCreationDate());
 		
 		// loop through all user properties and collect the content string and the last modified
@@ -84,10 +86,12 @@ public class IdentityDocument extends OlatDocument {
 			}
 		}
 		// user text
-		String text = publishConfig.getTextAboutMe();
-		if (StringHelper.containsNonWhitespace(text)) {
-			text = FilterFactory.getHtmlTagsFilter().filter(text);
-			content.append(text).append(' ');
+		if(userModule.isUserAboutMeEnabled()) {
+			String text = publishConfig.getTextAboutMe();
+			if (StringHelper.containsNonWhitespace(text)) {
+				text = FilterFactory.getHtmlTagsFilter().filter(text);
+				content.append(text).append(' ');
+			}
 		}
 		// finally use the properties as the content for this identity
 		if (content.length() > 0) {

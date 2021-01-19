@@ -21,6 +21,7 @@ package org.olat.core.gui.components.dropdown;
 
 import org.olat.core.gui.components.Component;
 import org.olat.core.gui.components.DefaultComponentRenderer;
+import org.olat.core.gui.components.dropdown.Dropdown.ButtonSize;
 import org.olat.core.gui.components.dropdown.Dropdown.Spacer;
 import org.olat.core.gui.render.RenderResult;
 import org.olat.core.gui.render.Renderer;
@@ -48,12 +49,17 @@ public class DropdownRenderer extends DefaultComponentRenderer {
 		Iterable<Component> components = dropdown.getComponents();
 		if(dropdown.isButton()) {
 			sb.append("<button type='button' class='btn btn-default dropdown-toggle");
+			sb.append(" btn-xs", dropdown.getButtonSize() == ButtonSize.extraSmall);
+			sb.append(" btn-sm", dropdown.getButtonSize() == ButtonSize.small);
+			sb.append(" btn-lg", dropdown.getButtonSize() == ButtonSize.large);
 		} else {
 			sb.append("<a href='#' class='dropdown-toggle");
 		}
 		if(StringHelper.containsNonWhitespace(dropdown.getElementCssClass())) {
 			sb.append(" ").append(dropdown.getElementCssClass());
 		}
+		String btnDomID = "dd_btn_" + dropdown.getDispatchID();
+		sb.append("' id='").append(btnDomID);
 		sb.append("' data-toggle='dropdown'>");		
 
 		String dropdownInnerCss = dropdown.getInnerCSS();
@@ -67,9 +73,15 @@ public class DropdownRenderer extends DefaultComponentRenderer {
 		sb.append(dropdownInnerText, (dropdownInnerText != null));
 		sb.append("</span>", (dropdownInnerText != null));
 		sb.append("</span>");
-
-		// Caret to indicate the drop-down nature of the button
-		sb.append(" <i class='o_icon o_icon_caret'> </i> ");
+		
+		sb.append(" <i class='");
+		if(StringHelper.containsNonWhitespace(dropdown.getCarretIconCSS())) {
+			sb.append(dropdown.getCarretIconCSS());
+		} else {
+			// Caret to indicate the drop-down nature of the button
+			sb.append("o_icon o_icon_caret");
+		}
+		sb.append("'> </i> ");
 		// Button label, normally rendered below the button, but within the clickable link
 		String i18nKey = dropdown.getI18nKey();
 		if(StringHelper.containsNonWhitespace(i18nKey)) {
@@ -93,10 +105,11 @@ public class DropdownRenderer extends DefaultComponentRenderer {
 		}
 		if(dropdown.getOrientation() == DropdownOrientation.right) {
 			sb.append(" dropdown-menu-right");
-		}
-		
-		sb.append("' role='menu'>");
-		
+		}		
+		String itemsDomID = "dd_items_" + dropdown.getDispatchID();
+		sb.append("' id='").append(itemsDomID).append("'");
+		sb.append(" role='menu'>");
+
 		boolean wantSpacer = false;
 		for(Component component:components) {
 			if(component instanceof Spacer) {
@@ -114,8 +127,18 @@ public class DropdownRenderer extends DefaultComponentRenderer {
 				}
 				renderer.render(component, sb, args);
 				sb.append("</li>");
+			} else {
+				component.setDirty(false);
 			}
 		}
 		sb.append("</ul>").append("</div>", dropdown.isEmbbeded());
+
+		// Check if dropdown has enough space in center main container, enlarge if necessary
+		if (dropdown.isExpandContentHeight()) {
+			sb.append("<script>setTimeout(function(){");
+			sb.append("OPOL.adjustContentHeightForAbsoluteElement('#").append(itemsDomID).append("');");
+			sb.append("});</script>");
+		}
+		
 	}
 }

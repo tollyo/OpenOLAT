@@ -50,15 +50,16 @@ import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpPut;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.http.util.EntityUtils;
+import org.apache.logging.log4j.Logger;
 import org.junit.Assert;
 import org.junit.Test;
 import org.olat.basesecurity.Authentication;
 import org.olat.basesecurity.BaseSecurity;
 import org.olat.core.commons.persistence.DB;
 import org.olat.core.id.Identity;
-import org.apache.logging.log4j.Logger;
 import org.olat.core.logging.Tracing;
 import org.olat.core.util.Encoder;
+import org.olat.login.auth.AuthenticationStatus;
 import org.olat.login.auth.OLATAuthManager;
 import org.olat.restapi.support.vo.AuthenticationVO;
 import org.olat.restapi.support.vo.ErrorVO;
@@ -78,6 +79,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * Initial Date:  15 apr. 2010 <br>
  * @author srosse, stephane.rosse@frentix.com
  */
+@Deprecated
 public class UserAuthenticationMgmtTest extends OlatRestTestCase {
 	
 	private static final Logger log = Tracing.createLoggerFor(UserAuthenticationMgmtTest.class);
@@ -109,7 +111,7 @@ public class UserAuthenticationMgmtTest extends OlatRestTestCase {
 	@Test
 	public void createAuthentications() throws IOException, URISyntaxException {
 		RestConnection conn = new RestConnection();
-		Identity adminIdent = securityManager.findIdentityByName("administrator");
+		Identity adminIdent = JunitTestHelper.findIdentityByLogin("administrator");
 		try {
 			Authentication refAuth = securityManager.findAuthentication(adminIdent, "REST-API");
 			if(refAuth != null) {
@@ -208,7 +210,7 @@ public class UserAuthenticationMgmtTest extends OlatRestTestCase {
 		assertTrue(conn.login("administrator", "openolat"));
 		
 		//create an authentication token
-		Identity adminIdent = securityManager.findIdentityByName("administrator");
+		Identity adminIdent = JunitTestHelper.findIdentityByLogin("administrator");
 		Authentication authentication = securityManager.createAndPersistAuthentication(adminIdent, "REST-A-2", "administrator", "credentials", Encoder.Algorithm.sha512);
 		assertTrue(authentication != null && authentication.getKey() != null && authentication.getKey().longValue() > 0);
 		dbInstance.intermediateCommit();
@@ -245,7 +247,7 @@ public class UserAuthenticationMgmtTest extends OlatRestTestCase {
 		EntityUtils.consume(response.getEntity());
 		
 		//check
-		Identity reloadedUser = authManager.authenticate(user, user.getName(), "top-secret");
+		Identity reloadedUser = authManager.authenticate(user, user.getName(), "top-secret", new AuthenticationStatus());
 		Assert.assertNotNull(reloadedUser);
 		Assert.assertEquals(user, reloadedUser);
 	}

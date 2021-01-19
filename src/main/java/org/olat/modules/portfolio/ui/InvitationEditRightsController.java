@@ -62,9 +62,9 @@ import org.olat.modules.portfolio.PortfolioElement;
 import org.olat.modules.portfolio.PortfolioRoles;
 import org.olat.modules.portfolio.PortfolioService;
 import org.olat.modules.portfolio.Section;
+import org.olat.modules.portfolio.manager.InvitationDAO;
 import org.olat.modules.portfolio.model.AccessRightChange;
 import org.olat.modules.portfolio.model.AccessRights;
-import org.olat.portfolio.manager.InvitationDAO;
 import org.olat.user.UserManager;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -129,10 +129,10 @@ public class InvitationEditRightsController extends FormBasicController {
 		String busLink = getInvitationLink();
 		String sender = userManager.getUserDisplayName(getIdentity());
 		String[] args = new String[] {
-			busLink,								// {0}
-			sender,									// {1}
-			getIdentity().getUser().getFirstName(),	// {2}
-			getIdentity().getUser().getLastName()	// {3}
+			busLink,								// 0
+			sender,									// 1
+			getIdentity().getUser().getFirstName(),	// 2
+			getIdentity().getUser().getLastName()	// 3
 		};
 		
 		String subject = translate("invitation.extern.mail.subject", args);
@@ -143,7 +143,6 @@ public class InvitationEditRightsController extends FormBasicController {
 				//
 			}
 		};
-		
 		
 		initForm(ureq);
 		loadModel();
@@ -245,7 +244,7 @@ public class InvitationEditRightsController extends FormBasicController {
 		buttonsCont.setRootForm(mainForm);
 		uifactory.addFormCancelButton("cancel", buttonsCont, ureq, getWindowControl());
 		if(invitation.getKey() != null) {
-			removeLink = uifactory.addFormLink("remove", buttonsCont, Link.BUTTON);
+			removeLink = uifactory.addFormLink("remove.all.rights", buttonsCont, Link.BUTTON);
 		}
 		uifactory.addFormSubmitButton("save", buttonsCont);
 	}
@@ -382,7 +381,8 @@ public class InvitationEditRightsController extends FormBasicController {
 	}
 	
 	private void doRemoveInvitation() {
-		portfolioService.removeAccessRights(binder, invitee);
+		portfolioService.removeAccessRights(binder, invitee,
+				PortfolioRoles.invitee, PortfolioRoles.readInvitee);
 		invitationDao.deleteInvitation(invitation);
 	}
 

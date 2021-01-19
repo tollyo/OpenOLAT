@@ -21,6 +21,7 @@ package org.olat.modules.quality.ui;
 
 import java.util.List;
 
+import org.olat.basesecurity.BaseSecurityModule;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
 import org.olat.core.gui.components.form.flexible.FormItem;
@@ -53,6 +54,7 @@ import org.olat.modules.forms.handler.EvaluationFormResource;
 import org.olat.modules.quality.QualityDataCollection;
 import org.olat.modules.quality.QualityDataCollectionLight;
 import org.olat.modules.quality.QualityDataCollectionView;
+import org.olat.modules.quality.QualityDataCollectionViewSearchParams;
 import org.olat.modules.quality.QualityService;
 import org.olat.modules.quality.ui.DataCollectionDataModel.DataCollectionCols;
 import org.olat.modules.quality.ui.event.DataCollectionEvent;
@@ -79,13 +81,17 @@ public class DataCollectionListController extends FormBasicController implements
 	
 	private CloseableModalController cmc;
 	private DataCollectionController dataCollectionCtrl;
+	private DataCollectionSearchController searchCtrl;
 	private ReferencableEntriesSearchController formSearchCtrl;
 	private DataCollectionDeleteConfirmationController deleteConfirmationCtrl;
 	
 	private final MainSecurityCallback secCallback;
+	private final DataCollectionDataSource dataSource;
 	
 	@Autowired
 	private QualityService qualityService;
+	@Autowired
+	private BaseSecurityModule securityModule;
 
 	public DataCollectionListController(UserRequest ureq, WindowControl wControl, TooledStackedPanel stackPanel,
 			MainSecurityCallback secCallback) {
@@ -94,12 +100,25 @@ public class DataCollectionListController extends FormBasicController implements
 		stackPanel.addListener(this);
 		this.secCallback = secCallback;
 		
+		QualityDataCollectionViewSearchParams defaultSearchParams = new QualityDataCollectionViewSearchParams();
+		defaultSearchParams.setOrgansationRefs(secCallback.getViewDataCollectionOrganisationRefs());
+		defaultSearchParams.setReportAccessIdentity(getIdentity());
+		defaultSearchParams.setLearnResourceManagerOrganisationRefs(secCallback.getLearnResourceManagerOrganisationRefs());
+		defaultSearchParams.setIgnoreReportAccessRelationRole(!securityModule.isRelationRoleEnabled());
+		dataSource = new DataCollectionDataSource(getTranslator(), defaultSearchParams);
+		dataSource.setSearchParams(new QualityDataCollectionViewSearchParams());
+		
+		searchCtrl = new DataCollectionSearchController(ureq, getWindowControl(), mainForm, defaultSearchParams);
+		searchCtrl.setEnabled(false);
+		listenTo(searchCtrl);
+		
 		initForm(ureq);
 	}
 
 	@Override
 	protected void initForm(FormItemContainer formLayout, Controller listener, UserRequest ureq) {
 		FlexiTableColumnModel columnsModel = FlexiTableDataModelFactory.createFlexiTableColumnModel();
+		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(false, DataCollectionCols.key));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(DataCollectionCols.status, new DataCollectionStatusCellRenderer()));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(DataCollectionCols.title, CMD_EDIT));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(DataCollectionCols.start));
@@ -114,12 +133,13 @@ public class DataCollectionListController extends FormBasicController implements
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(false, DataCollectionCols.creationDate));
 		columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(false, DataCollectionCols.generatorTitle));
 		
-		DataCollectionDataSource dataSource = new DataCollectionDataSource(getTranslator(), secCallback.getViewDataCollectionOrganisationRefs(), getIdentity());
-		dataModel = new DataCollectionDataModel(dataSource, columnsModel, getTranslator(), secCallback);
+		dataModel = new DataCollectionDataModel(dataSource, columnsModel, getTranslator());
 		tableEl = uifactory.addTableElement(getWindowControl(), "dataCollections", dataModel, 25, true, getTranslator(), formLayout);
 		tableEl.setElementCssClass("o_qual_dc_list");
 		tableEl.setAndLoadPersistedPreferences(ureq, "quality-data-collection");
 		tableEl.setEmtpyTableMessageKey("data.collection.empty.table");
+		tableEl.setSearchEnabled(true);
+		tableEl.setExtendedSearch(searchCtrl);
 	}
 
 	@Override
@@ -138,6 +158,7 @@ public class DataCollectionListController extends FormBasicController implements
 		ContextEntry entry = entries.get(0);
 		String type = entry.getOLATResourceable().getResourceableTypeName();
 		if (QualityDataCollectionLight.RESOURCEABLE_TYPE_NAME.equals(type)) {
+			doResetExtendedSearch(ureq);
 			Long key = entry.getOLATResourceable().getResourceableId();
 			DataCollectionRow row = dataModel.getObjectByKey(key);
 			if (row == null) {
@@ -202,6 +223,13 @@ public class DataCollectionListController extends FormBasicController implements
 			if (Action.DELETE.equals(action)) {
 				QualityDataCollection dataCollectionToDelete = dccEvent.getDataCollection();
 				doConfirmDeleteDataCollection(ureq, dataCollectionToDelete);
+			}
+		} else if (searchCtrl == source) {
+			if (event instanceof SearchEvent) {
+				SearchEvent se = (SearchEvent)event;
+				doExtendedSearch(se);
+			} else if (event == Event.CANCELLED_EVENT) {
+				doResetExtendedSearch(ureq);
 			}
 		} else if (source == formSearchCtrl) {
 			if (event == ReferencableEntriesSearchController.EVENT_REPOSITORY_ENTRY_SELECTED) {
@@ -273,6 +301,29 @@ public class DataCollectionListController extends FormBasicController implements
 		qualityService.deleteDataCollection(dataCollection);
 		tableEl.reset(true, false, true);
 		stackPanel.popUpToController(this);
+	}
+
+	private void doExtendedSearch(SearchEvent se) {
+		QualityDataCollectionViewSearchParams params = new QualityDataCollectionViewSearchParams();
+		params.setTitle(se.getTitle());
+		params.setTopic(se.getTopic());
+		params.setStartAfter(se.getStartAfter());
+		params.setStartBefore(se.getStartBefore());
+		params.setDeadlineAfter(se.getDeadlineAfter());
+		params.setDeadlineBefore(se.getDeadlineBefore());
+		params.setDataCollectionRef(se.getDataCollectionRef());
+		params.setGeneratorRefs(se.getGeneratorRefs());
+		params.setFormEntryRefs(se.getFormEntryRefs());
+		params.setTopicTypes(se.getTopicTypes());
+		params.setStatus(se.getStatus());
+		
+		dataSource.setSearchParams(params);
+		tableEl.reset(true, true, true);
+	}
+	
+	private void doResetExtendedSearch(UserRequest ureq) {
+		dataSource.setSearchParams(new QualityDataCollectionViewSearchParams());
+		tableEl.resetSearch(ureq);
 	}
 
 	@Override

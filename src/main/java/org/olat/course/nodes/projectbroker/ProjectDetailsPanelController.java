@@ -99,13 +99,12 @@ public class ProjectDetailsPanelController extends BasicController {
 		putInitialPanel(detailsPanel);
 	}
 
-	/**
-	 * @see org.olat.core.gui.control.DefaultController#event(org.olat.core.gui.UserRequest, org.olat.core.gui.components.Component, org.olat.core.gui.control.Event)
-	 */
+	@Override
 	public void event(UserRequest ureq, Component source, Event event) {
 		// nothing to catch
 	}
 
+	@Override
 	public void event(UserRequest ureq, Controller source, Event event) {
 		if ((source == runController) && event.getCommand().equals("switchToEditMode")) {
 			if (newCreatedProject) {
@@ -141,17 +140,19 @@ public class ProjectDetailsPanelController extends BasicController {
 	private void openEditController(UserRequest ureq) {
 		if ( projectBrokerManager.existsProject(project.getKey()) ) {
 			OLATResourceable projectOres = OresHelper.createOLATResourceableInstance(Project.class, project.getKey());
-			this.lock = CoordinatorManager.getInstance().getCoordinator().getLocker().acquireLock(projectOres, ureq.getIdentity(), null);
+			this.lock = CoordinatorManager.getInstance().getCoordinator().getLocker().acquireLock(projectOres, ureq.getIdentity(), null, getWindow());
 			if (lock.isSuccess()) {
 				editController = new ProjectEditDetailsFormController(ureq, this.getWindowControl(), project, courseEnv, courseNode, projectBrokerModuleConfiguration, newCreatedProject);		
 				editController.addControllerListener(this);
 				editVC.put("editController", editController.getInitialComponent());
 				detailsPanel.pushContent(editVC);
+			} else if(lock.isDifferentWindows()) {
+				showInfo("info.project.already.edit.same.user", project.getTitle());
 			} else {
-				this.showInfo("info.project.already.edit", project.getTitle());
+				showInfo("info.project.already.edit", project.getTitle());
 			}
 		} else {
-			this.showInfo("info.project.nolonger.exist", project.getTitle());
+			showInfo("info.project.nolonger.exist", project.getTitle());
 			//fire event to update project list
 			ProjectBroker projectBroker = project.getProjectBroker();
 			OLATResourceableDeletedEvent delEv = new OLATResourceableDeletedEvent(projectBroker);

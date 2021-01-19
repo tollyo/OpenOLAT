@@ -131,8 +131,6 @@
 				<ref bean="groupIndexer" />
 				<ref bean="repositoryIndexer" />
 				<ref bean="identityIndexer" />
-				<ref bean="epDefaultMapIndexer" />
-				<ref bean="epStructuredMapIndexer" />
 				<ref bean="documentPoolIndexer" />
 				<ref bean="libraryIndexer" />
 			</list>
@@ -156,7 +154,6 @@
 				<ref bean="imsCpRepositoryIndexer" /> 
 				<ref bean="sharedFolderRepositoryIndexer" /> 
 				<ref bean="scormRepositoryIndexer" />
-				<ref bean="portfolioRepositoryIndexer" />
 			</list>
 		</property>
 	</bean>
@@ -175,6 +172,7 @@
 		<property name="indexerList">
 			<list>
 				<ref bean="spCourseNodeIndexer" />
+				<ref bean="documentCourseNodeIndexer" />
 				<ref bean="foCourseNodeIndexer"	/>
 				<ref bean="stCourseNodeIndexer"	/>
 				<ref bean="bcCourseNodeIndexer"	/>
@@ -185,7 +183,6 @@
 				<ref bean="dialogCourseNodeIndexer" />
 				<ref bean="projectBrokerCourseNodeIndexer" />
 				<ref bean="scormCourseNodeIndexer" />
-				<ref bean="portfolioCourseNodeIndexer" />
 				<ref bean="infoCourseNodeIndexer" />
 				<ref bean="calCourseNodeIndexer" />
 				<ref bean="ltiCourseNodeIndexer" />
@@ -232,6 +229,7 @@
 	<bean id="pfCourseNodeIndexer" class="org.olat.search.service.indexer.repository.course.PFCourseNodeIndexer" />
 	<bean id="openMeetingsCourseNodeIndexer" class="org.olat.search.service.indexer.repository.course.OpenMeetingsCourseNodeIndexer" />
 	<bean id="spCourseNodeIndexer" class="org.olat.search.service.indexer.repository.course.SPCourseNodeIndexer" />
+	<bean id="documentCourseNodeIndexer" class="org.olat.search.service.indexer.repository.course.DocumentCourseNodeIndexer" />
 	<bean id="foCourseNodeIndexer"	   class="org.olat.search.service.indexer.repository.course.FOCourseNodeIndexer" />
 	<bean id="stCourseNodeIndexer"	   class="org.olat.search.service.indexer.repository.course.STCourseNodeIndexer" />
 	<bean id="bcCourseNodeIndexer"	   class="org.olat.search.service.indexer.repository.course.BCCourseNodeIndexer" />
@@ -257,7 +255,6 @@
 				<ref bean="groupForumIndexer" />
 				<ref bean="groupFolderIndexer" />
 				<ref bean="groupWikiIndexer"	/>
-				<ref bean="groupPortfolioIndexer" />
 				<ref bean="groupInfoIndexer" />
 			</list>
 		</property>
@@ -271,28 +268,6 @@
 	<bean id="groupInfoIndexer" class="org.olat.search.service.indexer.group.GroupInfoIndexer">
 		<property name="infoMessageManager" ref="infoMessageManager"/>
 	</bean>	
-
-	<!-- Portfolio indexers -->
-	<bean id="epDefaultMapIndexer" class="org.olat.search.service.indexer.PortfolioMapIndexer">
-		<property name="frontendManager" ref="epFrontendManager"/>
-		<property name="portfolioModule" ref="portfolioModule"/>
-	</bean>
-	<bean id="epStructuredMapIndexer" class="org.olat.search.service.indexer.PortfolioStructuredMapIndexer">
-		<property name="frontendManager" ref="epFrontendManager"/>
-		<property name="portfolioModule" ref="portfolioModule"/>
-	</bean>
-	<bean id="portfolioRepositoryIndexer" class="org.olat.search.service.indexer.repository.PortfolioRepositoryIndexer" scope="prototype">
-		<property name="structureManager" ref="epStructureManager"/>
-		<property name="portfolioModule" ref="portfolioModule"/>
-	</bean>
-	<bean id="portfolioCourseNodeIndexer" class="org.olat.search.service.indexer.repository.course.PortfolioCourseNodeIndexer" scope="prototype">
-		<property name="structureManager" ref="epStructureManager"/>
-		<property name="portfolioModule" ref="portfolioModule"/>
-	</bean>
-	<bean id="groupPortfolioIndexer" class="org.olat.search.service.indexer.group.GroupPortfolioIndexer">
-		<property name="frontendManager" ref="epFrontendManager"/>
-		<property name="portfolioModule" ref="portfolioModule"/>
-	</bean>
 	
 	<!-- Identity indexers -->
 	<bean id="identityIndexer" class="org.olat.search.service.indexer.identity.IdentityIndexer" >
@@ -300,7 +275,6 @@
 			<list>
 				<ref bean="profileIndexer" />
 				<ref bean="publicFolderIndexer"	/>
-				<ref bean="artefactIndexer" />
 			</list>
 		</property>				
 	</bean>
@@ -319,10 +293,6 @@
 	
 	<bean id="profileIndexer"	class="org.olat.search.service.indexer.identity.ProfileIndexer"     />
 	<bean id="publicFolderIndexer"	class="org.olat.search.service.indexer.identity.PublicFolderIndexer" />
-	<bean id="artefactIndexer" class="org.olat.search.service.indexer.identity.PortfolioArtefactIndexer">
-		<property name="frontendManager" ref="epFrontendManager"/>
-		<property name="portfolioModule" ref="portfolioModule"/>
-	</bean>
 
 
 	<!-- SEARCH PROXY SIDE CONFIGURATION -->

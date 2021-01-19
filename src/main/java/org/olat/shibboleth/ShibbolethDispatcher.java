@@ -26,7 +26,8 @@
 package org.olat.shibboleth;
 
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
@@ -35,7 +36,7 @@ import java.util.StringTokenizer;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import org.olat.admin.user.delete.service.UserDeletionManager;
+import org.apache.logging.log4j.Logger;
 import org.olat.basesecurity.AuthHelper;
 import org.olat.basesecurity.Authentication;
 import org.olat.basesecurity.BaseSecurity;
@@ -53,7 +54,6 @@ import org.olat.core.id.Identity;
 import org.olat.core.logging.AssertException;
 import org.olat.core.logging.OLATRuntimeException;
 import org.olat.core.logging.OLATSecurityException;
-import org.apache.logging.log4j.Logger;
 import org.olat.core.logging.Tracing;
 import org.olat.core.logging.activity.ThreadLocalUserActivityLoggerInstaller;
 import org.olat.core.util.StringHelper;
@@ -81,7 +81,6 @@ public class ShibbolethDispatcher implements Dispatcher{
 	private Translator translator;
 	private BaseSecurity securityManager;
 	private ShibbolethModule shibbolethModule;
-	private UserDeletionManager userDeletionManager;
 
 	@Autowired
 	private ShibbolethManager shibbolethManager;
@@ -100,14 +99,6 @@ public class ShibbolethDispatcher implements Dispatcher{
 	 */
 	public void setSecurityManager(BaseSecurity securityManager) {
 		this.securityManager = securityManager;
-	}
-
-	/**
-	 * [used by Spring]
-	 * @param userDeletionManager
-	 */
-	public void setUserDeletionManager(UserDeletionManager userDeletionManager) {
-		this.userDeletionManager = userDeletionManager;
 	}
 
 	/**
@@ -155,7 +146,7 @@ public class ShibbolethDispatcher implements Dispatcher{
 			//showing redscreens for non valid URL is wrong instead
 			//a 404 message must be shown -> e.g. robots correct their links.
 			if(log.isDebugEnabled()){
-				log.debug("Bad Request "+req.getPathInfo());
+				log.debug("Bad Request {}", req.getPathInfo());
 			}
 			DispatcherModule.sendBadRequest(req.getPathInfo(), resp);
 			return;
@@ -182,7 +173,10 @@ public class ShibbolethDispatcher implements Dispatcher{
 		} else {
 			// Successful login
 			Identity authenticationedIdentity = ureq.getIdentity();
-			userDeletionManager.setIdentityAsActiv(authenticationedIdentity);
+			securityManager.setIdentityLastLogin(authenticationedIdentity);
+			if (Identity.STATUS_INACTIVE.equals(authenticationedIdentity.getStatus())) {
+				authenticationedIdentity = securityManager.reactivatedIdentity(authenticationedIdentity);
+			}
 			shibbolethManager.syncUser(authenticationedIdentity, shibbolethAttriutes);
 			ureq.getUserSession().getIdentityEnvironment().addAttributes(
 					shibbolethModule.getAttributeTranslator().translateAttributesMap(shibbolethAttriutes.toMap()));
@@ -204,25 +198,23 @@ public class ShibbolethDispatcher implements Dispatcher{
 	private Map<String, String> getShibbolethAttributesFromRequest(HttpServletRequest req) {
 		Map<String, String> attributesMap = new HashMap<>();
 		Enumeration<String> headerEnum = req.getHeaderNames();
+		Collection<String> attributeNames = shibbolethModule.getShibbolethAttributeNames();
 		while(headerEnum.hasMoreElements()) {
 			String attributeName = headerEnum.nextElement();
 			String attributeValue = req.getHeader(attributeName);
 
 			try {
-				attributeValue = new String(attributeValue.getBytes("ISO-8859-1"), "UTF-8");
-				if (shibbolethModule.getShibbolethAttributeNames().contains(attributeName)) {
+				attributeValue = new String(attributeValue.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
+				if (attributeNames.contains(attributeName)) {
 					attributesMap.put(attributeName, attributeValue);
 				}
-			} catch (UnsupportedEncodingException e) {
+			} catch (Exception e) {
 				//bad luck
 				throw new AssertException("ISO-8859-1, or UTF-8 Encoding not supported",e);
 			}
 		}
 
-		if(log.isDebugEnabled()){
-			log.debug("Shib attribute Map: \n\n"+attributesMap.toString()+"\n\n");
-		}
-
+		log.debug("Shib attribute Map:  \n\n{}\n\n", attributesMap);
 		return attributesMap;
 	}
 	
@@ -297,7 +289,6 @@ public class ShibbolethDispatcher implements Dispatcher{
 				default: userMsg = transl.translate("error.shibboleth.generic"); break;
 			}
 			showMessage(ureq,"org.opensaml.SAMLException: " + e.getMessage(), e, userMsg, ((ShibbolethException)e).getContactPersonEmail());
-			return;
 		} else {
 		  try {
 			  ChiefController msgcc = MsgFactory.createMessageChiefController(ureq,

@@ -36,7 +36,7 @@ import org.olat.basesecurity.IdentityRef;
  *
  * @author Mike Stock
  */
-public interface Identity extends CreateInfo, IdentityRef, Persistable {
+public interface Identity extends CreateInfo, IdentityRef, IdentityLifecycle, Persistable {
 
 	// status = 1..99    User with this status are visible (e.g. user search)
 	//          100..199 User with this status are invisible (e.g. user search)
@@ -50,6 +50,8 @@ public interface Identity extends CreateInfo, IdentityRef, Persistable {
 	public static final Integer STATUS_LOGIN_DENIED = 101;
 	/** Identity can not login and will not be listed (only on pending list). */
 	public static final Integer STATUS_PENDING = 102;
+	/** Identity can not BE SEARCHED. */
+	public static final Integer STATUS_INACTIVE = 103;
 	/** Identity is deleted and has no access to olat-system and is not visible (except administrators). */
 	public static final Integer STATUS_DELETED   = 199;
 	
@@ -69,15 +71,17 @@ public interface Identity extends CreateInfo, IdentityRef, Persistable {
 	 */
 	public User getUser();
 	
-	/**
-	 * @return Last date when the user logged in.
-	 */
-	public Date getLastLogin();
-
 
 	/**
 	 * @return Current identity status 
 	 */
+	@Override
 	public Integer getStatus();
+	
+	/**
+	 * @return Last date when the user logged in.
+	 */
+	@Override
+	public Date getLastLogin();
 	
 }

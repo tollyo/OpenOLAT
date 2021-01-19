@@ -82,6 +82,8 @@ import org.olat.core.util.mail.MailNotificationEditController;
 import org.olat.core.util.mail.MailTemplate;
 import org.olat.core.util.mail.MailerResult;
 import org.olat.core.util.session.UserSessionManager;
+import org.olat.course.member.wizard.ImportMemberByUsernamesController;
+import org.olat.course.member.wizard.MembersByNameContext;
 import org.olat.group.ui.main.OnlineIconRenderer;
 import org.olat.instantMessaging.InstantMessagingModule;
 import org.olat.instantMessaging.InstantMessagingService;
@@ -258,11 +260,7 @@ public class GroupController extends BasicController {
 		this.showSenderInRemovMailFooter = showSenderInRemoveFooter;
 	}
 
-	/**
-	 * @see org.olat.core.gui.control.DefaultController#event(org.olat.core.gui.UserRequest,
-	 *      org.olat.core.gui.components.Component,
-	 *      org.olat.core.gui.control.Event)
-	 */
+	@Override
 	public void event(UserRequest ureq, Component source, Event event) {
 		if (source == addUserButton) {
 			if (!mayModifyMembers) throw new AssertException("not allowed to add a member!");
@@ -273,10 +271,7 @@ public class GroupController extends BasicController {
 		}
 	}
 
-	/**
-	 * @see org.olat.core.gui.control.DefaultController#event(org.olat.core.gui.UserRequest,
-	 *      org.olat.core.gui.control.Controller, org.olat.core.gui.control.Event)
-	 */
+	@Override
 	public void event(UserRequest ureq, Controller sourceController, Event event) {
 		if (sourceController == tableCtr) {
 			if (event.getCommand().equals(Table.COMMANDLINK_ROWACTION_CLICKED)) {
@@ -477,13 +472,12 @@ public class GroupController extends BasicController {
 		StepRunnerCallback finish = new StepRunnerCallback() {
 			@Override
 			public Step execute(UserRequest uureq, WindowControl wControl, StepsRunContext runContext) {
-				@SuppressWarnings("unchecked")
-				List<Identity> choosenIdentities = (List<Identity>)runContext.get("members");
+				Set<Identity> choosenIdentities = ((MembersByNameContext)runContext.get(ImportMemberByUsernamesController.RUN_CONTEXT_KEY)).getIdentities();
 				MailTemplate customTemplate = (MailTemplate)runContext.get("mailTemplate");
 				if (choosenIdentities == null || choosenIdentities.size() == 0) {
 					showError("msg.selectionempty");
 				} else {
-					doAddIdentitiesToGroup(uureq, choosenIdentities, customTemplate);
+					doAddIdentitiesToGroup(uureq, new ArrayList<>(choosenIdentities), customTemplate);
 				}
 				return StepsMainRunController.DONE_MODIFIED;
 			}
@@ -596,6 +590,7 @@ public class GroupController extends BasicController {
 		if (errorMessage.length() > 0) getWindowControl().setError(errorMessage.toString());
 	}
 
+	@Override
 	protected void doDispose() {
     // DialogBoxController and TableController get disposed by BasicController
 		// usc, userToGroupWizardCtr, addUserMailCtr, and removeUserMailCtr are registerd with listenTo and get disposed in BasicController
@@ -608,12 +603,6 @@ public class GroupController extends BasicController {
 	 */
 	protected void initGroupTable(TableController tableController, UserRequest ureq, boolean enableTablePreferences, boolean enableUserSelection) {			
 		List<UserPropertyHandler> userPropertyHandlers = userManager.getUserPropertyHandlersFor(usageIdentifyer, isAdministrativeUser);
-		if (isAdministrativeUser) {
-			// first the login name, but only if administrative user
-			DefaultColumnDescriptor cd0 = new DefaultColumnDescriptor("table.user.login", 0, COMMAND_VCARD, ureq.getLocale());
-			cd0.setIsPopUpWindowAction(true, "height=700, width=900, location=no, menubar=no, resizable=yes, status=no, scrollbars=yes, toolbar=no");
-			tableController.addColumnDescriptor(cd0);
-		}
 		if(chatEnabled) {
 			tableController.addColumnDescriptor(new CustomRenderColumnDescriptor("table.header.online", 1, COMMAND_IM, getLocale(),
 					ColumnDescriptor.ALIGNMENT_LEFT, new OnlineIconRenderer()));
@@ -693,7 +682,7 @@ public class GroupController extends BasicController {
 		}
 		
 		List<UserPropertyHandler> userPropertyHandlers = userManager.getUserPropertyHandlersFor(usageIdentifyer, isAdministrativeUser);
-		identitiesTableModel = new IdentitiesOfGroupTableDataModel(views, getLocale(), userPropertyHandlers, isAdministrativeUser);
+		identitiesTableModel = new IdentitiesOfGroupTableDataModel(views, getLocale(), userPropertyHandlers);
 		tableCtr.setTableDataModel(identitiesTableModel);
 	}
 }

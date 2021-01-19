@@ -204,10 +204,12 @@ public class CorrectionIdentityAssessmentItemListController extends FormBasicCon
 		tableEl = uifactory.addTableElement(getWindowControl(), "table", tableModel, getTranslator(), formLayout);
 		tableEl.setExportEnabled(true);
 		tableEl.setAndLoadPersistedPreferences(ureq, "corr-identity-assessment-item-list");
+		tableEl.setElementCssClass("o_sel_correction_assessment_items_list");
 		
 		backLink = uifactory.addFormLink("back", formLayout, Link.LINK_BACK);
 		if(saveEnabled && !readOnly) {
 			saveButton = uifactory.addFormLink("save.tests", formLayout, Link.BUTTON);
+			saveButton.setElementCssClass("o_sel_correction_save_test");
 		} else {
 			backOverviewButton = uifactory.addFormLink("back.overview", formLayout, Link.BUTTON);
 		}
@@ -392,7 +394,7 @@ public class CorrectionIdentityAssessmentItemListController extends FormBasicCon
 		// lock on item, need to check the lock on identity / test
 		String lockSubKey = "item-" + reloadItemSession.getKey();
 		OLATResourceable testOres = OresHelper.clone(model.getTestEntry().getOlatResource());
-		lockResult = CoordinatorManager.getInstance().getCoordinator().getLocker().acquireLock(testOres, getIdentity(), lockSubKey);
+		lockResult = CoordinatorManager.getInstance().getCoordinator().getLocker().acquireLock(testOres, getIdentity(), lockSubKey, getWindow());
 		if(lockResult.isSuccess() || readOnly) {
 			if(nodes.size() == 1) {
 				TestPlanNode itemNode = nodes.get(0);
@@ -406,14 +408,15 @@ public class CorrectionIdentityAssessmentItemListController extends FormBasicCon
 				AssessmentItem assessmentItem = resolvedAssessmentItem.getRootNodeLookup().extractIfSuccessful();
 				identityItemCtrl = new CorrectionIdentityAssessmentItemNavigationController(ureq, getWindowControl(),
 						model.getTestEntry(), model.getResolvedAssessmentTest(), itemCorrection, row,
-						tableModel.getObjects(), model, gradingTimeRecord, readOnly);
+						tableModel.getObjects(), model, gradingTimeRecord, readOnly, false);
 				listenTo(identityItemCtrl);
 				stackPanel.pushController(assessmentItem.getTitle(), identityItemCtrl);
 				updatePreviousNext();
 			}
 		} else {
 			String lockOwnerName = userManager.getUserDisplayName(lockResult.getOwner());
-			showWarning("warning.assessment.item.locked", new String[] { lockOwnerName });
+			String msg = lockResult.isDifferentWindows() ? "warning.assessment.item.locked.same.user" : "warning.assessment.item.locked";
+			showWarning(msg, new String[] { lockOwnerName });
 		}
 	}
 	

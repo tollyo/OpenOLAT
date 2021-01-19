@@ -94,7 +94,7 @@ class RichTextElementRenderer extends DefaultComponentRenderer {
 			
 			switch(currentTextMode) {
 				case formatted:
-					renderTinyMCE_4(sb, domID, teC, ubu, source.getTranslator());
+					renderTinyMCE_4(renderer, sb, domID, teC, ubu, source.getTranslator());
 					break;
 				case multiLine:
 					renderMultiLine(sb, domID, teC);
@@ -186,7 +186,7 @@ class RichTextElementRenderer extends DefaultComponentRenderer {
 		  .append(FormJSHelper.getJSEnd());
 	}
 
-	private void renderTinyMCE_4(StringOutput sb, String domID, RichTextElementComponent teC, URLBuilder ubu, Translator translator) {
+	private void renderTinyMCE_4(Renderer renderer, StringOutput sb, String domID, RichTextElementComponent teC, URLBuilder ubu, Translator translator) {
 		RichTextElementImpl te = teC.getRichTextElementImpl();
 		te.setRenderingMode(TextMode.formatted);
 		RichTextConfiguration config = te.getEditorConfiguration();
@@ -205,7 +205,8 @@ class RichTextElementRenderer extends DefaultComponentRenderer {
 		
 		Form form = te.getRootForm();
 		configurations.append("ffxhrevent: { formNam:\"").append(form.getFormName()).append("\", dispIdField:\"").append(form.getDispatchFieldId()).append("\",")
-		 .append(" dispId:\"").append(teC.getFormDispatchId()).append("\", eventIdField:\"").append(form.getEventFieldId()).append("\"},\n");
+		  .append(" dispId:\"").append(teC.getFormDispatchId()).append("\", eventIdField:\"").append(form.getEventFieldId())
+		  .append("\", csrf:\"").append(renderer.getCsrfToken()).append("\"},\n");
 		configurations.append("contextPath: \"").append(Settings.getServerContextPath()).append("\",\n");
 		if(te.getMaxLength() > 0) {
 			configurations.append("maxSize:").append(te.getMaxLength()).append("\n");
@@ -214,7 +215,7 @@ class RichTextElementRenderer extends DefaultComponentRenderer {
 		Integer currentHeight = teC.getCurrentHeight();
 		
 		sb.append("<input type='hidden' id='rtinye_").append(teC.getFormDispatchId()).append("' name='rtinye_").append(teC.getFormDispatchId()).append("' value='' />");
-		sb.append("<script>/* <![CDATA[ */\n");
+		sb.append("<script>\n");
 		//file browser url
 		sb.append("  BTinyHelper.editorMediaUris.put('").append(domID).append("','");
 		ubu.buildURI(sb, null, null);
@@ -227,8 +228,11 @@ class RichTextElementRenderer extends DefaultComponentRenderer {
 		}
 		sb.append("    setup: function(ed){\n")
 		  .append("      ed.on('init', function(e) {\n")
-		  .append("        ").append(onInit.get(0).replace(".curry(", "(")).append(";\n")
-		  .append("      });\n")
+		  .append("        BTinyHelper.startFormDirtyObserver('").append(te.getRootForm().getDispatchFieldId()).append("','").append(domID).append("');\n");
+		for (String initFunction:onInit) {
+			sb.append("        ").append(initFunction.replace(".curry(", "(")).append(";\n");
+		}
+		sb.append("      });\n")
 		  .append("      ed.on('change', function(e) {\n")
 		  .append("        BTinyHelper.triggerOnChange('").append(domID).append("');\n")
 		  .append("      });\n")
@@ -246,7 +250,7 @@ class RichTextElementRenderer extends DefaultComponentRenderer {
 		  .append(configurations)
 		  .append("  });\n")
 		  .append("}, 1);\n")// end timeout
-		  .append("/* ]]> */</script>\n");
+		  .append("</script>\n");
 	}
 	
 	private void renderTinyMCETextarea(StringOutput sb, String domID, RichTextElementComponent teC) {

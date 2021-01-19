@@ -25,6 +25,7 @@ import java.util.List;
 
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
+import org.olat.core.gui.components.dropdown.Dropdown.ButtonSize;
 import org.olat.core.gui.components.form.flexible.FormItem;
 import org.olat.core.gui.components.form.flexible.FormItemCollection;
 import org.olat.core.gui.components.form.flexible.elements.FormLink;
@@ -64,6 +65,14 @@ public class DropdownItem extends FormItemImpl implements FormItemCollection {
 		dropdown.setOrientation(orientation);
 	}
 	
+	public String getCarretIconCSS() {
+		return dropdown.getCarretIconCSS();
+	}
+
+	public void setCarretIconCSS(String carretIconCSS) {
+		dropdown.setCarretIconCSS(carretIconCSS);
+	}
+	
 	public void setDomReplacementWrapperRequired(boolean required) {
 		dropdown.setDomReplacementWrapperRequired(required);
 	}
@@ -80,6 +89,15 @@ public class DropdownItem extends FormItemImpl implements FormItemCollection {
 		Link linkCmp = link.getComponent();
 		linkCmp.setDomReplacementWrapperRequired(false);
 		dropdown.addComponent(linkCmp);
+	}
+	
+	public void removeAllFormItems() {
+		items.clear();
+		dropdown.removeAllComponents();
+	}
+	
+	public int size() {
+		return items.size();
 	}
 
 	@Override
@@ -115,5 +133,28 @@ public class DropdownItem extends FormItemImpl implements FormItemCollection {
 	@Override
 	public void reset() {
 		//
+	}
+
+	/**
+	 * Trigger content height check to see if drop down has enough space. If not,
+	 * enlarge content. Only set this to true if you have cut drop downs in the 
+	 * GUI. 
+	 * 
+	 * @param expandContentHeight
+	 */
+	public void setExpandContentHeight(boolean expandContentHeight) {
+		dropdown.setExpandContentHeight(expandContentHeight);
+	}
+	
+	/**
+	 * @return true: check if drop down fits into content area and expand if
+	 *         necessary; false: don't check.
+	 */
+	public boolean isExpandContentHeight() {
+		return dropdown.isExpandContentHeight();
+	}
+
+	public void setButtonSize(ButtonSize buttonSize) {
+		dropdown.setButtonSize(buttonSize);
 	}
 }

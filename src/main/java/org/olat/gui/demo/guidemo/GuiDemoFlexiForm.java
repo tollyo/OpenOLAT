@@ -25,19 +25,23 @@
 package org.olat.gui.demo.guidemo;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.form.flexible.FormItemContainer;
 import org.olat.core.gui.components.form.flexible.elements.FileElement;
 import org.olat.core.gui.components.form.flexible.elements.Submit;
+import org.olat.core.gui.components.form.flexible.elements.TextAreaElement;
 import org.olat.core.gui.components.form.flexible.elements.TextElement;
 import org.olat.core.gui.components.form.flexible.impl.FormBasicController;
 import org.olat.core.gui.components.form.flexible.impl.elements.FormSubmit;
 import org.olat.core.gui.components.velocity.VelocityContainer;
 import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.WindowControl;
+import org.olat.core.util.FileUtils;
 import org.olat.core.util.WebappHelper;
 
 /**
@@ -56,6 +60,7 @@ public class GuiDemoFlexiForm extends FormBasicController {
 	private VelocityContainer confirm;
 	private GuiDemoFlexiForm confirmController;
 	private File tmpFile;
+	private TextAreaElement stripedBackgroundAndLineNumbersEl;
 
 	public GuiDemoFlexiForm(UserRequest ureq, WindowControl wControl, GuiDemoFlexiFormPersonData data) {
 		super(ureq, wControl);
@@ -78,9 +83,9 @@ public class GuiDemoFlexiForm extends FormBasicController {
 
 	@Override
 	protected void doDispose() {
-		// cleanup tempt files
-		if (tmpFile != null && tmpFile.exists()) {
-			tmpFile.delete();
+		// cleanup temp files
+		if (tmpFile != null) {
+			FileUtils.deleteFile(tmpFile);
 		}
 	}
 
@@ -99,7 +104,7 @@ public class GuiDemoFlexiForm extends FormBasicController {
 		personData.setReadOnly(true);
 
 		// get file and store it in temporary location
-		tmpFile = new File(WebappHelper.getTmpDir() + "/" + fileElement.getUploadFileName());
+		tmpFile = new File(WebappHelper.getTmpDir(), fileElement.getUploadFileName());
 		fileElement.moveUploadFileTo(tmpFile);
 		personData.setFile(tmpFile);
 		
@@ -137,7 +142,7 @@ public class GuiDemoFlexiForm extends FormBasicController {
 		lastName.setPlaceholderText("Muster");
 		lastName.setHelpUrl("https://en.wikipedia.org/wiki/Family_name");
 
-		fileElement = uifactory.addFileElement(getWindowControl(), "file", "guidemo.flexi.form.file", formLayout);
+		fileElement = uifactory.addFileElement(getWindowControl(), getIdentity(), "file", "guidemo.flexi.form.file", formLayout);
 		fileElement.setMaxUploadSizeKB(500, "guidemo.flexi.form.filetobig", null);
 		Set<String> mimeTypes = new HashSet<>();
 		mimeTypes.add("image/*");
@@ -151,6 +156,22 @@ public class GuiDemoFlexiForm extends FormBasicController {
 		institution.setMandatory(true);
 		institution.setEnabled(inputMode);
 		institution.setHelpTextKey("guidemo.flexi.form.institution.help", null);
+		
+		stripedBackgroundAndLineNumbersEl = uifactory.addTextAreaElement("stripedAndLineNumbers", "guidemo.textarea.striped.line.numbers.label", -1, 10, -1, false, true, null, formLayout);
+		stripedBackgroundAndLineNumbersEl.setOriginalLineBreaks(true);
+		stripedBackgroundAndLineNumbersEl.setStripedBackgroundEnabled(true);
+		stripedBackgroundAndLineNumbersEl.setLineNumbersEnbaled(true);
+		stripedBackgroundAndLineNumbersEl.setEnabled(true);
+		
+		List<Integer> errors = new ArrayList<>();
+		errors.add(4);
+		errors.add(10);
+		errors.add(60);
+		errors.add(100);
+		errors.add(1000);
+		errors.add(1500);
+		
+		//stripedBackgroundAndLineNumbersEl.setErrors(errors);
 
 		if (inputMode) {
 			// submit only if in input mode

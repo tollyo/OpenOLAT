@@ -21,7 +21,6 @@ package org.olat.modules.portfolio.handler;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -54,7 +53,6 @@ import org.olat.modules.portfolio.manager.PortfolioFileStorage;
 import org.olat.modules.portfolio.ui.media.CollectVideoMediaController;
 import org.olat.modules.portfolio.ui.media.UploadMedia;
 import org.olat.modules.portfolio.ui.media.VideoMediaController;
-import org.olat.portfolio.model.artefacts.AbstractArtefact;
 import org.olat.user.manager.ManifestBuilder;
 import org.olat.util.logging.activity.LoggingResourceable;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -70,10 +68,7 @@ import org.springframework.stereotype.Service;
 public class VideoHandler extends AbstractMediaHandler implements InteractiveAddPageElementHandler {
 	
 	public static final String VIDEO_TYPE = "video";
-	public static final Set<String> mimeTypes = new HashSet<>();
-	static {
-		mimeTypes.add("video/mp4");
-	}
+	public static final Set<String> mimeTypes = Set.of("video/mp4");
 
 	@Autowired
 	private MediaDAO mediaDao;
@@ -161,11 +156,6 @@ public class VideoHandler extends AbstractMediaHandler implements InteractiveAdd
 		String storagePath = fileStorage.getRelativePath(mediaDir);
 		mediaDao.updateStoragePath(media, storagePath, filename);
 		return media;
-	}
-
-	@Override
-	public Media createMedia(AbstractArtefact artefact) {
-		return null;//no specific image document in old portfolio
 	}
 
 	@Override

@@ -27,7 +27,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.olat.commons.calendar.CalendarUtils;
-import org.olat.core.commons.persistence.DB;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
 import org.olat.core.gui.components.form.flexible.FormItem;
@@ -46,6 +45,7 @@ import org.olat.core.gui.components.velocity.VelocityContainer;
 import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.Event;
 import org.olat.core.gui.control.WindowControl;
+import org.olat.core.gui.control.generic.closablewrapper.CloseableModalController;
 import org.olat.core.gui.control.generic.modal.DialogBoxController;
 import org.olat.core.gui.control.generic.modal.DialogBoxUIFactory;
 import org.olat.core.util.StringHelper;
@@ -58,11 +58,13 @@ import org.olat.course.assessment.AssessmentModeCoordinationService;
 import org.olat.course.assessment.AssessmentModeManager;
 import org.olat.course.assessment.CourseAssessmentService;
 import org.olat.course.assessment.handler.AssessmentConfig;
+import org.olat.course.assessment.model.AssessmentModeStatistics;
 import org.olat.course.assessment.ui.mode.AssessmentModeHelper;
 import org.olat.course.assessment.ui.mode.AssessmentModeListController;
 import org.olat.course.assessment.ui.mode.ModeStatusCellRenderer;
 import org.olat.course.assessment.ui.mode.TimeCellRenderer;
 import org.olat.course.assessment.ui.tool.AssessmentModeOverviewListTableModel.ModeCols;
+import org.olat.course.assessment.ui.tool.component.AssessmentModeProgressionItem;
 import org.olat.course.assessment.ui.tool.event.AssessmentModeStatusEvent;
 import org.olat.course.assessment.ui.tool.event.CourseNodeEvent;
 import org.olat.course.nodes.CourseNode;
@@ -90,15 +92,14 @@ public class AssessmentModeOverviewListController extends FormBasicController im
 	private FlexiTableElement tableEl;
 	private AssessmentModeOverviewListTableModel model;
 
-	private DialogBoxController stopDialogBox;
+	private CloseableModalController cmc;
 	private DialogBoxController startDialogBox;
+	private ConfirmStopAssessmentModeController stopCtrl;
 	
 	private int count = 0;
 	private final RepositoryEntry courseEntry;
 	private final AssessmentToolSecurityCallback assessmentCallback;
-	
-	@Autowired
-	private DB dbInstance;
+
 	@Autowired
 	private LectureService lectureService;
 	@Autowired
@@ -157,6 +158,9 @@ public class AssessmentModeOverviewListController extends FormBasicController im
 			for(FormLink elementLink:elementLinks) {
 				cmps.add(elementLink.getComponent());
 			}
+			if(mode.getWaitBarItem() != null) {
+				cmps.add(mode.getWaitBarItem().getComponent());
+			}
 		}
 		return cmps;
 	}
@@ -195,12 +199,13 @@ public class AssessmentModeOverviewListController extends FormBasicController im
 		long endInMillseconds = cal.getTimeInMillis() - now;
 		boolean endSoon = (endInMillseconds < (5l * 60l * 1000l))
 				&& (mode.getStatus() == Status.assessment || mode.getStatus() == Status.followup);
+		
 		AssessmentModeOverviewRow row = new AssessmentModeOverviewRow(mode, isToday, endSoon, endInMillseconds);
 		
 		LectureBlock block = mode.getLectureBlock();
 		boolean allowToStartStop = assessmentCallback.canStartStopAllAssessments()
 				|| (block != null && teachedLectures.contains(block.getKey()));
-		
+
 		if(mode.isManualBeginEnd() && allowToStartStop) {
 			if(assessmentModeCoordinationService.canStart(mode)) {
 				String id = "start_" + (++count);
@@ -209,16 +214,27 @@ public class AssessmentModeOverviewListController extends FormBasicController im
 				startButton.setIconLeftCSS("o_icon o_icon-fw o_as_mode_assessment");
 				startButton.setUserObject(row);
 				flc.add(id, startButton);
+				forgeStatistics(mode, row);
 				row.setActionButton(startButton);
 			} else if(assessmentModeCoordinationService.canStop(mode)) {
 				String id = "end_" + (++count);
 				FormLink endButton = uifactory.addFormLink(id, "end", "end", null, flc, Link.BUTTON_SMALL);
 				endButton.setDomReplacementWrapperRequired(false);
 				endButton.setIconLeftCSS("o_icon o_icon-fw o_as_mode_stop");
+				if(assessmentModeCoordinationService.isDisadvantageCompensationExtensionTime(mode)) {
+					endButton.setIconRightCSS("o_icon o_icon-fw o_icon_disadvantage_compensation");
+				}
 				endButton.setUserObject(row);
 				flc.add(id, endButton);
+				forgeStatistics(mode, row);
 				row.setActionButton(endButton);
 			}
+		} else if (mode.getStatus() == AssessmentMode.Status.leadtime
+				|| mode.getStatus() == AssessmentMode.Status.assessment
+				|| mode.getStatus() == AssessmentMode.Status.followup) {
+			forgeStatistics(mode, row);
+		} else {
+			row.setWaitBarItem(null);
 		}
 		
 		String elements = mode.getElementList();
@@ -243,6 +259,20 @@ public class AssessmentModeOverviewListController extends FormBasicController im
 
 		return row;
 	}
+	
+	private void forgeStatistics(AssessmentMode mode, AssessmentModeOverviewRow row) {
+		AssessmentModeStatistics statistics = assessmentModeCoordinationService.getStatistics(mode);
+		if(statistics != null) {
+			statistics.setStatus(mode.getStatus());// direct from the database
+			
+			String id = "wait_" + (++count);
+			AssessmentModeProgressionItem waitBarItem = new AssessmentModeProgressionItem(id, mode, getTranslator());
+			waitBarItem.setMax(statistics.getNumPlanned());
+			waitBarItem.setActual(statistics.getNumInOpenOlat());
+			row.setWaitBarItem(waitBarItem);
+			flc.add(waitBarItem);
+		}
+	}
 
 	@Override
 	protected void doDispose() {
@@ -256,13 +286,23 @@ public class AssessmentModeOverviewListController extends FormBasicController im
 				doStart((AssessmentModeOverviewRow)startDialogBox.getUserObject());
 				fireEvent(ureq, new AssessmentModeStatusEvent());
 			}
-		} else if(stopDialogBox == source) {
-			if(DialogBoxUIFactory.isYesEvent(event) || DialogBoxUIFactory.isOkEvent(event)) {
-				doStop((AssessmentModeOverviewRow)stopDialogBox.getUserObject());
-				fireEvent(ureq, new AssessmentModeStatusEvent());
+		} else if(stopCtrl == source) {
+			if(event == Event.DONE_EVENT) {
+				loadModel();
 			}
+			cmc.deactivate();
+			cleanUp();
+		} else if(cmc == source) {
+			cleanUp();
 		}
 		super.event(ureq, source, event);
+	}
+	
+	private void cleanUp() {
+		removeAsListenerAndDispose(stopCtrl);
+		removeAsListenerAndDispose(cmc);
+		stopCtrl = null;
+		cmc = null;
 	}
 
 	@Override
@@ -298,18 +338,17 @@ public class AssessmentModeOverviewListController extends FormBasicController im
 		loadModel();
 	}
 	
-	private void doConfirmStop(UserRequest ureq, AssessmentModeOverviewRow mode) {
-		String title = translate("confirm.stop.title");
-		String text = translate("confirm.stop.text");
-		stopDialogBox = activateYesNoDialog(ureq, title, text, stopDialogBox);
-		stopDialogBox.setUserObject(mode);
-	}
-	
-	private void doStop(AssessmentModeOverviewRow row) {
+	private void doConfirmStop(UserRequest ureq, AssessmentModeOverviewRow row) {
+		if(guardModalController(stopCtrl)) return;
+
 		AssessmentMode mode = asssessmentModeManager.getAssessmentModeById(row.getAssessmentMode().getKey());
-		assessmentModeCoordinationService.stopAssessment(mode);
-		dbInstance.commit();
-		loadModel();
+		stopCtrl = new ConfirmStopAssessmentModeController(ureq, getWindowControl(), mode);
+		listenTo(stopCtrl);
+		
+		String title = translate("confirm.stop.title");
+		cmc = new CloseableModalController(getWindowControl(), "close", stopCtrl.getInitialComponent(), true, title, true);
+		cmc.activate();
+		listenTo(cmc);
 	}
 
 	private void doJumpTo(UserRequest ureq, CourseNode node) {

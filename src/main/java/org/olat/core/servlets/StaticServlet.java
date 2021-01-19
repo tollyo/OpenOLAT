@@ -32,6 +32,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.olat.admin.sysinfo.manager.CustomStaticFolderManager;
 import org.olat.core.CoreSpringFactory;
+import org.olat.core.dispatcher.DispatcherModule;
 import org.olat.core.gui.media.FileMediaResource;
 import org.olat.core.gui.media.MediaResource;
 import org.olat.core.gui.media.ServletUtil;
@@ -59,30 +60,32 @@ public class StaticServlet extends HttpServlet {
 	public static final String NOVERSION = "_noversion_";
 
 	@Override
-	protected void service(HttpServletRequest req, HttpServletResponse resp)
-	throws ServletException, IOException {
+	protected void service(HttpServletRequest req, HttpServletResponse resp) {
 		String userAgent = req.getHeader("User-Agent");
 		if(userAgent != null && userAgent.indexOf("BitKinex") >= 0) {
 			//BitKinex isn't allow to see this context
-			resp.sendError(HttpServletResponse.SC_FORBIDDEN);
+			DispatcherModule.sendForbidden(resp);
 		} else {
-			super.service(req, resp);
+			try {
+				super.service(req, resp);
+			} catch (ServletException | IOException e) {
+				log.error("", e);
+			}
 		}
 	}
 
 	@Override
-	protected void doGet(HttpServletRequest request, HttpServletResponse response)
-	throws ServletException, IOException {
+	protected void doGet(HttpServletRequest request, HttpServletResponse response) {
 		final String pathInfo = request.getPathInfo();
 		if (pathInfo == null) {
 			// huh? What's this, send not found, don't know what to do here
-			response.sendError(HttpServletResponse.SC_NOT_FOUND);
+			DispatcherModule.sendNotFound(response);
 		} else if (pathInfo.indexOf(NOVERSION) != -1) {
 			// no version provided - only remove mapper
 			String staticRelPath = pathInfo.substring(NOVERSION.length() + 1, pathInfo.length());
 			String normalizedRelPath = ServletUtil.normalizePath(staticRelPath);
 			if (normalizedRelPath == null) {
-				response.sendError(HttpServletResponse.SC_NOT_FOUND);
+				DispatcherModule.sendNotFound(response);
 			} else if(normalizedRelPath.endsWith("transparent.gif")){
 				deliverStatic(request, response, pathInfo, normalizedRelPath, true);
 			} else {
@@ -95,36 +98,35 @@ public class StaticServlet extends HttpServlet {
 			File file = new File(folderManager.getRootFile(), staticRelPath);
 			if(file.exists()) {
 				if(file.isDirectory()) {
-					response.sendError(HttpServletResponse.SC_FORBIDDEN);
+					DispatcherModule.sendForbidden(response);
 				} else {
 					MediaResource resource = new FileMediaResource(file);
 		    		ServletUtil.serveResource(request, response, resource);
 				}
 			} else {
-				response.sendError(HttpServletResponse.SC_NOT_FOUND);
+				DispatcherModule.sendNotFound(response);
 			}
 		} else {
 			// version provided - remove it
 			int start = pathInfo.indexOf("/", 2);
 			int end = pathInfo.length();
-			if(start <= end) {
+			if(start >= 2 && start <= end) {
 				String staticRelPath = pathInfo.substring(start, end);
 				String normalizedRelPath = ServletUtil.normalizePath(staticRelPath);
 				if (normalizedRelPath == null) {
-					response.sendError(HttpServletResponse.SC_NOT_FOUND);
+					DispatcherModule.sendNotFound(response);
 				} else {
 					boolean expiration = !Settings.isDebuging();
 					deliverStatic(request, response, pathInfo, normalizedRelPath, expiration);
 				}
 			} else {
-				response.sendError(HttpServletResponse.SC_NOT_FOUND);
+				DispatcherModule.sendNotFound(response);
 			}
 		}	
 	}
 	
 	private void deliverStatic(HttpServletRequest request, HttpServletResponse response,
-		String pathInfo, String normalizedRelPath, boolean expiration)
-	throws IOException {
+		String pathInfo, String normalizedRelPath, boolean expiration) {
 
 		boolean notFound = false;
 		// create the file from the path
@@ -170,15 +172,15 @@ public class StaticServlet extends HttpServlet {
 					}
 				}
 				// log as error, file exists but wrongly mapped
-				log.warn("File exists but not mapped using version - use StaticMediaDispatch methods to create URL of static files! invalid URI::" + request.getRequestURI());			
+				log.warn("File exists but not mapped using version - use StaticMediaDispatch methods to create URL of static files! invalid URI::{}", request.getRequestURI());			
 			}
 		}
 		
 		if(notFound) {
-			response.sendError(HttpServletResponse.SC_NOT_FOUND);
+			DispatcherModule.sendNotFound(response);
 		} else if(staticFile.isDirectory()) {
 			//directory listing is forbidden
-			response.sendError(HttpServletResponse.SC_FORBIDDEN);
+			DispatcherModule.sendForbidden(response);
 		} else {
 			deliverFile(request, response, staticFile, expiration);
 		}
@@ -205,6 +207,8 @@ public class StaticServlet extends HttpServlet {
 			try(InputStream in = new FileInputStream(file);
 					BufferedInputStream bis = new BufferedInputStream(in, FileUtils.BSIZE)) {
 				FileUtils.cpio(bis, response.getOutputStream(), "static");
+			} catch(IOException e) {
+				ServletUtil.handleIOException("", e);
 			} catch(Exception ex) {
 				log.error("", ex);
 			}

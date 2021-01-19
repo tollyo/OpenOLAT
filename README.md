@@ -18,6 +18,7 @@ A sophisticated modular toolkit provides course authors with a wide range of did
     * [Compress javascript and CSS](#compress-javascript-and-css)
     * [REST API](#rest-api)
     * [Automated tests](#automated-tests)
+5. [Supported by](#supported-by)
 
 ## Licensing
 
@@ -85,6 +86,8 @@ section below.
 #### 2. Setting up the database
 
 Prepare database permissions and initialize the database.
+
+*For PostgreSQL*: please check their PostgreSQL manual how to create a user and database.
  
 *For MySQL*: create a user 'openolat' and a database 'openolat'
 
@@ -95,7 +98,11 @@ UPDATE mysql.user SET HOST='localhost' WHERE USER='openolat' AND HOST='%';
 FLUSH PRIVILEGES;
 ```
 
-*For PostgreSQL*: please check their PostgreSQL manual how to create a user and database.
+The time zone needs to be set if you don't already defined it.
+
+```sql
+SET GLOBAL time_zone = 'Europe/Zurich';
+```
  
 Write the OpenOlat database schema to the OpenOlat database. Example for MySQL:
 
@@ -137,7 +144,7 @@ arguments to the VM arguments:
 
 Open the generated server.xml file and manually set the following parameters: 
 * In the "Context" element set parameter reloadable="false" 
-* In all "Connector" elements set paramter URIEncoding="UTF-8"
+* In all "Connector" elements set parameter URIEncoding="UTF-8"
 
 Option: to use the application server database connection pool configure a jdbc data
 resource in the "Context" element, set db.source=jndi in the olat.local.properties with
@@ -153,7 +160,7 @@ Next add the resource descriptor to your tomcat context descriptor.
 *For MySQL:*
 
 ```xml
-<Resource auth="Container" driverClassName="com.mysql.jdbc.Driver" type="javax.sql.DataSource"
+<Resource auth="Container" driverClassName="com.mysql.cj.jdbc.Driver" type="javax.sql.DataSource"
           maxIdle="4" maxTotal="16" maxWaitMillis="10000"
           name="jdbc/OpenOLATDS"
           password="olat" username="olat"
@@ -231,7 +238,7 @@ mvn compile -Pcompressjs,tomcat
 To read the OpenOlat REST API documentation:
 1. start OpenOlat
 2. go to Administration -> Core configuration -> REST API
-3. Make sure the REST API ist enabled
+3. Make sure the REST API is enabled
 4. Click the documentation link in the admin panel
 
 ### Automated tests
@@ -404,5 +411,13 @@ mvn clean verify -DskipTests=true -DskipSeleniumTests=true -Ptomcat
 ```
 
 Run single test as JUnit Test in Eclipse
+
+## Supported by
+
+This software is supported by the following tool vendors.
+
+<a href="https://www.yourkit.com"><img src="https://www.yourkit.com/images/yk_logo.png" height="60" width="220"></a>
+
+<a href="https://www.atlassian.com"><img src="https://www.atlassian.com/dam/jcr:93075b1a-484c-4fe5-8a4f-942710e51760/Atlassian-horizontal-blue@2x-rgb.png" height="61" width="481"></a>
 
 

@@ -19,9 +19,9 @@
  */
 package org.olat.repository.ui;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.olat.NewControllerFactory;
@@ -84,7 +84,6 @@ import org.olat.repository.model.SingleRoleRepositoryEntrySecurity.Role;
 import org.olat.repository.ui.author.ConfirmCloseController;
 import org.olat.repository.ui.author.ConfirmDeleteSoftlyController;
 import org.olat.repository.ui.author.CopyRepositoryEntryController;
-import org.olat.repository.ui.author.RepositoryEditDescriptionController;
 import org.olat.repository.ui.author.RepositoryMembersController;
 import org.olat.repository.ui.list.LeavingEvent;
 import org.olat.repository.ui.list.RepositoryEntryDetailsController;
@@ -125,7 +124,6 @@ public class RepositoryEntryRuntimeController extends MainLayoutBasicController 
 	private RepositoryEntryDetailsController detailsCtrl;
 	private RepositoryMembersController membersEditController;
 	protected RepositoryEntrySettingsController settingsCtrl;
-	protected RepositoryEditDescriptionController descriptionCtrl2;
 	
 	private Dropdown tools;
 	private Dropdown status;
@@ -140,9 +138,13 @@ public class RepositoryEntryRuntimeController extends MainLayoutBasicController 
 	protected Link settingsLink;
 	
 	private Dropdown rolesDropdown;
-	private Link participantLink;
-	private Link coachLink;
 	private Link ownerLink;
+	private Link administratorLink;
+	private Link learningResourceManagerLink;
+	private Link coachLink;
+	private Link principalLink;
+	private Link masterCoachLink;
+	private Link participantLink;
 	
 	private Link preparationLink;
 	private Link reviewLink;
@@ -162,6 +164,7 @@ public class RepositoryEntryRuntimeController extends MainLayoutBasicController 
 	protected boolean corrupted;
 	protected boolean settingsChanged;
 	protected boolean overrideReadOnly = false;
+	protected final String businessPathEntry;
 	private RepositoryEntry re;
 	private List<OrganisationRef> organisations;
 	private LockResult lockResult;
@@ -208,6 +211,7 @@ public class RepositoryEntryRuntimeController extends MainLayoutBasicController 
 		//! check corrupted
 		corrupted = isCorrupted(re);
 		
+		businessPathEntry = "[RepositoryEntry:" + re.getKey() + "]";
 
 		UserSession session = ureq.getUserSession();
 		Object wcard = session.removeEntry("override_readonly_" + re.getKey());
@@ -280,10 +284,10 @@ public class RepositoryEntryRuntimeController extends MainLayoutBasicController 
 				&& lock.getResourceableTypeName().equals(resource.getResourceableTypeName());
 	}
 	
-	protected void reloadSecurity(UserRequest ureq) {
+	protected final void reloadSecurity(UserRequest ureq) {
 		reSecurity.setWrappedSecurity(repositoryManager.isAllowed(ureq, getRepositoryEntry()));
-		initToolbar();
 		onSecurityReloaded(ureq);
+		initToolbar();
 	}
 	
 	//ureq my be used by sub controller
@@ -384,41 +388,56 @@ public class RepositoryEntryRuntimeController extends MainLayoutBasicController 
 	private void initRole() {
 		rolesDropdown = new Dropdown("toolbox.roles", "role.switch", false, getTranslator());
 		rolesDropdown.setElementCssClass("o_sel_switch_role o_with_labeled");
-		rolesDropdown.setIconCSS("o_icon " + getCurrentRoleIcon());
-		rolesDropdown.setInnerText(translate("role." + reSecurity.getCurrentRole()));
+		rolesDropdown.setIconCSS("o_icon " + reSecurity.getCurrentRole().getIconCssClass());
+		rolesDropdown.setInnerText(translate(reSecurity.getCurrentRole().getI18nKey()));
 		rolesDropdown.setInnerCSS("o_labeled");
 		
-		Set<Role> otherRoles = reSecurity.getOtherRoles();
-		if (otherRoles.contains(Role.participant)) {
-			participantLink = LinkFactory.createToolLink("role.participant", translate("role.participant"), this);
-			participantLink.setIconLeftCSS("o_icon o_icon-fw o_icon_user");
-			participantLink.setElementCssClass("o_labeled o_repo_role");
-			rolesDropdown.addComponent(participantLink);
+		Collection<Role> otherRoles = reSecurity.getOtherRoles();
+		if (otherRoles.contains(Role.owner)) {
+			ownerLink = LinkFactory.createToolLink("role.owner", translate(Role.owner.getI18nKey()), this);
+			ownerLink.setIconLeftCSS("o_icon o_icon-fw " + Role.owner.getIconCssClass());
+			ownerLink.setElementCssClass("o_labeled o_repo_role");
+			rolesDropdown.addComponent(ownerLink);
+		}
+		if (otherRoles.contains(Role.administrator)) {
+			administratorLink = LinkFactory.createToolLink("role.administrator", translate(Role.administrator.getI18nKey()), this);
+			administratorLink.setIconLeftCSS("o_icon o_icon-fw " + Role.administrator.getIconCssClass());
+			administratorLink.setElementCssClass("o_labeled o_repo_role");
+			rolesDropdown.addComponent(administratorLink);
+		}
+		if (otherRoles.contains(Role.learningResourceManager)) {
+			learningResourceManagerLink = LinkFactory.createToolLink("role.learning.resource.manager", translate(Role.learningResourceManager.getI18nKey()), this);
+			learningResourceManagerLink.setIconLeftCSS("o_icon o_icon-fw " + Role.learningResourceManager.getIconCssClass());
+			learningResourceManagerLink.setElementCssClass("o_labeled o_repo_role");
+			rolesDropdown.addComponent(learningResourceManagerLink);
 		}
 		if (otherRoles.contains(Role.coach)) {
-			coachLink = LinkFactory.createToolLink("role.coach", translate("role.coach"), this);
-			coachLink.setIconLeftCSS("o_icon o_icon-fw o_icon_coach");
+			coachLink = LinkFactory.createToolLink("role.coach", translate(Role.coach.getI18nKey()), this);
+			coachLink.setIconLeftCSS("o_icon o_icon-fw " + Role.coach.getIconCssClass());
 			coachLink.setElementCssClass("o_labeled o_repo_role");
 			rolesDropdown.addComponent(coachLink);
 		}
-		if (otherRoles.contains(Role.owner)) {
-			ownerLink = LinkFactory.createToolLink("role.owner", translate("role.owner"), this);
-			ownerLink.setIconLeftCSS("o_icon o_icon-fw o_icon_owner");
-			ownerLink.setElementCssClass("o_labeled o_repo_role");
-			rolesDropdown.addComponent(ownerLink);
+		if (otherRoles.contains(Role.principal)) {
+			principalLink = LinkFactory.createToolLink("role.principal", translate(Role.principal.getI18nKey()), this);
+			principalLink.setIconLeftCSS("o_icon o_icon-fw " + Role.principal.getIconCssClass());
+			principalLink.setElementCssClass("o_labeled o_repo_role");
+			rolesDropdown.addComponent(principalLink);
+		}
+		if (otherRoles.contains(Role.masterCoach)) {
+			masterCoachLink = LinkFactory.createToolLink("role.master.coach", translate(Role.masterCoach.getI18nKey()), this);
+			masterCoachLink.setIconLeftCSS("o_icon o_icon-fw " + Role.masterCoach.getIconCssClass());
+			masterCoachLink.setElementCssClass("o_labeled o_repo_role");
+			rolesDropdown.addComponent(masterCoachLink);
+		}
+		if (otherRoles.contains(Role.participant)) {
+			participantLink = LinkFactory.createToolLink("role.participant", translate(Role.participant.getI18nKey()), this);
+			participantLink.setIconLeftCSS("o_icon o_icon-fw " + Role.participant.getIconCssClass());
+			participantLink.setElementCssClass("o_labeled o_repo_role");
+			rolesDropdown.addComponent(participantLink);
 		}
 		if (rolesDropdown.size() > 0) {
 			toolbarPanel.addTool(rolesDropdown, Align.right);
 		}
-	}
-	
-	private String getCurrentRoleIcon() {
-		switch(reSecurity.getCurrentRole()) {
-		case participant: return "o_icon_user";
-		case coach: return "o_icon_coach";
-		case owner: return "o_icon_owner";
-		}
-		return "";
 	}
 
 	protected void initToolbar(Dropdown toolsDropdown) {
@@ -451,11 +470,15 @@ public class RepositoryEntryRuntimeController extends MainLayoutBasicController 
 	protected void initToolsMenuSettings(Dropdown toolsDropdown) {
 		if (reSecurity.isEntryAdmin()) {
 			settingsLink = LinkFactory.createToolLink("settings", translate("details.settings"), this, "o_sel_repo_settings");
+			settingsLink.setUrl(BusinessControlFactory.getInstance()
+					.getAuthenticatedURLFromBusinessPathStrings(businessPathEntry, "[Settings:0][Info:0]"));
 			settingsLink.setIconLeftCSS("o_icon o_icon-fw o_icon_settings");
 			settingsLink.setElementCssClass("o_sel_repo_settings");
 			toolsDropdown.addComponent(settingsLink);
 			
 			membersLink = LinkFactory.createToolLink("members", translate("details.members"), this, "o_sel_repo_members");
+			membersLink.setUrl(BusinessControlFactory.getInstance()
+					.getAuthenticatedURLFromBusinessPathStrings(businessPathEntry, "[MembersMgmt:0]]"));
 			membersLink.setIconLeftCSS("o_icon o_icon-fw o_icon_membersmanagement");
 			toolsDropdown.addComponent(membersLink);
 		}
@@ -467,6 +490,8 @@ public class RepositoryEntryRuntimeController extends MainLayoutBasicController 
 			
 			boolean managed = RepositoryEntryManagedFlag.isManaged(getRepositoryEntry(), RepositoryEntryManagedFlag.editcontent);
 			editLink = LinkFactory.createToolLink("edit.cmd", translate("details.openeditor"), this, "o_sel_repository_editor");
+			editLink.setUrl(BusinessControlFactory.getInstance()
+					.getAuthenticatedURLFromBusinessPathStrings(businessPathEntry, "[Editor:0]]"));
 			editLink.setIconLeftCSS("o_icon o_icon-lg o_icon_edit");
 			editLink.setEnabled(!managed);
 			toolsDropdown.addComponent(editLink);
@@ -476,6 +501,8 @@ public class RepositoryEntryRuntimeController extends MainLayoutBasicController 
 	protected void initToolsMenuRuntime(Dropdown toolsDropdown) {
 		if (reSecurity.isEntryAdmin()) {
 			ordersLink = LinkFactory.createToolLink("bookings", translate("details.orders"), this, "o_sel_repo_booking");
+			ordersLink.setUrl(BusinessControlFactory.getInstance()
+					.getAuthenticatedURLFromBusinessPathStrings(businessPathEntry, "[Booking:0]]"));
 			ordersLink.setIconLeftCSS("o_icon o_icon-fw o_icon_booking");
 			boolean booking = acService.isResourceAccessControled(re.getOlatResource(), null);
 			ordersLink.setEnabled(booking);
@@ -569,6 +596,16 @@ public class RepositoryEntryRuntimeController extends MainLayoutBasicController 
 
 		if(runtimeController instanceof Activateable2) {
 			((Activateable2)runtimeController).activate(ureq, entries, state);
+		}
+	}
+	
+	protected void activateSubEntries(UserRequest ureq, Activateable2 ctrl, List<ContextEntry> entries) {
+		if(ctrl == null || entries == null) return;
+		try {
+			List<ContextEntry> subEntries = entries.subList(1, entries.size());
+			ctrl.activate(ureq, subEntries, entries.get(0).getTransientState());
+		} catch (OLATSecurityException e) {
+			//the wrong link to the wrong person
 		}
 	}
 	
@@ -677,12 +714,20 @@ public class RepositoryEntryRuntimeController extends MainLayoutBasicController 
 			doDownload(ureq);
 		} else if(deleteLink == source) {
 			doDelete(ureq);
-		} else if (participantLink == source) {
-			doSwitchRole(ureq, Role.participant);
-		} else if (coachLink == source) {
-			doSwitchRole(ureq, Role.coach);
 		} else if (ownerLink == source) {
 			doSwitchRole(ureq, Role.owner);
+		} else if (administratorLink == source) {
+			doSwitchRole(ureq, Role.administrator);
+		} else if (learningResourceManagerLink == source) {
+			doSwitchRole(ureq, Role.learningResourceManager);
+		} else if (coachLink == source) {
+			doSwitchRole(ureq, Role.coach);
+		} else if (principalLink == source) {
+			doSwitchRole(ureq, Role.principal);
+		} else if (masterCoachLink == source) {
+			doSwitchRole(ureq, Role.masterCoach);
+		} else if (participantLink == source) {
+			doSwitchRole(ureq, Role.participant);
 		} else if(preparationLink == source) {
 			doChangeStatus(ureq, RepositoryEntryStatusEnum.preparation);
 		} else if(reviewLink == source) {
@@ -828,6 +873,7 @@ public class RepositoryEntryRuntimeController extends MainLayoutBasicController 
 		reloadSecurity(ureq);
 		launchContent(ureq);
 		cleanUp();
+		initToolbar();
 	}
 	
 	protected final void doChangeStatus(UserRequest ureq, RepositoryEntryStatusEnum updatedStatus) {
@@ -952,7 +998,7 @@ public class RepositoryEntryRuntimeController extends MainLayoutBasicController 
 			// guest are allowed to see resource with BARG
 			if(security.canLaunch()) {
 				launchContent(ureq);
-			} else if(re.isBookable()) {
+			} else if(re.isBookable() && canBook()) {
 				AccessResult acResult = acService.isAccessible(re, getIdentity(), security.isMember(), false);
 				if(acResult.isAccessible()) {
 					launchContent(ureq);
@@ -980,8 +1026,13 @@ public class RepositoryEntryRuntimeController extends MainLayoutBasicController 
 		}
 	}
 	
+	private boolean canBook() {
+		// need to check organization too?
+		return !roles.isGuestOnly();
+	}
+	
 	private void accessRefused(UserRequest ureq) {
-		Controller ctrl = new AccessRefusedController(ureq, getWindowControl());
+		Controller ctrl = new AccessRefusedController(ureq, getWindowControl(), re);
 		listenTo(ctrl);
 		toolbarPanel.rootController(re.getDisplayname(), ctrl);
 	}
@@ -1106,7 +1157,7 @@ public class RepositoryEntryRuntimeController extends MainLayoutBasicController 
 				userCourseInfoMgr.updateUserCourseInformations(re.getOlatResource(), getIdentity());
 			}
 		} else {
-			runtimeController = new AccessRefusedController(ureq, getWindowControl());
+			runtimeController = new AccessRefusedController(ureq, getWindowControl(), re);
 			listenTo(runtimeController);
 			toolbarPanel.rootController(re.getDisplayname(), runtimeController);
 		}

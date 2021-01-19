@@ -55,7 +55,9 @@ import org.olat.course.nodes.CourseNodeFactory;
 import org.olat.course.nodes.IQSELFCourseNode;
 import org.olat.course.nodes.IQSURVCourseNode;
 import org.olat.course.nodes.QTICourseNode;
+import org.olat.fileresource.FileResourceManager;
 import org.olat.fileresource.types.ImsQTI21Resource;
+import org.olat.ims.qti.QTIModule;
 import org.olat.ims.qti.QTIResult;
 import org.olat.ims.qti.QTIResultManager;
 import org.olat.ims.qti.editor.beecom.objects.Assessment;
@@ -67,12 +69,16 @@ import org.olat.ims.qti.fileresource.TestFileResource;
 import org.olat.ims.qti.process.AssessmentInstance;
 import org.olat.ims.qti21.AssessmentTestSession;
 import org.olat.ims.qti21.QTI21DeliveryOptions;
+import org.olat.ims.qti21.QTI21DeliveryOptions.PassedType;
+import org.olat.ims.qti21.QTI21Module;
 import org.olat.ims.qti21.QTI21Service;
 import org.olat.ims.qti21.model.InMemoryOutcomeListener;
+import org.olat.ims.qti21.model.xml.AssessmentTestBuilder;
 import org.olat.ims.qti21.ui.AssessmentTestDisplayController;
 import org.olat.ims.qti21.ui.QTI21OverrideOptions;
 import org.olat.ims.qti21.ui.event.RestartEvent;
 import org.olat.modules.ModuleConfiguration;
+import org.olat.modules.grading.GradingService;
 import org.olat.modules.iq.IQManager;
 import org.olat.modules.iq.IQPreviewSecurityCallback;
 import org.olat.repository.RepositoryEntry;
@@ -81,6 +87,9 @@ import org.olat.repository.RepositoryService;
 import org.olat.repository.controllers.ReferencableEntriesSearchController;
 import org.olat.user.UserManager;
 import org.springframework.beans.factory.annotation.Autowired;
+
+import uk.ac.ed.ph.jqtiplus.node.test.AssessmentTest;
+import uk.ac.ed.ph.jqtiplus.resolution.ResolvedAssessmentTest;
 
 /**
  * 
@@ -91,6 +100,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 public class IQConfigurationController extends BasicController {
 
 	private static final String VC_CHOSENTEST = "chosentest";
+	
+	private static final String[] QTI_21_AND_12_RESOURCE = new String[] { TestFileResource.TYPE_NAME,
+			ImsQTI21Resource.TYPE_NAME };
+	private static final String[] QTI_21_RESOURCE = new String[] { ImsQTI21Resource.TYPE_NAME };
 
 	private VelocityContainer myContent;
 	private final BreadcrumbPanel stackPanel;
@@ -119,7 +132,13 @@ public class IQConfigurationController extends BasicController {
 	@Autowired
 	private IQManager iqManager;
 	@Autowired
+	private QTIModule qtiModule;
+	@Autowired
+	private QTI21Module qti21Module;
+	@Autowired
 	private QTI21Service qti21service;
+	@Autowired
+	private GradingService gradingService;
 	@Autowired
 	private RepositoryManager repositoryManager;
 	@Autowired
@@ -208,11 +227,26 @@ public class IQConfigurationController extends BasicController {
 				logError("Test cannot be read: " + re, e);
 				showError("error.resource.corrupted");
 			}
+			QTI21DeliveryOptions deliveryOptions = qti21service.getDeliveryOptions(re);
 			if(replacedTest) {// set some default settings in case the user don't save the next panel
-				moduleConfiguration.setStringValue(IQEditController.CONFIG_CORRECTION_MODE, needManualCorrection ? "manual" : "auto");
+				String correctionMode;
+				if(gradingService.isGradingEnabled(re, null)) {
+					correctionMode = IQEditController.CORRECTION_GRADING;
+				} else if(needManualCorrection || getPassedType(re, deliveryOptions) == PassedType.manually) {
+					correctionMode = IQEditController.CORRECTION_MANUAL;
+				} else {
+					correctionMode = IQEditController.CORRECTION_AUTO;
+				}
+				moduleConfiguration.setStringValue(IQEditController.CONFIG_CORRECTION_MODE, correctionMode);
+				if(IQEditController.CORRECTION_GRADING.equals(correctionMode) ||  IQEditController.CORRECTION_MANUAL.equals(correctionMode)) {
+					String userVisible = qti21Module.isResultsVisibleAfterCorrectionWorkflow()
+							? IQEditController.CONFIG_VALUE_SCORE_VISIBLE_AFTER_CORRECTION : IQEditController.CONFIG_VALUE_SCORE_NOT_VISIBLE_AFTER_CORRECTION;
+					moduleConfiguration.setStringValue(IQEditController.CONFIG_KEY_SCORE_VISIBILITY_AFTER_CORRECTION, userVisible);
+				} else {
+					moduleConfiguration.remove(IQEditController.CONFIG_KEY_SCORE_VISIBILITY_AFTER_CORRECTION);
+				}
 				fireEvent(ureq, NodeEditController.NODECONFIG_CHANGED_EVENT);
 			}
-			QTI21DeliveryOptions deliveryOptions =  qti21service.getDeliveryOptions(re);
 			mod21ConfigForm = new QTI21EditForm(ureq, getWindowControl(), moduleConfiguration,
 					NodeAccessType.of(course), deliveryOptions, needManualCorrection);
 			mod21ConfigForm.update(re);
@@ -400,10 +434,14 @@ public class IQConfigurationController extends BasicController {
 				listenTo(previewQTI21Ctrl);
 				stackPanel.pushController(translate("preview"), previewQTI21Ctrl);
 			} else {
-				long courseResId = course.getResourceableId().longValue();
-				Controller previewController = iqManager.createIQDisplayController(moduleConfiguration, new IQPreviewSecurityCallback(), ureq, getWindowControl(), courseResId, courseNode.getIdent(), null);
-				previewLayoutCtr = new LayoutMain3ColsController(ureq, getWindowControl(), previewController);
-				stackPanel.pushController(translate("preview"), previewLayoutCtr);
+				if (qtiModule.isRunEnabled()) {
+					long courseResId = course.getResourceableId().longValue();
+					Controller previewController = iqManager.createIQDisplayController(moduleConfiguration, new IQPreviewSecurityCallback(), ureq, getWindowControl(), courseResId, courseNode.getIdent(), null);
+					previewLayoutCtr = new LayoutMain3ColsController(ureq, getWindowControl(), previewController);
+					stackPanel.pushController(translate("preview"), previewLayoutCtr);
+				} else {
+					showError("error.qti12");
+				}
 			}
 		}
 	}
@@ -428,8 +466,9 @@ public class IQConfigurationController extends BasicController {
 			searchController = new ReferencableEntriesSearchController(getWindowControl(), ureq, 
 					SurveyFileResource.TYPE_NAME, translate("command.chooseSurvey"));
 		} else { // test and selftest use same repository resource type
-			searchController = new ReferencableEntriesSearchController(getWindowControl(), ureq, 
-					new String[] { TestFileResource.TYPE_NAME, ImsQTI21Resource.TYPE_NAME }, translate("command.chooseTest"));
+			String[] types = qtiModule.isRunEnabled() ? QTI_21_AND_12_RESOURCE : QTI_21_RESOURCE;
+			searchController = new ReferencableEntriesSearchController(getWindowControl(), ureq, types,
+					translate("command.chooseTest"));
 		}			
 		listenTo(searchController);
 		cmc = new CloseableModalController(getWindowControl(), translate("close"), searchController.getInitialComponent(), true, translate("command.chooseRepFile"));
@@ -440,7 +479,7 @@ public class IQConfigurationController extends BasicController {
 		removeAsListenerAndDispose(cmc);
 		removeAsListenerAndDispose(searchController);
 		
-		String[] types = new String[]{ TestFileResource.TYPE_NAME, ImsQTI21Resource.TYPE_NAME };
+		String[] types = qtiModule.isRunEnabled() ? QTI_21_AND_12_RESOURCE : QTI_21_RESOURCE;
 		searchController = new ReferencableEntriesSearchController(getWindowControl(), ureq, types, translate("command.chooseTest"));
 		listenTo(searchController);
 		
@@ -455,7 +494,7 @@ public class IQConfigurationController extends BasicController {
 		
 		String[] types;
 		if(type.equals(AssessmentInstance.QMD_ENTRY_TYPE_ASSESS)) {//test
-			types = new String[]{ TestFileResource.TYPE_NAME, ImsQTI21Resource.TYPE_NAME };
+			types = qtiModule.isRunEnabled() ? QTI_21_AND_12_RESOURCE : QTI_21_RESOURCE;
 		} else {//survey
 			types = new String[]{ SurveyFileResource.TYPE_NAME };
 		}
@@ -561,6 +600,21 @@ public class IQConfigurationController extends BasicController {
 		return qti21service.needManualCorrection(re);
 	}
 	
+	private PassedType getPassedType(RepositoryEntry re, QTI21DeliveryOptions deliveryOptions) {
+		if(deliveryOptions == null) return PassedType.none;
+	
+		FileResourceManager frm = FileResourceManager.getInstance();
+		File unzippedDirRoot = frm.unzipFileResource(re.getOlatResource());
+		ResolvedAssessmentTest resolvedAssessmentTest = qti21service.loadAndResolveAssessmentTest(unzippedDirRoot, false, false);
+		AssessmentTest assessmentTest = resolvedAssessmentTest.getRootNodeLookup().extractIfSuccessful();
+		
+		Double cutValue = null;
+		if(assessmentTest != null) {
+			cutValue = new AssessmentTestBuilder(assessmentTest).getCutValue();
+		}
+		return deliveryOptions.getPassedType(cutValue);
+	}
+	
 	private boolean needManualCorrectionQTI12(RepositoryEntry re) {
 		boolean needManualCorrection = false;
 		QTIDocument doc = TestFileResource.getQTIDocument(re.getOlatResource());
@@ -586,7 +640,7 @@ public class IQConfigurationController extends BasicController {
 		// repository search controller done				
 		if (re != null) {
 			if (CoordinatorManager.getInstance().getCoordinator().getLocker().isLocked(re.getOlatResource(), null)) {
-				LockResult lockResult = CoordinatorManager.getInstance().getCoordinator().getLocker().acquireLock(re.getOlatResource(), urequest.getIdentity(), null);
+				LockResult lockResult = CoordinatorManager.getInstance().getCoordinator().getLocker().acquireLock(re.getOlatResource(), urequest.getIdentity(), null, getWindow());
 				String fullName = CoreSpringFactory.getImpl(UserManager.class).getUserDisplayName(lockResult.getOwner());
 				showError("error.entry.locked", fullName);
 				if(lockResult.isSuccess()) {
@@ -652,6 +706,9 @@ public class IQConfigurationController extends BasicController {
 
 	@Override
 	protected void doDispose() {
+		if(stackPanel != null) {
+			stackPanel.removeListener(this);
+		}
 		//child controllers registered with listenTo() get disposed in BasicController
 		if (previewLayoutCtr != null) {
 			previewLayoutCtr.dispose();

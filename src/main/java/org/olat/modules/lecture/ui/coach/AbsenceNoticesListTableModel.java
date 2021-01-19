@@ -27,13 +27,11 @@ import org.olat.core.gui.components.form.flexible.impl.elements.table.DefaultFle
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiSortableColumnDef;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiTableColumnModel;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.SortableFlexiTableDataModel;
-import org.olat.core.gui.components.form.flexible.impl.elements.table.SortableFlexiTableModelDelegate;
 import org.olat.core.id.Identity;
 import org.olat.core.id.User;
 import org.olat.course.assessment.ui.tool.AssessmentToolConstants;
 import org.olat.modules.lecture.AbsenceNotice;
 import org.olat.modules.lecture.LectureBlock;
-import org.olat.modules.lecture.LectureBlockStatus;
 import org.olat.user.UserManager;
 import org.olat.user.propertyhandlers.UserPropertyHandler;
 
@@ -45,6 +43,8 @@ import org.olat.user.propertyhandlers.UserPropertyHandler;
  */
 public class AbsenceNoticesListTableModel extends DefaultFlexiTableDataModel<AbsenceNoticeRow>
 implements SortableFlexiTableDataModel<AbsenceNoticeRow> {
+	
+	private static final NoticeCols[] COLS = NoticeCols.values();
 	
 	private final Locale locale;
 	private final UserManager userManager;
@@ -61,7 +61,7 @@ implements SortableFlexiTableDataModel<AbsenceNoticeRow> {
 	@Override
 	public void sort(SortKey orderBy) {
 		if(orderBy != null) {
-			List<AbsenceNoticeRow> rows = new SortableFlexiTableModelDelegate<>(orderBy, this, locale).sort();
+			List<AbsenceNoticeRow> rows = new AbsenceNoticesListTableModelSortDelegate(orderBy, this, locale).sort();
 			super.setObjects(rows);
 		}
 	}
@@ -75,10 +75,9 @@ implements SortableFlexiTableDataModel<AbsenceNoticeRow> {
 	@Override
 	public Object getValueAt(AbsenceNoticeRow row, int col) {
 		if(col < AbsenceNoticesListController.USER_PROPS_OFFSET) {
-			switch(NoticeCols.values()[col]) {
+			switch(COLS[col]) {
 				case id: return row.getKey();
-				case username: return row.getIdentityName();
-				case date: return row.getAbsenceNotice();
+				case date: return row;
 				case start: return row.getStartDate();
 				case end: return row.getEndDate();
 				case entry: return row.getEntriesLink();
@@ -119,11 +118,7 @@ implements SortableFlexiTableDataModel<AbsenceNoticeRow> {
 	private int getNumOfLectures(AbsenceNoticeRow row) {
 		int totalLectures = 0;
 		for(LectureBlock lectureBlock:row.getLectureBlocks()) {
-			int numOfLectures = lectureBlock.getEffectiveLecturesNumber();
-			if(numOfLectures <= 0 && lectureBlock.getStatus() != LectureBlockStatus.cancelled) {
-				numOfLectures = lectureBlock.getPlannedLecturesNumber();
-			}
-			totalLectures += numOfLectures;
+			totalLectures += lectureBlock.getCalculatedLecturesNumber();
 		}
 		return totalLectures;
 	}
@@ -145,7 +140,6 @@ implements SortableFlexiTableDataModel<AbsenceNoticeRow> {
 	
 	public enum NoticeCols implements FlexiSortableColumnDef {
 		id("table.header.id"),
-		username("table.header.username"),
 		date("table.header.date"),
 		start("table.header.start.time"),
 		end("table.header.end.time"),
@@ -171,7 +165,7 @@ implements SortableFlexiTableDataModel<AbsenceNoticeRow> {
 
 		@Override
 		public boolean sortable() {
-			return true;
+			return this != details && this != tools;
 		}
 
 		@Override

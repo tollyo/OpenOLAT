@@ -254,7 +254,7 @@ public class ConvertToGTACourseNode {
 			}
 			
 			if(assessmentData.getAttempts() != null) {
-				assessmentMgr.saveNodeAttempts(gtaNode, null, assessedIdentity, assessmentData.getAttempts(), Role.auto);
+				assessmentMgr.saveNodeAttempts(gtaNode, null, assessedIdentity, assessmentData.getAttempts(), assessmentData.getLastAttempt(), Role.auto);
 			}
 			
 			if(StringHelper.containsNonWhitespace(assessmentData.getCoachComment())) {
@@ -392,7 +392,7 @@ public class ConvertToGTACourseNode {
 				}
 				
 				if(metaTarget != null) {
-					metaTarget.copyValues(metaSource);
+					metaTarget.copyValues(metaSource, true);
 					CoreSpringFactory.getImpl(VFSRepositoryService.class).updateMetadata(metaTarget);
 				}	
 			}	

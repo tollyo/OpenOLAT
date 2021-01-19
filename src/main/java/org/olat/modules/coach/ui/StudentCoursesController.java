@@ -26,6 +26,8 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
 
 import org.olat.NewControllerFactory;
+import org.olat.admin.user.UserChangePasswordController;
+import org.olat.basesecurity.BaseSecurityManager;
 import org.olat.basesecurity.BaseSecurityModule;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
@@ -52,6 +54,7 @@ import org.olat.core.gui.control.generic.closablewrapper.CloseableModalControlle
 import org.olat.core.gui.control.generic.dtabs.Activateable2;
 import org.olat.core.id.Identity;
 import org.olat.core.id.OLATResourceable;
+import org.olat.core.id.Roles;
 import org.olat.core.id.context.BusinessControl;
 import org.olat.core.id.context.BusinessControlFactory;
 import org.olat.core.id.context.ContextEntry;
@@ -67,11 +70,12 @@ import org.olat.course.certificate.CertificateEvent;
 import org.olat.course.certificate.CertificateLight;
 import org.olat.course.certificate.CertificatesManager;
 import org.olat.course.certificate.ui.DownloadCertificateCellRenderer;
-import org.olat.modules.assessment.AssessmentEntry;
+import org.olat.modules.assessment.AssessmentEntryScoring;
 import org.olat.modules.assessment.AssessmentService;
 import org.olat.modules.assessment.ui.ScoreCellRenderer;
 import org.olat.modules.assessment.ui.component.LearningProgressCompletionCellRenderer;
 import org.olat.modules.co.ContactFormController;
+import org.olat.modules.coach.CoachingModule;
 import org.olat.modules.coach.CoachingService;
 import org.olat.modules.coach.model.EfficiencyStatementEntry;
 import org.olat.modules.coach.model.IdentityRepositoryEntryKey;
@@ -100,6 +104,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 public class StudentCoursesController extends FormBasicController implements Activateable2, GenericEventListener, TooledController {
 
 	private final Link homeLink, contactLink;
+	private Link resetLink;
 	private Link nextStudent, detailsStudentCmp, previousStudent;
 
 	private FlexiTableElement tableEl;
@@ -109,6 +114,7 @@ public class StudentCoursesController extends FormBasicController implements Act
 	private CloseableModalController cmc;
 	private ContactFormController contactCtrl;
 	private UserDetailsController statementCtrl;
+	private UserChangePasswordController userChangePasswordController;
 	
 	private boolean hasChanged = false;
 	
@@ -118,7 +124,6 @@ public class StudentCoursesController extends FormBasicController implements Act
 	private final boolean fullAccess;
 	private final StudentStatEntry statEntry;
 
-	private final boolean isAdministrativeUser;
 	private final List<UserPropertyHandler> userPropertyHandlers;
 	
 	@Autowired
@@ -135,12 +140,16 @@ public class StudentCoursesController extends FormBasicController implements Act
 	private CertificatesManager certificatesManager;
 	@Autowired
 	private AssessmentService assessmentService;
+	@Autowired
+	private CoachingModule coachingModule;
+	@Autowired
+	private BaseSecurityManager securityManager;
 	
 	public StudentCoursesController(UserRequest ureq, WindowControl wControl, TooledStackedPanel stackPanel,
 			StudentStatEntry statEntry, Identity student, int index, int numOfStudents, boolean fullAccess) {
 		super(ureq, wControl, "student_course_list");
 		setTranslator(userManager.getPropertyHandlerTranslator(getTranslator()));
-		isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
+		boolean isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
 		userPropertyHandlers = userManager.getUserPropertyHandlersFor(UserListController.usageIdentifyer, isAdministrativeUser);
 
 		this.index = index;
@@ -160,6 +169,13 @@ public class StudentCoursesController extends FormBasicController implements Act
 		homeLink = LinkFactory.createButton("home.link", flc.getFormItemComponent(), this);
 		homeLink.setIconLeftCSS("o_icon o_icon_home");
 		flc.getFormItemComponent().put("home", homeLink);
+		
+		Roles roles = securityManager.getRoles(student);
+		if (coachingModule.isResetPasswordEnabled() && !(roles.isAuthor() || roles.isManager() || roles.isAdministrator() || roles.isSystemAdmin() || roles.isPrincipal())) {
+			resetLink = LinkFactory.createButton("reset.link", flc.getFormItemComponent(), this);
+			resetLink.setIconLeftCSS("o_icon o_icon_password");
+			flc.getFormItemComponent().put("reset", resetLink);
+		}
 		
 		CoordinatorManager.getInstance().getCoordinator().getEventBus()
 			.registerFor(this, getIdentity(), CertificatesManager.ORES_CERTIFICATE_EVENT);
@@ -197,10 +213,7 @@ public class StudentCoursesController extends FormBasicController implements Act
 		
 		//add the table
 		FlexiTableColumnModel columnsModel = FlexiTableDataModelFactory.createFlexiTableColumnModel();
-		if(isAdministrativeUser) {
-			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(false, Columns.name, "select"));
-		}
-		
+
 		int colIndex = UserListController.USER_PROPS_OFFSET;
 		for (int i = 0; i < userPropertyHandlers.size(); i++) {
 			UserPropertyHandler userPropertyHandler	= userPropertyHandlers.get(i);
@@ -233,7 +246,7 @@ public class StudentCoursesController extends FormBasicController implements Act
 		tableEl = uifactory.addTableElement(getWindowControl(), "table", model, 20, false, getTranslator(), formLayout);
 		tableEl.setExportEnabled(true);
 		tableEl.setEmtpyTableMessageKey("error.no.found");
-		tableEl.setAndLoadPersistedPreferences(ureq, "fStudentCourseListController");
+		tableEl.setAndLoadPersistedPreferences(ureq, "fStudentCourseListController-v2");
 	}
 
 	@Override
@@ -277,10 +290,10 @@ public class StudentCoursesController extends FormBasicController implements Act
 		
 		ConcurrentMap<IdentityRepositoryEntryKey, Double> completionsMap = new ConcurrentHashMap<>();
 		List<Long> courseEntryKeys = courses.stream().map(RepositoryEntry::getKey).collect(Collectors.toList());
-		List<AssessmentEntry> assessmentEntries = assessmentService.loadRootAssessmentEntriesByAssessedIdentity(student, courseEntryKeys);
-		for (AssessmentEntry assessmentEntry : assessmentEntries) {
+		List<AssessmentEntryScoring> assessmentEntries = assessmentService.loadRootAssessmentEntriesByAssessedIdentity(student, courseEntryKeys);
+		for (AssessmentEntryScoring assessmentEntry : assessmentEntries) {
 			if (assessmentEntry.getCompletion() != null) {
-				IdentityRepositoryEntryKey key = new IdentityRepositoryEntryKey(student.getKey(), assessmentEntry.getRepositoryEntry().getKey());
+				IdentityRepositoryEntryKey key = new IdentityRepositoryEntryKey(student.getKey(), assessmentEntry.getRepositoryEntryKey());
 				completionsMap.put(key, assessmentEntry.getCompletion());
 			}
 		}
@@ -336,6 +349,8 @@ public class StudentCoursesController extends FormBasicController implements Act
 			openHome(ureq);
 		} else if (source == contactLink) {
 			contact(ureq);
+		} else if (source == resetLink) {
+			resetPassword(ureq);
 		} else if(stackPanel == source) {
 			if(event instanceof PopEvent) {
 				PopEvent pe = (PopEvent)event;
@@ -361,14 +376,22 @@ public class StudentCoursesController extends FormBasicController implements Act
 		} else if (source == cmc) {
 			removeAsListenerAndDispose(cmc);
 			removeAsListenerAndDispose(contactCtrl);
+			removeAsListenerAndDispose(userChangePasswordController);
 			cmc = null;
 			contactCtrl = null;
+			userChangePasswordController = null;
 		} else if (source == contactCtrl) {
 			cmc.deactivate();
 			removeAsListenerAndDispose(cmc);
 			removeAsListenerAndDispose(contactCtrl);
 			cmc = null;
 			contactCtrl = null;
+		} else if (source == userChangePasswordController) {
+			cmc.deactivate();
+			removeAsListenerAndDispose(cmc);
+			removeAsListenerAndDispose(userChangePasswordController);
+			cmc = null;
+			userChangePasswordController = null;
 		}
 		super.event(ureq, source, event);
 	}
@@ -402,6 +425,17 @@ public class StudentCoursesController extends FormBasicController implements Act
 		contactCtrl = new ContactFormController(ureq, getWindowControl(), true, false, false, cmsg);
 		listenTo(contactCtrl);
 		cmc = new CloseableModalController(getWindowControl(), translate("close"), contactCtrl.getInitialComponent());
+		cmc.activate();
+		listenTo(cmc);
+	}
+	
+	private void resetPassword(UserRequest ureq) {
+		removeAsListenerAndDispose(cmc);
+		
+		userChangePasswordController = new UserChangePasswordController(ureq, getWindowControl(), student);
+		listenTo(userChangePasswordController);
+		String name = student.getUser().getFirstName() + " " + student.getUser().getLastName();
+		cmc = new CloseableModalController(getWindowControl(), translate("close"), userChangePasswordController.getInitialComponent(), true, translate("reset.title", name));
 		cmc.activate();
 		listenTo(cmc);
 	}
@@ -441,7 +475,7 @@ public class StudentCoursesController extends FormBasicController implements Act
 		});
 		
 		statementCtrl = new UserDetailsController(ureq, bwControl, stackPanel,
-				entry, student, details, entryIndex, model.getRowCount(), selectedTool);
+				entry, student, details, entryIndex, model.getRowCount(), selectedTool, true, false);
 		listenTo(statementCtrl);
 		stackPanel.popUpToController(this);
 		stackPanel.pushController(displayName, statementCtrl);

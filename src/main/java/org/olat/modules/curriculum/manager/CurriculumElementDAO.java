@@ -870,7 +870,7 @@ public class CurriculumElementDAO {
 				.getResultList();
 	}
 	
-	public List<CurriculumElementMembership> getMembershipInfos(List<CurriculumRef> curriculums, Collection<CurriculumElement> elements, Identity... identities) {
+	public List<CurriculumElementMembership> getMembershipInfos(List<? extends CurriculumRef> curriculums, Collection<CurriculumElement> elements, Identity... identities) {
 		StringBuilder sb = new StringBuilder(256);
 		sb.append("select el.key, membership from curriculumelement el")
 		  .append(" inner join el.group baseGroup")
@@ -930,7 +930,9 @@ public class CurriculumElementDAO {
 				membership.setCoach(true);
 			} else if(CurriculumRoles.participant.name().equals(role)) {
 				membership.setParticipant(true);
-			}	
+			}else if(CurriculumRoles.mastercoach.name().equals(role)) {
+				membership.setMasterCoach(true);
+			}
 		}
 		return new ArrayList<>(memberships.values());
 	}

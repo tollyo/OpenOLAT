@@ -33,10 +33,12 @@ import java.util.stream.Collectors;
 import javax.persistence.TypedQuery;
 
 import org.olat.core.commons.persistence.DB;
+import org.olat.core.commons.persistence.PersistenceHelper;
 import org.olat.core.commons.persistence.QueryBuilder;
 import org.olat.core.commons.persistence.SortKey;
 import org.olat.core.gui.translator.Translator;
 import org.olat.core.id.OrganisationRef;
+import org.olat.core.util.StringHelper;
 import org.olat.modules.curriculum.CurriculumElementRef;
 import org.olat.modules.curriculum.CurriculumRef;
 import org.olat.modules.quality.QualityDataCollection;
@@ -50,8 +52,10 @@ import org.olat.modules.quality.QualityDataCollectionViewSearchParams;
 import org.olat.modules.quality.QualityReportAccess;
 import org.olat.modules.quality.QualityReportAccessRightProvider;
 import org.olat.modules.quality.generator.QualityGenerator;
+import org.olat.modules.quality.generator.QualityGeneratorRef;
 import org.olat.modules.quality.model.QualityDataCollectionImpl;
 import org.olat.modules.taxonomy.TaxonomyLevelRef;
+import org.olat.repository.RepositoryEntry;
 import org.olat.repository.RepositoryEntryRef;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -344,11 +348,54 @@ public class QualityDataCollectionDAO {
 				.getResultList();
 		return keys != null && !keys.isEmpty() && keys.get(0) != null;
 	}
-
+	
+	List<QualityGenerator> loadGenerators(QualityDataCollectionViewSearchParams searchParams) {
+		QueryBuilder sb = new QueryBuilder();
+		sb.append("select distinct(collection.generator)");
+		sb.append("  from qualitydatacollection as collection");
+		appendWhereClause(sb, searchParams);
+		
+		TypedQuery<QualityGenerator> query = dbInstance.getCurrentEntityManager()
+				.createQuery(sb.toString(), QualityGenerator.class);
+		appendParameter(query, searchParams);
+		
+		return query.getResultList();
+	}
+	
+	public List<RepositoryEntry> loadFormEntries(QualityDataCollectionViewSearchParams searchParams) {
+		QueryBuilder sb = new QueryBuilder();
+		sb.append("select distinct(form)");
+		sb.append("  from qualitydatacollection as collection");
+		sb.append("       join evaluationformsurvey survey on survey.resName = '").append(QualityDataCollectionLight.RESOURCEABLE_TYPE_NAME).append("'");
+		sb.append("                                       and survey.resId = collection.key");
+		sb.append("       join survey.formEntry as form");
+		appendWhereClause(sb, searchParams);
+		
+		TypedQuery<RepositoryEntry> query = dbInstance.getCurrentEntityManager()
+				.createQuery(sb.toString(), RepositoryEntry.class);
+		appendParameter(query, searchParams);
+		
+		return query.getResultList();
+	}
+	
 	int getDataCollectionCount(QualityDataCollectionViewSearchParams searchParams) {
-		QueryBuilder sb = new QueryBuilder(256);
+		QueryBuilder sb = new QueryBuilder();
 		sb.append("select count(collection)");
 		sb.append("  from qualitydatacollection as collection");
+		if (searchParams != null) {
+			if (searchParams.getFormEntryRefs() != null) {
+				sb.append("       join survey.formEntry as form");
+			}
+			if (StringHelper.containsNonWhitespace(searchParams.getTopic())
+					|| StringHelper.containsNonWhitespace(searchParams.getSearchString())) {
+				sb.append("       left join collection.topicIdentity.user as user");
+				sb.append("       left join collection.topicOrganisation as organisation");
+				sb.append("       left join collection.topicCurriculum as curriculum");
+				sb.append("       left join collection.topicCurriculumElement as curriculumElement");
+				sb.append("       left join curriculumElement.type as curriculumElementType");
+				sb.append("       left join collection.topicRepositoryEntry as repository");
+			}
+		}
 		appendWhereClause(sb, searchParams);
 		
 		TypedQuery<Long> query = dbInstance.getCurrentEntityManager()
@@ -436,6 +483,55 @@ public class QualityDataCollectionDAO {
 			if (searchParams.getDataCollectionRef() != null && searchParams.getDataCollectionRef().getKey() != null) {
 				sb.and().append("collection.key = :collectionKey");
 			}
+			if (searchParams.getFormEntryRefs() != null) {
+				sb.and().append("form.key in (:formKeys)");
+			}
+			if (StringHelper.containsNonWhitespace(searchParams.getTitle())) {
+				sb.and().append("lower(collection.title) like :title");
+			}
+			if (searchParams.getStartAfter() != null) {
+				sb.and().append("collection.start >= :startAfter");
+			}
+			if (searchParams.getStartBefore() != null) {
+				sb.and().append("collection.start <= :startBefore");
+			}
+			if (searchParams.getDeadlineAfter() != null) {
+				sb.and().append("collection.deadline >= :deadlineAfter");
+			}
+			if (searchParams.getDeadlineBefore() != null) {
+				sb.and().append("collection.deadline <= :deadlineBefore");
+			}
+			if (StringHelper.containsNonWhitespace(searchParams.getTopic())
+					|| StringHelper.containsNonWhitespace(searchParams.getSearchString())) {
+				sb.and().append("(");
+				PersistenceHelper.appendFuzzyLike(sb, "collection.topicCustom", "topic", dbInstance.getDbVendor());
+				sb.append(" or ");
+				PersistenceHelper.appendFuzzyLike(sb, "user.lastName", "topic", dbInstance.getDbVendor());
+				sb.append(" or ");
+				PersistenceHelper.appendFuzzyLike(sb, "user.firstName", "topic", dbInstance.getDbVendor());
+				sb.append(" or ");
+				PersistenceHelper.appendFuzzyLike(sb, "organisation.displayName", "topic", dbInstance.getDbVendor());
+				sb.append(" or ");
+				PersistenceHelper.appendFuzzyLike(sb, "curriculum.displayName", "topic", dbInstance.getDbVendor());
+				sb.append(" or ");
+				PersistenceHelper.appendFuzzyLike(sb, "curriculumElement.displayName", "topic", dbInstance.getDbVendor());
+				sb.append(" or ");
+				PersistenceHelper.appendFuzzyLike(sb, "repository.displayname", "topic", dbInstance.getDbVendor());
+				if (StringHelper.containsNonWhitespace(searchParams.getSearchString())) {
+					sb.append(" or ");
+					PersistenceHelper.appendFuzzyLike(sb, "collection.title", "topic", dbInstance.getDbVendor());
+				}
+				sb.append(")");
+			}
+			if (searchParams.getTopicTypes() != null) {
+				sb.and().append("collection.topicType in (:topicTypes)");
+			}
+			if (searchParams.getGeneratorRefs() != null) {
+				sb.and().append("collection.generator.key in (:generatorKeys)");
+			}
+			if (searchParams.getStatus() != null) {
+				sb.and().append("collection.status in (:status)");
+			}
 			// (searchParams.getOrgansationRefs() == null): show all data collections
 			if (searchParams.getOrgansationRefs() != null) {
 				sb.and().append("(");
@@ -446,95 +542,111 @@ public class QualityDataCollectionDAO {
 				sb.append(")");
 				if (searchParams.getReportAccessIdentity() != null) {
 					sb.append(" or ");
-					sb.append("exists (");
-					sb.append("select collection.key");
+					sb.append("collection.key in (");
+					sb.append("select ra.dataCollection.key");
 					sb.append("  from qualityreportaccess ra");
-					sb.append("     , qualitycontext as context");
-					sb.append("     , repoentrytogroup as rel");
-					sb.append("     , bgroupmember as membership");
-					sb.append(" where ra.dataCollection.key = collection.key");
-					sb.append("   and collection.key = context.dataCollection.key");
-					sb.append("   and rel.entry.key = context.audienceRepositoryEntry.key");
-					sb.append("   and rel.group.key = membership.group.key");
-					sb.append("   and membership.role = ra.role");
-					sb.append("   and ra.online = true");
+					sb.append("       join ra.dataCollection dc");
+					sb.append("       join qualitycontext as context");
+					sb.append("         on context.dataCollection.key = dc.key");
+					sb.append("       join repoentrytogroup as rel");
+					sb.append("         on rel.entry.key = context.audienceRepositoryEntry.key");
+					sb.append("       join bgroupmember as membership");
+					sb.append("         on membership.group.key = rel.group.key");
+					sb.append(" where ra.online = true");
 					sb.append("   and ra.type = '").append(QualityReportAccess.Type.GroupRoles).append("'");
-					sb.append("   and collection.status = '").append(QualityDataCollectionStatus.FINISHED).append("'");
+					sb.append("   and dc.status = '").append(QualityDataCollectionStatus.FINISHED).append("'");
+					sb.append("   and membership.role = ra.role");
 					sb.append("   and membership.identity.key = :reportAccessIdentityKey");
 					sb.append(")");
 					sb.append(" or ");
-					sb.append("exists (");
-					sb.append("select collection.key");
+					sb.append("collection.key in (");
+					sb.append("select ra.dataCollection.key");
 					sb.append("  from qualityreportaccess ra");
-					sb.append("     , qualitycontext as context");
-					sb.append("     , curriculumelement as ele");
-					sb.append("     , bgroupmember as membership");
-					sb.append(" where ra.dataCollection.key = collection.key");
-					sb.append("   and collection.key = context.dataCollection.key");
-					sb.append("   and ele.key = context.audienceCurriculumElement.key");
-					sb.append("   and ele.group.key = membership.group.key");
-					sb.append("   and membership.role = ra.role");
-					sb.append("   and ra.online = true");
+					sb.append("       join ra.dataCollection dc");
+					sb.append("       join qualitycontext as context");
+					sb.append("         on context.dataCollection.key = dc.key");
+					sb.append("       join curriculumelement as ele");
+					sb.append("         on ele.key = context.audienceCurriculumElement.key");
+					sb.append("       join bgroupmember as membership");
+					sb.append("         on membership.group.key = ele.group.key");
+					sb.append("   where ra.online = true");
 					sb.append("   and ra.type = '").append(QualityReportAccess.Type.GroupRoles).append("'");
-					sb.append("   and collection.status = '").append(QualityDataCollectionStatus.FINISHED).append("'");
+					sb.append("   and dc.status = '").append(QualityDataCollectionStatus.FINISHED).append("'");
+					sb.append("   and membership.role = ra.role");
 					sb.append("   and membership.identity.key = :reportAccessIdentityKey");
 					sb.append(")");
 					sb.append(" or ");
-					sb.append("exists (");
-					sb.append("select collection.key");
+					sb.append("collection.key in (");
+					sb.append("select ra.dataCollection.key");
 					sb.append("  from qualityreportaccess as ra");
-					sb.append("     , evaluationformsurvey survey");
-					sb.append("     , evaluationformparticipation as participation");
-					sb.append(" where ra.dataCollection.key = collection.key");
-					sb.append("   and survey.resName = '").append(QualityDataCollectionLight.RESOURCEABLE_TYPE_NAME).append("'");
-					sb.append("   and survey.resId = collection.key");
-					sb.append("   and participation.survey.key = survey.key");
-					sb.append("   and ra.online = true");
+					sb.append("       join ra.dataCollection dc");
+					sb.append("       join evaluationformsurvey survey");
+					sb.append("         on survey.resId = dc.key");
+					sb.append("        and survey.resName = '").append(QualityDataCollectionLight.RESOURCEABLE_TYPE_NAME).append("'");
+					sb.append("       join evaluationformparticipation as participation");
+					sb.append("         on participation.survey.key = survey.key");
+					sb.append("   where ra.online = true");
 					sb.append("   and ra.type = '").append(QualityReportAccess.Type.Participants).append("'");
-					sb.append("   and collection.status = '").append(QualityDataCollectionStatus.FINISHED).append("'");
+					sb.append("   and dc.status = '").append(QualityDataCollectionStatus.FINISHED).append("'");
 					sb.append("   and ((ra.role is null) or (participation.status = ra.role))");
 					sb.append("   and participation.executor.key = :reportAccessIdentityKey");
 					sb.append(")");
 					sb.append(" or ");
-					sb.append("exists (");
-					sb.append("select collection.key");
+					sb.append("collection.key in (");
+					sb.append("select ra.dataCollection.key");
 					sb.append("  from qualityreportaccess as ra");
-					sb.append(" where ra.dataCollection.key = collection.key");
-					sb.append("   and ra.online = true");
+					sb.append("       join ra.dataCollection dc");
+					sb.append(" where ra.online = true");
 					sb.append("   and ra.type = '").append(QualityReportAccess.Type.TopicIdentity).append("'");
-					sb.append("   and collection.status = '").append(QualityDataCollectionStatus.FINISHED).append("'");
-					sb.append("   and collection.topicIdentity.key = :reportAccessIdentityKey");
+					sb.append("   and dc.status = '").append(QualityDataCollectionStatus.FINISHED).append("'");
+					sb.append("   and dc.topicIdentity.key = :reportAccessIdentityKey");
 					sb.append(")");
 					sb.append(" or ");
-					sb.append("exists (");
-					sb.append("select collection.key");
+					sb.append("collection.key in (");
+					sb.append("select ra.dataCollection.key");
 					sb.append("  from qualityreportaccess as ra");
-					sb.append("     , bgroupmember as membership");
-					sb.append(" where ra.dataCollection.key = collection.key");
-					sb.append("   and ra.group.key = membership.group.key");
-					sb.append("   and ra.online = true");
+					sb.append("       join ra.dataCollection dc");
+					sb.append("       join bgroupmember as membership");
+					sb.append("         on  membership.group.key = ra.group.key");
+					sb.append(" where ra.online = true");
 					sb.append("   and ra.type = '").append(QualityReportAccess.Type.ReportMember).append("'");
-					sb.append("   and collection.status = '").append(QualityDataCollectionStatus.FINISHED).append("'");
+					sb.append("   and dc.status = '").append(QualityDataCollectionStatus.FINISHED).append("'");
 					sb.append("   and membership.identity.key = :reportAccessIdentityKey");
 					sb.append(")");
 					if (!searchParams.isIgnoreReportAccessRelationRole()) {
 						sb.append(" or ");
-						sb.append("exists (");
-						sb.append("select collection.key");
+						sb.append("collection.key in (");
+						sb.append("select ra.dataCollection.key");
 						sb.append("  from qualityreportaccess as ra");
-						sb.append("     , identitytoidentity as identRel");
-						sb.append("     , relationroletoright as roleRel");
-						sb.append(" where ra.dataCollection.key = collection.key");
-						sb.append("   and ra.online = true");
+						sb.append("       join ra.dataCollection dc");
+						sb.append("       join identitytoidentity as identRel");
+						sb.append("         on identRel.target.key = dc.topicIdentity.key");
+						sb.append("       join relationroletoright as roleRel");
+						sb.append("         on roleRel.role.key = identRel.role.key");
+						sb.append(" where ra.online = true");
 						sb.append("   and ra.type = '").append(QualityReportAccess.Type.RelationRole).append("'");
-						sb.append("   and collection.status = '").append(QualityDataCollectionStatus.FINISHED).append("'");
-						sb.append("   and identRel.target.key = collection.topicIdentity.key");
+						sb.append("   and dc.status = '").append(QualityDataCollectionStatus.FINISHED).append("'");
 						sb.append("   and cast(identRel.role.key as string) = ra.role");
-						sb.append("   and identRel.role.key = roleRel.role.key");
 						sb.append("   and roleRel.right.right = '").append(QualityReportAccessRightProvider.RELATION_RIGHT).append("'");
 						sb.append("   and identRel.source.key = :reportAccessIdentityKey");
 						sb.append(")");
 					}
+				}
+				if (searchParams.getLearnResourceManagerOrganisationRefs() != null) {
+					sb.append(" or ");
+					sb.append("collection.key in (");
+					sb.append("select ra.dataCollection.key");
+					sb.append("  from qualityreportaccess ra");
+					sb.append("       join ra.dataCollection dc");
+					sb.append("       join qualitycontext as context");
+					sb.append("         on context.dataCollection.key = dc.key");
+					sb.append("       join repoentrytoorganisation as re_org");
+					sb.append("         on re_org.entry.key = context.audienceRepositoryEntry.key");
+					sb.append("        and re_org.organisation.key in (:learnResourceManagerKeys)");
+					sb.append(" where ra.online = true");
+					sb.append("   and ra.type = '").append(QualityReportAccess.Type.LearnResourceManager).append("'");
+					sb.append("   and dc.status = '").append(QualityDataCollectionStatus.FINISHED).append("'");
+					sb.append(")");
 				}
 				sb.append(")");
 			}
@@ -546,6 +658,41 @@ public class QualityDataCollectionDAO {
 			if (searchParams.getDataCollectionRef() != null && searchParams.getDataCollectionRef().getKey() != null) {
 				query.setParameter("collectionKey", searchParams.getDataCollectionRef().getKey());
 			}
+			if (searchParams.getFormEntryRefs() != null) {
+				List<Long> generatorKeys = searchParams.getFormEntryRefs().stream().map(RepositoryEntryRef::getKey).collect(toList());
+				query.setParameter("formKeys", generatorKeys);
+			}
+			if (StringHelper.containsNonWhitespace(searchParams.getTitle())) {
+				query.setParameter("title", PersistenceHelper.makeFuzzyQueryString(searchParams.getTitle().toLowerCase()));
+			}
+			if (searchParams.getStartAfter() != null) {
+				query.setParameter("startAfter", searchParams.getStartAfter());
+			}
+			if (searchParams.getStartBefore() != null) {
+				query.setParameter("startBefore", searchParams.getStartBefore());
+			}
+			if (searchParams.getDeadlineAfter() != null) {
+				query.setParameter("deadlineAfter", searchParams.getDeadlineAfter());
+			}
+			if (searchParams.getDeadlineBefore() != null) {
+				query.setParameter("deadlineBefore", searchParams.getDeadlineBefore());
+			}
+			if (StringHelper.containsNonWhitespace(searchParams.getTopic())) {
+				query.setParameter("topic", PersistenceHelper.makeFuzzyQueryString(searchParams.getTopic().toLowerCase()));
+			}
+			if (StringHelper.containsNonWhitespace(searchParams.getSearchString())) {
+				query.setParameter("topic", PersistenceHelper.makeFuzzyQueryString(searchParams.getSearchString().toLowerCase()));
+			}
+			if (searchParams.getTopicTypes() != null) {
+				query.setParameter("topicTypes", searchParams.getTopicTypes());
+			}
+			if (searchParams.getGeneratorRefs() != null) {
+				List<Long> generatorKeys = searchParams.getGeneratorRefs().stream().map(QualityGeneratorRef::getKey).collect(toList());
+				query.setParameter("generatorKeys", generatorKeys);
+			}
+			if (searchParams.getStatus() != null) {
+				query.setParameter("status", searchParams.getStatus());
+			}
 			// (searchParams.getOrgansationRefs() == null): show all data collections
 			if (searchParams.getOrgansationRefs() != null) {
 				List<Long> organiationKeys = searchParams.getOrgansationRefs().stream().map(OrganisationRef::getKey).collect(toList());
@@ -553,6 +700,12 @@ public class QualityDataCollectionDAO {
 				query.setParameter("organisationKeys", organiationKeys);
 				if (searchParams.getReportAccessIdentity() != null) {
 					query.setParameter("reportAccessIdentityKey", searchParams.getReportAccessIdentity().getKey());
+				}
+				if (searchParams.getLearnResourceManagerOrganisationRefs() != null) {
+					List<Long> learnResourceManagerKeys = searchParams.getLearnResourceManagerOrganisationRefs().stream()
+							.map(OrganisationRef::getKey).collect(toList());
+					learnResourceManagerKeys = !learnResourceManagerKeys.isEmpty() ? learnResourceManagerKeys : Collections.singletonList(-1l);
+					query.setParameter("learnResourceManagerKeys", learnResourceManagerKeys);
 				}
 			}
 		}
@@ -578,4 +731,5 @@ public class QualityDataCollectionDAO {
 		}
 		return sb;
 	}
+
 }

@@ -21,6 +21,7 @@ package org.olat.modules.quality.generator.provider.courselectures;
 
 import static org.olat.modules.quality.generator.ProviderHelper.addDays;
 import static org.olat.modules.quality.generator.ProviderHelper.addMinutes;
+import static org.olat.modules.quality.generator.ProviderHelper.subtractDays;
 import static org.olat.modules.quality.generator.ProviderHelper.toDouble;
 
 import java.util.ArrayList;
@@ -30,17 +31,21 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Predicate;
 
+import org.apache.logging.log4j.Logger;
 import org.olat.basesecurity.BaseSecurityManager;
 import org.olat.basesecurity.GroupRoles;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.form.flexible.impl.Form;
 import org.olat.core.gui.components.stack.TooledStackedPanel;
+import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.translator.Translator;
 import org.olat.core.id.Identity;
 import org.olat.core.id.Organisation;
 import org.olat.core.id.OrganisationRef;
+import org.olat.core.logging.Tracing;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.Util;
 import org.olat.modules.forms.EvaluationFormManager;
@@ -59,7 +64,6 @@ import org.olat.modules.quality.QualityDataCollectionStatus;
 import org.olat.modules.quality.QualityDataCollectionTopicType;
 import org.olat.modules.quality.QualityReminderType;
 import org.olat.modules.quality.QualityService;
-import org.olat.modules.quality.generator.ProviderHelper;
 import org.olat.modules.quality.generator.QualityGenerator;
 import org.olat.modules.quality.generator.QualityGeneratorConfigs;
 import org.olat.modules.quality.generator.QualityGeneratorProvider;
@@ -70,7 +74,6 @@ import org.olat.modules.quality.generator.provider.courselectures.manager.Course
 import org.olat.modules.quality.generator.provider.courselectures.manager.LectureBlockInfo;
 import org.olat.modules.quality.generator.provider.courselectures.manager.SearchParameters;
 import org.olat.modules.quality.generator.provider.courselectures.ui.CourseLectureFollowUpProviderConfigController;
-import org.olat.modules.quality.generator.ui.GeneratorWhiteListController;
 import org.olat.modules.quality.generator.ui.ProviderConfigController;
 import org.olat.modules.quality.ui.security.GeneratorSecurityCallback;
 import org.olat.repository.RepositoryEntry;
@@ -88,11 +91,14 @@ import org.springframework.stereotype.Service;
 @Service
 public class CourseLecturesFollowUpProvider implements QualityGeneratorProvider {
 
+	private static final Logger log = Tracing.createLoggerFor(CourseLecturesFollowUpProvider.class);
+
 	public static final String CONFIG_KEY_DURATION_DAYS = "duration.days";
 	public static final String CONFIG_KEY_GRADE_TOTAL_LIMIT = "grade.total.limit";
 	public static final String CONFIG_KEY_GRADE_TOTAL_CHECK_KEY = "grade.total.check.key";
 	public static final String CONFIG_KEY_GRADE_SINGLE_LIMIT = "grade.single.limit";
 	public static final String CONFIG_KEY_GRADE_SINGLE_CHECK_KEY = "grade.single.check.key";
+	public static final String CONFIG_KEY_ANNOUNCEMENT_COACH_DAYS = "accouncement.coach.days";
 	public static final String CONFIG_KEY_INVITATION_AFTER_DC_START_DAYS = "invitation.after.dc.start.days";
 	public static final String CONFIG_KEY_MINUTES_BEFORE_END = "minutes before end";
 	public static final String CONFIG_KEY_PREVIOUS_GENERATOR_KEY = "previous.generator.key";
@@ -142,12 +148,12 @@ public class CourseLecturesFollowUpProvider implements QualityGeneratorProvider 
 
 		List<Organisation> organisations = generatorService.loadGeneratorOrganisations(generator);
 		String previousGeneratorKey = configs.getValue(CONFIG_KEY_PREVIOUS_GENERATOR_KEY);
-		QualityGeneratorRef previousGeneratorRef = getQualityGeneratorRef(previousGeneratorKey);
+		QualityGeneratorRef previousGeneratorRef = QualityGeneratorRef.of(previousGeneratorKey);
 		QualityGeneratorConfigs previosGeneratorConfigs = getPreviosGeneratorConfigs(previousGeneratorRef);
 		
 		SearchParameters searchParams = getSeachParameters(generator, configs, organisations, fromDate, toDate,
 				previousGeneratorRef, previosGeneratorConfigs);
-		List<LectureBlockInfo> lectureBlockInfos = providerDao.loadLectureBlockInfo(searchParams);
+		List<LectureBlockInfo> lectureBlockInfos = loadLectureBlockInfo(generator, configs, searchParams);
 		lectureBlockInfos.removeIf(lb -> gradeIsSufficient(lb, configs, previousGeneratorRef, previosGeneratorConfigs));
 		int count = lectureBlockInfos.size();
 		
@@ -160,7 +166,19 @@ public class CourseLecturesFollowUpProvider implements QualityGeneratorProvider 
 	}
 
 	@Override
-	public GeneratorWhiteListController getWhiteListController(UserRequest ureq, WindowControl wControl,
+	public Controller getWhiteListController(UserRequest ureq, WindowControl wControl,
+			GeneratorSecurityCallback secCallback, TooledStackedPanel stackPanel, QualityGenerator generator,
+			QualityGeneratorConfigs configs) {
+		return null;
+	}
+
+	@Override
+	public boolean hasBlackListController() {
+		return false;
+	}
+
+	@Override
+	public Controller getBlackListController(UserRequest ureq, WindowControl wControl,
 			GeneratorSecurityCallback secCallback, TooledStackedPanel stackPanel, QualityGenerator generator,
 			QualityGeneratorConfigs configs) {
 		return null;
@@ -172,12 +190,12 @@ public class CourseLecturesFollowUpProvider implements QualityGeneratorProvider 
 		List<Organisation> organisations = generatorService.loadGeneratorOrganisations(generator);
 		
 		String previousGeneratorKey = configs.getValue(CONFIG_KEY_PREVIOUS_GENERATOR_KEY);
-		QualityGeneratorRef previousGeneratorRef = getQualityGeneratorRef(previousGeneratorKey);
+		QualityGeneratorRef previousGeneratorRef = QualityGeneratorRef.of(previousGeneratorKey);
 		QualityGeneratorConfigs previosGeneratorConfigs = getPreviosGeneratorConfigs(previousGeneratorRef);
 		
 		SearchParameters searchParams = getSeachParameters(generator, configs, organisations, fromDate, toDate,
 				previousGeneratorRef, previosGeneratorConfigs);
-		List<LectureBlockInfo> lectureBlockInfos = providerDao.loadLectureBlockInfo(searchParams);
+		List<LectureBlockInfo> lectureBlockInfos = loadLectureBlockInfo(generator, configs, searchParams);
 		lectureBlockInfos.removeIf(lb -> gradeIsSufficient(lb, configs, previousGeneratorRef, previosGeneratorConfigs));
 		
 		List<QualityDataCollection> dataCollections = new ArrayList<>();
@@ -187,6 +205,22 @@ public class CourseLecturesFollowUpProvider implements QualityGeneratorProvider 
 			dataCollections.add(dataCollection);
 		}
 		return dataCollections;
+	}
+	
+	private List<LectureBlockInfo> loadLectureBlockInfo(QualityGenerator generator, QualityGeneratorConfigs configs,
+			SearchParameters searchParams) {
+		log.debug("Generator {} searches with {}", generator, searchParams);
+		
+		List<LectureBlockInfo> blockInfos = providerDao.loadLectureBlockInfo(searchParams);
+		log.debug("Generator {} found {} entries", generator, blockInfos.size());
+		
+		String minutesBeforeEnd = configs.getValue(CONFIG_KEY_MINUTES_BEFORE_END);
+		String duration = configs.getValue(CONFIG_KEY_DURATION_DAYS);
+		Predicate<? super LectureBlockInfo> deadlineIsInPast = new DeadlineIsInPast(minutesBeforeEnd, duration);
+		blockInfos.removeIf(deadlineIsInPast);
+		log.debug("Generator {} has {} entries after removal of entries with deadline in past.", generator, blockInfos.size());
+		
+		return blockInfos;
 	}
 
 	private QualityDataCollection generateDataCollection(QualityGenerator generator, QualityGeneratorConfigs configs,
@@ -220,12 +254,15 @@ public class CourseLecturesFollowUpProvider implements QualityGeneratorProvider 
 		String title = titleCreator.merge(titleTemplate, Arrays.asList(course, teacher.getUser()));
 		dataCollection.setTitle(title);
 
+		QualityReminderType coachReminderType = null;
 		if (CourseLecturesProvider.CONFIG_KEY_TOPIC_COACH.equals(topicKey)) {
 			dataCollection.setTopicType(QualityDataCollectionTopicType.IDENTIY);
 			dataCollection.setTopicIdentity(teacher);
+			coachReminderType = QualityReminderType.ANNOUNCEMENT_COACH_TOPIC;
 		} else if (CourseLecturesProvider.CONFIG_KEY_TOPIC_COURSE.equals(topicKey)) {
 			dataCollection.setTopicType(QualityDataCollectionTopicType.REPOSITORY);
 			dataCollection.setTopicRepositoryEntry(course);
+			coachReminderType = QualityReminderType.ANNOUNCEMENT_COACH_CONTEXT;
 		}
 		
 		dataCollection = qualityService.updateDataCollectionStatus(dataCollection, QualityDataCollectionStatus.READY);
@@ -258,7 +295,15 @@ public class CourseLecturesFollowUpProvider implements QualityGeneratorProvider 
 			}
 		}
 		
-		// make reminders
+		// make reminder
+		String announcementDay = configs.getValue(CONFIG_KEY_ANNOUNCEMENT_COACH_DAYS);
+		if (StringHelper.containsNonWhitespace(announcementDay) && coachReminderType != null) {
+			Date announcementDate = subtractDays(dcStart, announcementDay);
+			if (dataCollection.getStart().after(new Date())) { // no announcement if already started
+				qualityService.createReminder(dataCollection, announcementDate, coachReminderType);
+			}
+		}
+		
 		String invitationDay = configs.getValue(CONFIG_KEY_INVITATION_AFTER_DC_START_DAYS);
 		if (StringHelper.containsNonWhitespace(invitationDay)) {
 			Date invitationDate = addDays(dcStart, invitationDay);
@@ -302,9 +347,15 @@ public class CourseLecturesFollowUpProvider implements QualityGeneratorProvider 
 		
 		String minutesBeforeEnd = configs.getValue(CONFIG_KEY_MINUTES_BEFORE_END);
 		minutesBeforeEnd = StringHelper.containsNonWhitespace(minutesBeforeEnd)? minutesBeforeEnd: "0";
-		Date from = ProviderHelper.addMinutes(fromDate, minutesBeforeEnd);
+		Date from = addMinutes(fromDate, minutesBeforeEnd);
+		Date to = addMinutes(toDate, minutesBeforeEnd);
+		
+		String announcementDays = configs.getValue(CONFIG_KEY_ANNOUNCEMENT_COACH_DAYS);
+		if (StringHelper.containsNonWhitespace(announcementDays)) {
+			to = addDays(to, announcementDays);
+		}
+		
 		searchParams.setFrom(from);
-		Date to = ProviderHelper.addMinutes(toDate, minutesBeforeEnd);
 		searchParams.setTo(to);
 		
 		searchParams.setLastLectureBlock(true);
@@ -397,11 +448,6 @@ public class CourseLecturesFollowUpProvider implements QualityGeneratorProvider 
 	private QualityGeneratorConfigs getPreviosGeneratorConfigs(QualityGeneratorRef generatorRef) {
 		QualityGenerator generator = generatorService.loadGenerator(generatorRef);
 		return generatorService.loadGeneratorConfigs(generator);
-	}
-	
-	private QualityGeneratorRef getQualityGeneratorRef(String keyString) {
-		Long key = Long.valueOf(keyString);
-		return () -> key;
 	}
 
 }

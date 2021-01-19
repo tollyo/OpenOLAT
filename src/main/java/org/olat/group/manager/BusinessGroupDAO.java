@@ -280,6 +280,7 @@ public class BusinessGroupDAO {
 	 * @param group
 	 */
 	public void delete(BusinessGroup group) {
+		group = load(group.getKey());
 		groupDao.removeMemberships(group.getBaseGroup());
 		dbInstance.getCurrentEntityManager().remove(group);
 		dbInstance.getCurrentEntityManager().remove(group.getBaseGroup());
@@ -1040,6 +1041,11 @@ public class BusinessGroupDAO {
 				query.setParameter("atDate", new Date());
 			}
 		}
+		
+		// last usage
+		if(params.getLastUsageBefore() != null) {
+			query.setParameter("lastUsageBefore", params.getLastUsageBefore());
+		}
 	}
 	
 	private void filterBusinessGroupToSearch(StringBuilder sb, BusinessGroupQueryParams params, boolean includeMemberships) {
@@ -1152,6 +1158,15 @@ public class BusinessGroupDAO {
 			}
 		}
 		
+		if(params.getManaged() != null) {
+			where = PersistenceHelper.appendAnd(sb, where);
+			if(params.getManaged().booleanValue()) {
+				sb.append(" (bgi.managedFlagsString is not null or bgi.externalId is not null)");
+			} else {
+				sb.append(" (bgi.managedFlagsString is null and bgi.externalId is null)");
+			}
+		}
+		
 		if(params.getRepositoryEntry() != null) {
 			where = PersistenceHelper.appendAnd(sb, where);
 			sb.append(" bgi.baseGroup.key in (select entryRel.group.key from repoentrytogroup as entryRel where entryRel.entry.key=:repoEntryKey)");
@@ -1173,6 +1188,12 @@ public class BusinessGroupDAO {
 			sb.append(" not exists (select headMembership.key from bgroupmember as headMembership")
 			  .append("   where bGroup.key=headMembership.group.key and headMembership.role in ('").append(GroupRoles.coach.name()).append("','").append(GroupRoles.participant.name()).append("')")
 			  .append(" )");
+		}
+		
+		// last usage
+		if(params.getLastUsageBefore() != null) {
+			where = PersistenceHelper.appendAnd(sb, where);
+			sb.append(" bgi.lastUsage <= :lastUsageBefore");
 		}
 	}
 	

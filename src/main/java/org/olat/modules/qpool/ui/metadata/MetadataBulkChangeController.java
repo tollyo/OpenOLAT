@@ -81,7 +81,11 @@ public class MetadataBulkChangeController extends FormBasicController {
 
 	private static final String[] EMPTY_VALUES = new String[]{ "" };
 	
-	private TextElement topicEl, keywordsEl, coverageEl, addInfosEl, languageEl;
+	private TextElement topicEl;
+	private TextElement keywordsEl;
+	private TextElement coverageEl;
+	private TextElement addInfosEl;
+	private TextElement languageEl;
 	private SingleSelection taxonomyLevelEl;
 	private SingleSelection contextEl;
 	private FormLayoutContainer learningTimeContainer;
@@ -102,6 +106,7 @@ public class MetadataBulkChangeController extends FormBasicController {
 	private Map<MultipleSelectionElement, FormLayoutContainer> checkboxContainer = new HashMap<>();
 	private final List<MultipleSelectionElement> checkboxSwitch = new ArrayList<>();
 	
+	private KeyValues contextsKeyValues;
 	private final QPoolSecurityCallback qpoolSecurityCallback;
 	private List<QuestionItem> updatedItems;
 	private final List<ItemRow> items;
@@ -135,7 +140,16 @@ public class MetadataBulkChangeController extends FormBasicController {
 
 	@Override
 	protected void initForm(FormItemContainer formLayout, Controller listener, UserRequest ureq) {
-		setFormDescription("bulk.change.description");
+		if(formLayout instanceof FormLayoutContainer) {
+			FormLayoutContainer layoutCont = (FormLayoutContainer)formLayout;
+			if(items.size() == 1) {
+				layoutCont.contextPut("infosMsg", translate("bulk.change.description.singular"));
+			} else {
+				layoutCont.contextPut("infosMsg", translate("bulk.change.description.plural",
+						new String[] { Integer.toString(items.size()) }));
+			}
+			layoutCont.contextPut("infosCss", items.size() > 20 ? "o_warning" :"o_info");
+		}
 		
 		initGeneralForm(formLayout);
 		initQuestionForm(formLayout);
@@ -165,10 +179,10 @@ public class MetadataBulkChangeController extends FormBasicController {
 		}
 	
 		if (qpoolSecurityCallback.canUseEducationalContext()) {
-			KeyValues contexts = MetaUIFactory.getContextKeyValues(getTranslator(), qpoolService);
+			contextsKeyValues = MetaUIFactory.getContextKeyValues(getTranslator(), qpoolService);
 			contextEl = uifactory.addDropdownSingleselect("educational.context", "educational.context", generalCont,
-					contexts.getKeys(), contexts.getValues(), null);
-			contextEl.setAllowNoSelection(true);
+					contextsKeyValues.getKeys(), contextsKeyValues.getValues(), null);
+			contextEl.enableNoneSelection();
 			decorate(contextEl, generalCont);
 		}
 		
@@ -188,7 +202,7 @@ public class MetadataBulkChangeController extends FormBasicController {
 		KeyValues types = MetaUIFactory.getAssessmentTypes(getTranslator());
 		assessmentTypeEl = uifactory.addDropdownSingleselect("question.assessmentType", "question.assessmentType", generalCont,
 				types.getKeys(), types.getValues(), null);
-		assessmentTypeEl.setAllowNoSelection(true);
+		assessmentTypeEl.enableNoneSelection();
 		decorate(assessmentTypeEl, generalCont);
 	}
 	
@@ -417,7 +431,7 @@ public class MetadataBulkChangeController extends FormBasicController {
 	private void formOKQuestion(QuestionItemImpl itemImpl) {
 		if(isEnabled(contextEl)) {
 			if(contextEl.isOneSelected()) {
-				QEducationalContext context = qpoolService.getEducationlContextByLevel(contextEl.getSelectedKey());
+				QEducationalContext context = MetaUIFactory.getContextByKey(contextEl.getSelectedKey(), qpoolService);
 				itemImpl.setEducationalContext(context);
 			} else {
 				itemImpl.setEducationalContext(null);

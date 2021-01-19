@@ -19,9 +19,15 @@
  */
 package org.olat.core.commons.services.doceditor.ui;
 
+import java.util.List;
+import java.util.Optional;
+
+import org.olat.core.commons.services.doceditor.Access;
 import org.olat.core.commons.services.doceditor.DocEditor;
+import org.olat.core.commons.services.doceditor.DocEditorConfig;
 import org.olat.core.commons.services.doceditor.DocEditorConfigs;
-import org.olat.core.commons.services.doceditor.DocEditorSecurityCallback;
+import org.olat.core.commons.services.doceditor.DocEditorConfigs.Config;
+import org.olat.core.commons.services.doceditor.DocEditorService;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
 import org.olat.core.gui.components.velocity.VelocityContainer;
@@ -29,6 +35,9 @@ import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.Event;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.control.controller.BasicController;
+import org.olat.core.gui.control.generic.dtabs.Activateable2;
+import org.olat.core.id.context.ContextEntry;
+import org.olat.core.id.context.StateEntry;
 import org.olat.core.util.vfs.VFSLeaf;
 import org.olat.properties.Property;
 import org.olat.properties.PropertyManager;
@@ -41,60 +50,54 @@ import org.springframework.beans.factory.annotation.Autowired;
  * @author uhensler, urs.hensler@frentix.com, http://www.frentix.com
  *
  */
-public class DocEditorController extends BasicController {
+public class DocEditorController extends BasicController implements Activateable2 {
 
 	private static final String PROPERTY_CATEGOTY = "doc.editor";
 
 	private VelocityContainer mainVC;
-	private DocEditorConfigController configCtrl;
 	private Controller editorCtrl;
 
 	private final VFSLeaf vfsLeaf;
-	private final DocEditorSecurityCallback secCallback;
-	private final DocEditorConfigs configs;
+	private DocEditorConfigs configs;
+	private Access access;
 
+	@Autowired
+	private DocEditorService docEditorService;
 	@Autowired
 	private PropertyManager propertyManager;
 	private DataTransferConfirmationController dataTransferConfirmationCtrl;
 
-	public DocEditorController(UserRequest ureq, WindowControl wControl, VFSLeaf vfsLeaf,
-			DocEditorSecurityCallback secCallback, DocEditorConfigs configs) {
-		this(ureq, wControl, vfsLeaf, secCallback, configs, null);
-	}
-
-	public DocEditorController(UserRequest ureq, WindowControl wControl, VFSLeaf vfsLeaf,
-			DocEditorSecurityCallback secCallback, DocEditorConfigs configs, String cssClass) {
+	public DocEditorController(UserRequest ureq, WindowControl wControl, Access access, DocEditorConfigs configs) {
 		super(ureq, wControl);
-		this.vfsLeaf = vfsLeaf;
-		this.secCallback = secCallback;
 		this.configs = configs;
-
+		this.vfsLeaf = configs.getVfsLeaf();
+		this.access = access;
+		
 		mainVC = createVelocityContainer("editor_main");
-		mainVC.contextPut("cssClass", cssClass);
-
-		configCtrl = new DocEditorConfigController(ureq, wControl, vfsLeaf, secCallback);
-		listenTo(configCtrl);
-		mainVC.put("config", configCtrl.getInitialComponent());
-		configCtrl.activate(ureq, null, null);
-
+		Config config = configs.getConfig(DocEditorConfig.TYPE);
+		if (config instanceof DocEditorConfig) {
+			DocEditorConfig docEditorConfig = (DocEditorConfig)config;
+			mainVC.contextPut("cssClass", docEditorConfig.getCssClass());
+		}
+		
+		Optional<DocEditor> editor = docEditorService.getEditor(access.getEditorType());
+		if (editor.isPresent()) {
+			doOpenEditor(ureq, editor.get());
+		} 
+		
 		putInitialPanel(mainVC);
 	}
 
-	public VFSLeaf getVfsLeaf() {
-		return vfsLeaf;
+	@Override
+	public void activate(UserRequest ureq, List<ContextEntry> entries, StateEntry state) {
+		if(editorCtrl instanceof Activateable2) {
+			((Activateable2)editorCtrl).activate(ureq, entries, state);
+		}
 	}
 
 	@Override
 	protected void event(UserRequest ureq, Controller source, Event event) {
-		if (source == configCtrl) {
-			if (event instanceof DocEditorSelectionEvent) {
-				DocEditorSelectionEvent esEvent = (DocEditorSelectionEvent) event;
-				DocEditor editor = esEvent.getEditor();
-				doOpenEditor(ureq, editor);
-			} else if (event == Event.DONE_EVENT) {
-				fireEvent(ureq, event);
-			}
-		} else if (source == editorCtrl) {
+		if (source == editorCtrl) {
 			fireEvent(ureq, event);
 		} else if (source == dataTransferConfirmationCtrl && Event.DONE_EVENT.equals(event)) {
 			DocEditor editor = dataTransferConfirmationCtrl.getEditor();
@@ -107,13 +110,14 @@ public class DocEditorController extends BasicController {
 	private void doOpenEditor(UserRequest ureq, DocEditor editor) {
 		removeAsListenerAndDispose(dataTransferConfirmationCtrl);
 		removeAsListenerAndDispose(editorCtrl);
+
 		if (editorCtrl != null || dataTransferConfirmationCtrl != null) {
 			mainVC.remove("editor");
 		}
 
 		if (isDataTransferConfirmed(editor)) {
-			editorCtrl = editor.getRunController(ureq, getWindowControl(), getIdentity(), vfsLeaf, secCallback,
-					configs);
+			editorCtrl = editor.getRunController(ureq, getWindowControl(), getIdentity(), vfsLeaf, configs,
+					access);
 			listenTo(editorCtrl);
 			mainVC.put("editor", editorCtrl.getInitialComponent());
 		} else {

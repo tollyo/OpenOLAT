@@ -65,6 +65,7 @@ import org.olat.course.assessment.AssessmentModeCoordinationService;
 import org.olat.course.assessment.manager.AssessmentModeDAO;
 import org.olat.course.assessment.manager.UserCourseInformationsManager;
 import org.olat.course.certificate.CertificatesManager;
+import org.olat.course.disclaimer.CourseDisclaimerManager;
 import org.olat.ims.qti21.manager.AssessmentTestSessionDAO;
 import org.olat.modules.assessment.manager.AssessmentEntryDAO;
 import org.olat.modules.curriculum.CurriculumService;
@@ -307,6 +308,7 @@ public class RepositoryServiceImpl implements RepositoryService, OrganisationDat
 		
 		//copy the license
 		licenseService.copy(sourceResource, copyResource);
+		dbInstance.commit();
 
 		//copy the image
 		RepositoryManager.getInstance().copyImage(sourceEntry, copyEntry);
@@ -320,7 +322,6 @@ public class RepositoryServiceImpl implements RepositoryService, OrganisationDat
 
 		ThreadLocalUserActivityLogger.log(LearningResourceLoggingAction.LEARNING_RESOURCE_CREATE, getClass(),
 				LoggingResourceable.wrap(copyEntry, OlatResourceableType.genRepoEntry));
-
 
 		lifeIndexer.indexDocument(RepositoryEntryDocument.TYPE, copyEntry.getKey());
 		return copyEntry;
@@ -508,11 +509,11 @@ public class RepositoryServiceImpl implements RepositoryService, OrganisationDat
 			return errors;
 		}
 
-		if(debug) log.debug("deleteRepositoryEntry after load entry=" + entry);
+		log.info(Tracing.M_AUDIT, "deleteRepositoryEntry after load entry={}", entry);
 		RepositoryHandler handler = repositoryHandlerFactory.getRepositoryHandler(entry);
 		OLATResource resource = entry.getOlatResource();
 		//delete old context
-		if (!handler.readyToDelete(entry, identity, roles, locale, errors)) {
+		if (handler != null && !handler.readyToDelete(entry, identity, roles, locale, errors)) {
 			return errors;
 		}
 
@@ -540,6 +541,8 @@ public class RepositoryServiceImpl implements RepositoryService, OrganisationDat
 		//delete license
 		CoreSpringFactory.getImpl(LicenseService.class).delete(resource);
 		dbInstance.commit();
+		//delete all consents
+		CoreSpringFactory.getImpl(CourseDisclaimerManager.class).removeAllConsents(entry);
 		//detach portfolio if there are some lost
 		CoreSpringFactory.getImpl(PortfolioService.class).detachCourseFromBinders(entry);
 		dbInstance.commit();
@@ -548,23 +551,27 @@ public class RepositoryServiceImpl implements RepositoryService, OrganisationDat
 		dbInstance.commit();
 
 		// inform handler to do any cleanup work... handler must delete the
-		// referenced resourceable a swell.
-		handler.cleanupOnDelete(entry, resource);
-		dbInstance.commit();
+		// referenced resourceable as well.
+		if (handler != null) {
+			handler.cleanupOnDelete(entry, resource);
+		}
+		dbInstance.commitAndCloseSession();
 
 		//delete all test sessions
 		assessmentTestSessionDao.deleteAllUserTestSessionsByCourse(entry);
+		dbInstance.commit();
 		//nullify the reference
 		assessmentEntryDao.removeEntryForReferenceEntry(entry);
 		assessmentEntryDao.deleteEntryForRepositoryEntry(entry);
+		dbInstance.commit();
 		repositoryEntryToOrganisationDao.delete(entry);
 		repositoryEntryToTaxonomyLevelDao.deleteRelation(entry);
 		dbInstance.commit();
 
-		if(debug) log.debug("deleteRepositoryEntry after reload entry=" + entry);
+		if(debug) log.debug("deleteRepositoryEntry after reload entry={}", entry);
 		deleteRepositoryEntryAndBaseGroups(entry);
 
-		if(debug) log.debug("deleteRepositoryEntry Done");
+		log.info(Tracing.M_AUDIT, "deleteRepositoryEntry Done");
 		return errors;
 	}
 
@@ -838,9 +845,9 @@ public class RepositoryServiceImpl implements RepositoryService, OrganisationDat
 	}
 	
 	@Override
-	public Map<RepositoryEntryRef,List<TaxonomyLevel>> getTaxonomy(List<RepositoryEntryRef> entries) {
+	public Map<RepositoryEntryRef,List<TaxonomyLevel>> getTaxonomy(List<? extends RepositoryEntryRef> entries, boolean fetchParents) {
 		if(entries == null || entries.isEmpty()) return Collections.emptyMap();
-		return repositoryEntryToTaxonomyLevelDao.getTaxonomyLevels(entries);
+		return repositoryEntryToTaxonomyLevelDao.getTaxonomyLevels(entries, fetchParents);
 	}
 
 	@Override

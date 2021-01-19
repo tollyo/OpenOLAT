@@ -30,6 +30,8 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
+import org.apache.logging.log4j.Logger;
+import org.hibernate.LazyInitializationException;
 import org.olat.basesecurity.GroupRoles;
 import org.olat.basesecurity.SecurityGroup;
 import org.olat.basesecurity.manager.SecurityGroupDAO;
@@ -37,7 +39,6 @@ import org.olat.core.commons.persistence.DB;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.id.Identity;
 import org.olat.core.logging.AssertException;
-import org.apache.logging.log4j.Logger;
 import org.olat.core.logging.Tracing;
 import org.olat.core.util.coordinate.CoordinatorManager;
 import org.olat.core.util.coordinate.SyncerCallback;
@@ -50,6 +51,7 @@ import org.olat.course.nodes.ProjectBrokerCourseNode;
 import org.olat.course.nodes.projectbroker.datamodel.Project;
 import org.olat.course.properties.CoursePropertyManager;
 import org.olat.course.run.environment.CourseEnvironment;
+import org.olat.course.run.userview.UserCourseEnvironment;
 import org.olat.group.BusinessGroup;
 import org.olat.group.BusinessGroupAddResponse;
 import org.olat.group.BusinessGroupService;
@@ -104,10 +106,10 @@ public class ProjectGroupManagerImpl implements ProjectGroupManager {
 				groupKey = accountManagerGroupProperty.getLongValue();
 				log.debug("accountManagerGroupProperty=" + accountManagerGroupProperty + "  groupKey=" + groupKey);
 			} 
-			log.debug("groupKey=" + groupKey);
+			log.debug("groupKey={}", groupKey);
 			if (groupKey != null) {
 				accountManagerGroup = businessGroupService.loadBusinessGroup(groupKey);
-				log.debug("load businessgroup=" + accountManagerGroup);
+				log.debug("load businessgroup={}", accountManagerGroup);
 				if (accountManagerGroup != null) {
 					return accountManagerGroup;
 				} else {
@@ -127,7 +129,7 @@ public class ProjectGroupManagerImpl implements ProjectGroupManager {
 					accountManagerGroup = businessGroupService.createBusinessGroup(identity, groupName + " _" + i, groupDescription, -1, -1, false, false, re);
 					i++;
 				}
-				log.debug("createAndPersistBusinessGroup businessgroup=" + accountManagerGroup);			
+				log.debug("createAndPersistBusinessGroup businessgroup={}", accountManagerGroup);			
 				
 				if (accountManagerGroupProperty != null) {
 					accountManagerGroupProperty.setLongValue(accountManagerGroup.getKey());
@@ -135,7 +137,7 @@ public class ProjectGroupManagerImpl implements ProjectGroupManager {
 				} else {
 					saveAccountManagerGroupKey(accountManagerGroup.getKey(), cpm, courseNode);
 				}
-				log.debug("created account-manager default businessgroup=" + accountManagerGroup);
+				log.debug("created account-manager default businessgroup={}", accountManagerGroup);
 			}
 		} catch (AssertException e) {
 			log.error("", e);
@@ -150,24 +152,24 @@ public class ProjectGroupManagerImpl implements ProjectGroupManager {
 	public void saveAccountManagerGroupKey(Long accountManagerGroupKey, CoursePropertyManager cpm, CourseNode courseNode) {
 		Property accountManagerGroupKeyProperty = cpm.createCourseNodePropertyInstance(courseNode, null, null, ProjectBrokerCourseNode.CONF_ACCOUNTMANAGER_GROUP_KEY, null, accountManagerGroupKey, null, null);
 		cpm.saveProperty(accountManagerGroupKeyProperty);	
-		log.debug("saveAccountManagerGroupKey accountManagerGroupKey=" + accountManagerGroupKey);
+		log.debug("saveAccountManagerGroupKey accountManagerGroupKey={}", accountManagerGroupKey);
 	}
 
 	@Override
-	public boolean isAccountManager(Identity identity, CoursePropertyManager cpm, CourseNode courseNode) {
+	public boolean isAccountManager(Identity identity, CoursePropertyManager cpm, CourseNode courseNode, UserCourseEnvironment userCourseEnv) {
 		try {
 			Property accountManagerGroupProperty = cpm.findCourseNodeProperty(courseNode, null, null, ProjectBrokerCourseNode.CONF_ACCOUNTMANAGER_GROUP_KEY);
 			if (accountManagerGroupProperty != null) {
 				Long groupKey = accountManagerGroupProperty.getLongValue();
 				BusinessGroup accountManagerGroup = businessGroupService.loadBusinessGroup(groupKey);
 				if (accountManagerGroup != null) {
-					return isAccountManager(identity,  accountManagerGroup);
+					return isAccountManager(identity,  accountManagerGroup, userCourseEnv);
 				}
 			}
 		} catch (AssertException e) {//detected multiple properties
 			log.error("", e);
 			if(tryToRepareAccountManagerProperty(cpm, courseNode)) {
-				return isAccountManager(identity, cpm, courseNode);
+				return isAccountManager(identity, cpm, courseNode, userCourseEnv);
 			}
 		}
 		return false;
@@ -196,13 +198,13 @@ public class ProjectGroupManagerImpl implements ProjectGroupManager {
 				if (accountManagerGroup != null) {
 					BusinessGroupService bgs = businessGroupService;
 					bgs.deleteBusinessGroup(accountManagerGroup);
-					log.info(Tracing.M_AUDIT, "ProjectBroker: Deleted accountManagerGroup=" + accountManagerGroup);
+					log.info(Tracing.M_AUDIT, "ProjectBroker: Deleted accountManagerGroup={}", accountManagerGroup);
 				} else {
 					log.debug("deleteAccountManagerGroup: accountManagerGroup=" + accountManagerGroup + " has already been deleted");
 				}
 			}
   		cpm.deleteProperty(accountManagerGroupProperty);
-			log.debug("deleteAccountManagerGroup: deleted accountManagerGroupProperty=" + accountManagerGroupProperty );
+			log.debug("deleteAccountManagerGroup: deleted accountManagerGroupProperty={}", accountManagerGroupProperty );
  	} else {
 			log.debug("deleteAccountManagerGroup: found no accountManagerGroup-key");
 		}
@@ -230,7 +232,7 @@ public class ProjectGroupManagerImpl implements ProjectGroupManager {
 		CourseGroupManager cgm = CourseFactory.loadCourse(courseId).getCourseEnvironment().getCourseGroupManager();
 		RepositoryEntry re = cgm.getCourseEntry();
 
-		log.debug("createProjectGroupFor groupName=" + groupName);
+		log.debug("createProjectGroupFor groupName={}", groupName);
 		BusinessGroup projectGroup = businessGroupService.createBusinessGroup(identity, groupName, groupDescription, -1, -1, false, false, re);
 		// projectGroup could be null when a group with name already exists
 		int counter = 2;
@@ -240,7 +242,7 @@ public class ProjectGroupManagerImpl implements ProjectGroupManager {
 			projectGroup = businessGroupService.createBusinessGroup(identity, newGroupName, groupDescription, -1, -1, false, false, re);
 			counter++;
 		}
-		log.debug("Created a new projectGroup=" + projectGroup);
+		log.debug("Created a new projectGroup={}", projectGroup);
 		return projectGroup;
 	}
 
@@ -265,13 +267,14 @@ public class ProjectGroupManagerImpl implements ProjectGroupManager {
 	@Override
 	public List<Identity> addCandidates(final List<Identity> addIdentities, final Project project) {
 		List<Identity> addedIdentities = CoordinatorManager.getInstance().getCoordinator().getSyncer().doInSync(project.getProjectGroup(), new SyncerCallback<List<Identity>>(){
+			@Override
 			public List<Identity> execute() {
 				List<Identity> addedIdentityList = new ArrayList<>();
 				for (Identity identity : addIdentities) {
 					if (!securityGroupDao.isIdentityInSecurityGroup(identity, project.getCandidateGroup()) ) {
 						securityGroupDao.addIdentityToSecurityGroup(identity, project.getCandidateGroup());
 						addedIdentityList.add(identity);
-						log.info(Tracing.M_AUDIT, "ProjectBroker: Add user as candidate, identity=" + identity);
+						log.info(Tracing.M_AUDIT, "ProjectBroker: Add user as candidate, identity={}", identity);
 					}
 					// fireEvents ?
 				}
@@ -284,11 +287,12 @@ public class ProjectGroupManagerImpl implements ProjectGroupManager {
 	@Override
 	public void removeCandidates(final List<Identity> addIdentities, final Project project) {
 		CoordinatorManager.getInstance().getCoordinator().getSyncer().doInSync(project.getProjectGroup(), new SyncerCallback<Boolean>(){
+			@Override
 			public Boolean execute() {
 				Project reloadedProject = (Project) dbInstance.loadObject(project, true);
 				for (Identity identity : addIdentities) {
 					securityGroupDao.removeIdentityFromSecurityGroup(identity, reloadedProject.getCandidateGroup());
-					log.info(Tracing.M_AUDIT, "ProjectBroker: Remove user as candidate, identity=" + identity);
+					log.info(Tracing.M_AUDIT, "ProjectBroker: Remove user as candidate, identity={}", identity);
 					// fireEvents ?
 				}
 				return Boolean.TRUE;
@@ -371,12 +375,21 @@ public class ProjectGroupManagerImpl implements ProjectGroupManager {
 	// PRIVATE METHODS
 	///////////////////
 
-	private boolean isAccountManager(Identity identity, BusinessGroup businessGroup) {
+	private boolean isAccountManager(Identity identity, BusinessGroup businessGroup, UserCourseEnvironment userCourseEnv) {
+		if (userCourseEnv.isAdmin()) {
+			return true;
+		}
 		if (businessGroup == null) {
 			return false;
 		}
-		return businessGroupService.hasRoles(identity, businessGroup, GroupRoles.participant.name())
-				   || businessGroupService.hasRoles(identity, businessGroup, GroupRoles.coach.name());
+		if (userCourseEnv.isCoach()) {
+			return businessGroupService.hasRoles(identity, businessGroup, GroupRoles.coach.name());
+		}
+		if (userCourseEnv.isParticipant()) {
+			return businessGroupService.hasRoles(identity, businessGroup, GroupRoles.participant.name());
+		}
+		
+		return false;
 	}
 
 	@Override
@@ -387,7 +400,7 @@ public class ProjectGroupManagerImpl implements ProjectGroupManager {
 			Project project = iterator.next();
 			List<Identity> candidates = securityGroupDao.getIdentitiesOfSecurityGroup(project.getCandidateGroup());
 			if (!candidates.isEmpty()) {
-				log.info(Tracing.M_AUDIT, "ProjectBroker: Accept ALL candidates, project=" + project);
+				log.info(Tracing.M_AUDIT, "ProjectBroker: Accept ALL candidates, project={}", project);
 				acceptCandidates(candidates, project, actionIdentity, autoSignOut, isAcceptSelectionManually);
 			}
 		}	
@@ -415,7 +428,11 @@ public class ProjectGroupManagerImpl implements ProjectGroupManager {
 	
 	@Override
 	public boolean isDeselectionAllowed(Project project){
-		return project.getProjectGroup().isAllowToLeave();
+		try {
+			return project.getProjectGroup().isAllowToLeave();
+		} catch (LazyInitializationException e) {
+			return projectDao.loadProject(project.getKey()).getProjectGroup().isAllowToLeave();
+		}
 	}
 	
 	@Override

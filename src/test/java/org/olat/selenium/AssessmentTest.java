@@ -34,6 +34,7 @@ import org.jboss.arquillian.test.api.ArquillianResource;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.olat.repository.RepositoryEntryStatusEnum;
 import org.olat.repository.model.SingleRoleRepositoryEntrySecurity.Role;
 import org.olat.selenium.page.LoginPage;
 import org.olat.selenium.page.NavigationPage;
@@ -46,6 +47,7 @@ import org.olat.selenium.page.course.AssessmentToolPage;
 import org.olat.selenium.page.course.BulkAssessmentPage.BulkAssessmentData;
 import org.olat.selenium.page.course.CourseEditorPageFragment;
 import org.olat.selenium.page.course.CoursePageFragment;
+import org.olat.selenium.page.course.CourseSettingsPage;
 import org.olat.selenium.page.course.GroupTaskConfigurationPage;
 import org.olat.selenium.page.course.GroupTaskPage;
 import org.olat.selenium.page.course.GroupTaskToCoachPage;
@@ -53,6 +55,8 @@ import org.olat.selenium.page.course.MembersPage;
 import org.olat.selenium.page.graphene.OOGraphene;
 import org.olat.selenium.page.group.GroupPage;
 import org.olat.selenium.page.qti.QTI12Page;
+import org.olat.selenium.page.qti.QTI21Page;
+import org.olat.selenium.page.repository.RepositoryEditDescriptionPage;
 import org.olat.selenium.page.repository.ScormPage;
 import org.olat.selenium.page.repository.UserAccess;
 import org.olat.selenium.page.user.UserToolsPage;
@@ -491,7 +495,7 @@ public class AssessmentTest extends Deployments {
 		
 		//upload a test
 		String qtiTestTitle = "QTI-Test-1.2-" + UUID.randomUUID();
-		URL qtiTestUrl = JunitTestHelper.class.getResource("file_resources/e4_test.zip");
+		URL qtiTestUrl = JunitTestHelper.class.getResource("file_resources/qti21/e4_test_qti21.zip");
 		File qtiTestFile = new File(qtiTestUrl.toURI());
 		NavigationPage navBar = NavigationPage.load(browser);
 		navBar
@@ -499,14 +503,14 @@ public class AssessmentTest extends Deployments {
 			.uploadResource(qtiTestTitle, qtiTestFile);
 		
 		//create a course
-		String courseTitle = "Course-With-QTI-Test-1.2-" + UUID.randomUUID();
+		String courseTitle = "Course-With-QTI-Test-2.1-" + UUID.randomUUID();
 		navBar
 			.openAuthoringEnvironment()
 			.createCourse(courseTitle)
 			.clickToolbarBack();
 
-		//create a course element of type CP with the CP that we create above
-		String testNodeTitle = "Test-QTI-1.2";
+		//create a course element of type test with the QTI 2.1 test that we upload above
+		String testNodeTitle = "Test-QTI-2.1";
 		CourseEditorPageFragment courseEditor = CoursePageFragment.getCourse(browser)
 			.edit();
 		courseEditor
@@ -526,7 +530,6 @@ public class AssessmentTest extends Deployments {
 		courseRuntime
 			.clickTree()
 			.selectWithTitle(testNodeTitle);
-		OOGraphene.closeBlueMessageWindow(browser);
 		
 		//check that the title of the start page of test is correct
 		WebElement testH2 = browser.findElement(By.cssSelector("div.o_course_run h2"));
@@ -569,9 +572,11 @@ public class AssessmentTest extends Deployments {
 			.clickTree()
 			.selectWithTitle(testNodeTitle);
 		//pass the test
-		QTI12Page.getQTI12Page(ryomouBrowser).passE4(ryomou);
+		QTI21Page.getQTI21Page(ryomouBrowser)
+			.passE4()
+			.assertOnCourseAssessmentTestScore(4);
 
-		
+	
 		//Kanu makes the test
 		AssessmentModePage kanuAssessment = new AssessmentModePage(kanuBrowser)
 			.startAssessment(true);
@@ -581,7 +586,9 @@ public class AssessmentTest extends Deployments {
 			.clickTree()
 			.selectWithTitle(testNodeTitle);
 		//pass the test
-		QTI12Page.getQTI12Page(kanuBrowser).passE4(kanu);
+		QTI21Page.getQTI21Page(kanuBrowser)
+			.passE4()
+			.assertOnCourseAssessmentTestScore(4);
 
 		
 		//Author ends the test
@@ -591,8 +598,8 @@ public class AssessmentTest extends Deployments {
 			.confirmStop();
 		
 		By continueBy = By.className("o_sel_assessment_continue");
-		OOGraphene.waitElement(continueBy, 10, ryomouBrowser);
-		OOGraphene.waitElement(continueBy, 10, kanuBrowser);
+		OOGraphene.waitElementSlowly(continueBy, 20, ryomouBrowser);
+		OOGraphene.waitElementSlowly(continueBy, 20, kanuBrowser);
 		kanuAssessment.backToOpenOLAT();
 		ryomouAssessment.backToOpenOLAT();
 		
@@ -659,14 +666,17 @@ public class AssessmentTest extends Deployments {
 			.finish();
 		
 		// return to course
-		courseRuntime = members
+		CourseSettingsPage courseSettings = members
 			.clickToolbarBack()
-			.settings()
-			.efficiencyStatementConfiguration()
+			.settings();
+		courseSettings
+			.certificates()
 			.enableCertificates(false)
 			.enableRecertification()
-			.save()
+			.save();
+		courseSettings
 			.clickToolbarBack();
+		
 		//publish the course
 		courseRuntime
 			.publish();
@@ -713,7 +723,7 @@ public class AssessmentTest extends Deployments {
 		UserVO author = new UserRestClient(deploymentUrl).createAuthor();
 		UserVO rei = new UserRestClient(deploymentUrl).createRandomUser("Rei");
 		//deploy the test
-		URL testUrl = ArquillianDeployments.class.getResource("file_resources/e4_test.zip");
+		URL testUrl = ArquillianDeployments.class.getResource("file_resources/qti21/e4_test_qti21.zip");
 		String testTitle = "E4Test-" + UUID.randomUUID();
 		new RepositoryRestClient(deploymentUrl, author).deployResource(new File(testUrl.toURI()), "-", testTitle);
 
@@ -727,8 +737,8 @@ public class AssessmentTest extends Deployments {
 			.createCourse(courseTitle)
 			.clickToolbarBack();
 
-		//create a course element of type CP with the CP that we create above
-		String testNodeTitle = "Test-QTI-1.2";
+		//create a course element of type test with the QTI 2.1 test that we upload above
+		String testNodeTitle = "Test-QTI-2.1";
 		CoursePageFragment courseRuntime = CoursePageFragment.getCourse(browser);
 		courseRuntime
 			.edit()
@@ -761,13 +771,15 @@ public class AssessmentTest extends Deployments {
 			.finish();
 		
 		// return to course
-		courseRuntime = members
+		CourseSettingsPage courseSetting = members
 			.clickToolbarBack()
-			.settings()
-			.efficiencyStatementConfiguration()
+			.settings();
+		courseSetting
+			.certificates()
 			.enableCertificates(true)
 			.enableRecertification()
-			.save()
+			.save();
+		courseSetting
 			.clickToolbarBack();
 		
 		//Participant log in
@@ -788,7 +800,11 @@ public class AssessmentTest extends Deployments {
 			.clickTree()
 			.selectWithTitle(testNodeTitle);
 		//pass the test
-		QTI12Page.getQTI12Page(reiBrowser).passE4(rei);
+		QTI21Page.getQTI21Page(reiBrowser)
+			.passE4()
+			.assertOnCourseAssessmentTestScore(4);
+		
+		OOGraphene.waitingALittleLonger();
 				
 		//open the efficiency statements
 		UserToolsPage reiUserTools = new UserToolsPage(reiBrowser);
@@ -800,6 +816,154 @@ public class AssessmentTest extends Deployments {
 			.selectStatement(courseTitle)
 			.selectStatementSegment()
 			.assertOnCourseDetails(testNodeTitle, true);
+	}
+
+	/**
+	 * This tests a course with cascading rules and expert rules
+	 * to calculate if the course is passed and generate a
+	 * certificate. 
+	 * 
+	 * @param loginPage
+	 */
+	@Test
+	@RunAsClient
+	public void certificatesGeneratedWithCascadingRules()
+	throws IOException, URISyntaxException {
+		
+		UserVO author = new UserRestClient(deploymentUrl).createRandomAuthor();
+		UserVO participant1 = new UserRestClient(deploymentUrl).createRandomUser("Ryomou");
+		UserVO participant2 = new UserRestClient(deploymentUrl).createRandomUser("Rei");
+
+		LoginPage loginPage = LoginPage.load(browser, deploymentUrl);
+		loginPage.loginAs(author.getLogin(), author.getPassword());
+		
+		URL zipUrl = JunitTestHelper.class.getResource("file_resources/course_certificates_exrules.zip");
+		File zipFile = new File(zipUrl.toURI());
+		//go the authoring environment to import our course
+		String zipTitle = "Certif - " + UUID.randomUUID();
+		NavigationPage navBar = NavigationPage.load(browser);
+		navBar
+			.openAuthoringEnvironment()
+			.uploadResource(zipTitle, zipFile);
+		
+		// publish the course
+		new RepositoryEditDescriptionPage(browser)
+			.clickToolbarBack();
+		CoursePageFragment course = CoursePageFragment.getCourse(browser)
+				.edit()
+				.autoPublish();
+		
+		// add a participant
+		MembersPage members = course
+			.members();
+		members
+			.importMembers()
+			.setMembers(participant1, participant2)
+			.nextUsers()
+			.nextOverview()
+			.nextPermissions()
+			.finish();
+		members
+			.clickToolbarBack();
+		
+		course
+			.settings()
+			.accessConfiguration()
+			.setUserAccess(UserAccess.registred)
+			.save()
+			.clickToolbarBack();
+		
+		course
+			.changeStatus(RepositoryEntryStatusEnum.published);
+	
+		//log out
+		new UserToolsPage(browser)
+			.logout();
+		
+		// participant log in and go directly to the first test
+		LoginPage participantLoginPage = LoginPage.load(browser, deploymentUrl);
+		
+		participantLoginPage
+			.loginAs(participant1.getLogin(), participant1.getPassword())
+			.resume();
+		
+		//open the course
+		NavigationPage participantNavBar = NavigationPage.load(browser);
+		participantNavBar
+			.openMyCourses()
+			.select(zipTitle);
+		
+		//go to the test
+		CoursePageFragment certificationCourse = new CoursePageFragment(browser);
+		certificationCourse
+			.clickTree()
+			.assertWithTitleSelected("Test 1");
+		//pass the test
+		QTI21Page.getQTI21Page(browser)
+			.passE4()
+			.assertOnCourseAssessmentTestScore(4);
+		
+		OOGraphene.waitingALittleLonger();
+		
+		//open the efficiency statements
+		String certificateTitle = "Certificates" + zipTitle;
+		UserToolsPage participantUserTools = new UserToolsPage(browser);
+		participantUserTools
+			.openUserToolsMenu()
+			.openMyEfficiencyStatement()
+			.assertOnEfficiencyStatmentPage()
+			.assertOnCertificateAndStatements(certificateTitle)
+			.selectStatement(certificateTitle)
+			.selectStatementSegment()
+			.assertOnCourseDetails("CertificatesCert", true)
+			.assertOnCourseDetails("Struktur 1", true)
+			.assertOnCourseDetails("Test 1", true);
+		
+		//log out
+		new UserToolsPage(browser)
+			.logout();
+		
+		
+		// participant 2 log in and go directly to the second test
+		LoginPage participant2LoginPage = LoginPage.load(browser, deploymentUrl);
+		
+		participant2LoginPage
+			.loginAs(participant2.getLogin(), participant2.getPassword())
+			.resume();
+		
+		//open the course
+		NavigationPage participant2NavBar = NavigationPage.load(browser);
+		participant2NavBar
+			.openMyCourses()
+			.select(zipTitle);
+		
+		//go to the test
+		CoursePageFragment certification2Course = new CoursePageFragment(browser);
+		certification2Course
+			.clickTree()
+			.selectWithTitle("Struktur 3")
+			.assertWithTitleSelected("Struktur 3")
+			.assertWithTitle("Test 3")
+			.selectWithTitle("Test 3");
+		//pass the test
+		QTI21Page.getQTI21Page(browser)
+			.passE4()
+			.assertOnCourseAssessmentTestScore(4);
+		
+		OOGraphene.waitingALittleLonger();
+		
+		//open the efficiency statements
+		UserToolsPage participant2UserTools = new UserToolsPage(browser);
+		participant2UserTools
+			.openUserToolsMenu()
+			.openMyEfficiencyStatement()
+			.assertOnEfficiencyStatmentPage()
+			.assertOnCertificateAndStatements(certificateTitle)
+			.selectStatement(certificateTitle)
+			.selectStatementSegment()
+			.assertOnCourseDetails("CertificatesCert", true)
+			.assertOnCourseDetails("Struktur 3", true)
+			.assertOnCourseDetails("Test 3", true);
 	}
 	
 	/**
@@ -847,14 +1011,20 @@ public class AssessmentTest extends Deployments {
 			.selectConfigurationWithRubric()
 			.setRubricScore(0.1f, 10.0f, 5.0f);
 		//set the score / passed calculation in root node and publish
-		courseEditor
+		CourseSettingsPage courseSettings = courseEditor
 			.selectRoot()
 			.selectTabScore()
 			.enableRootScoreByNodes()
 			.autoPublish()
-			.settings()
+			.settings();
+		courseSettings
 			.accessConfiguration()
 			.setUserAccess(UserAccess.registred)
+			.save();
+		courseSettings
+			.certificates()
+			.enableCertificates(true)
+			.enableRecertification()
 			.save();
 		
 		//go to members management
@@ -895,6 +1065,7 @@ public class AssessmentTest extends Deployments {
 			.assertOnEfficiencyStatmentPage()
 			.assertOnStatement(courseTitle, true)
 			.selectStatement(courseTitle)
+			.selectStatementSegment()
 			.assertOnCourseDetails(assessmentNodeTitle, true);
 	}
 
@@ -923,7 +1094,7 @@ public class AssessmentTest extends Deployments {
 			@Drone @Participant WebDriver kanuBrowser)
 	throws IOException, URISyntaxException {
 			
-		UserVO author = new UserRestClient(deploymentUrl).createAuthor();
+		UserVO author = new UserRestClient(deploymentUrl).createRandomAuthor();
 		UserVO kanu = new UserRestClient(deploymentUrl).createRandomUser("Kanu");
 		UserVO ryomou = new UserRestClient(deploymentUrl).createRandomUser("Ryomou");
 
@@ -1859,7 +2030,7 @@ public class AssessmentTest extends Deployments {
 	
 	/**
 	 * An author create a course with an heavy customized task
-	 * coure element. Assignment and submission are disabled.
+	 * course element. Assignment and submission are disabled.
 	 * The participant doesn't to interact with the course, the
 	 * author / coach upload a correction and marks the task as
 	 * reviewed and uses the assessment tool to set the score.<br>

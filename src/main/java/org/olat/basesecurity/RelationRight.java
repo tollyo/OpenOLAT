@@ -32,5 +32,4 @@ public interface RelationRight extends CreateInfo {
 	public Long getKey();
 	
 	public String getRight();
-
 }

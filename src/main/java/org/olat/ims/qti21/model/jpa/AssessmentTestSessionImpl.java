@@ -141,15 +141,24 @@ public class AssessmentTestSessionImpl implements AssessmentTestSession, Persist
     private BigDecimal score; 
     @Column(name="q_manual_score", nullable=true, insertable=true, updatable=true)
     private BigDecimal manualScore;
+    @Column(name="q_max_score", nullable=true, insertable=true, updatable=true)
+    private BigDecimal maxScore; 
 
     @Column(name="q_num_questions", nullable=true, insertable=true, updatable=true)
     private Integer numOfQuestions;
     @Column(name="q_num_answered_questions", nullable=true, insertable=true, updatable=true)
     private Integer numOfAnsweredQuestions;
     
+    /**
+     * Can only be updated via the service
+     */
     @Column(name="q_extra_time", nullable=true, insertable=false, updatable=false)
     private Integer extraTime;
-
+    /**
+     * Can only be inserted, after need to be updated via the service
+     */
+    @Column(name="q_compensation_extra_time", nullable=true, insertable=true, updatable=false)
+    private Integer compensationExtraTime;
 
     /**
      * Flag to indicate if this session blew up while running, either because
@@ -157,6 +166,14 @@ public class AssessmentTestSessionImpl implements AssessmentTestSession, Persist
      */
     @Column(name="q_exploded", nullable=false, insertable=true, updatable=true)
     private boolean exploded;
+    
+    /**
+     * Flag to indicate if this session was cancelled and will be ignored in
+     * assessment but the results are available.
+     */
+    @Column(name="q_cancelled", nullable=false, insertable=true, updatable=true)
+    private boolean cancelled;
+    
 
     @Override
 	public Long getKey() {
@@ -259,6 +276,16 @@ public class AssessmentTestSessionImpl implements AssessmentTestSession, Persist
 	}
 
 	@Override
+	public boolean isCancelled() {
+		return cancelled;
+	}
+
+	@Override
+	public void setCancelled(boolean cancelled) {
+		this.cancelled = cancelled;
+	}
+
+	@Override
 	public String getStorage() {
 		return storage;
 	}
@@ -297,6 +324,15 @@ public class AssessmentTestSessionImpl implements AssessmentTestSession, Persist
 	}
 
 	@Override
+	public Integer getCompensationExtraTime() {
+		return compensationExtraTime;
+	}
+
+	public void setCompensationExtraTime(Integer compensationExtraTime) {
+		this.compensationExtraTime = compensationExtraTime;
+	}
+
+	@Override
 	public Boolean getPassed() {
 		return passed;
 	}
@@ -324,6 +360,16 @@ public class AssessmentTestSessionImpl implements AssessmentTestSession, Persist
 	@Override
 	public void setManualScore(BigDecimal manualScore) {
 		this.manualScore = manualScore;
+	}
+
+	@Override
+	public BigDecimal getMaxScore() {
+		return maxScore;
+	}
+
+	@Override
+	public void setMaxScore(BigDecimal maxScore) {
+		this.maxScore = maxScore;
 	}
 
 	@Override

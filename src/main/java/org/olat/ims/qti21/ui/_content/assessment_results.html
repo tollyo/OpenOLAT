@@ -39,7 +39,7 @@
 	<tbody>
 		#if($contextTitle)
 		<tr class="o_qti_coursename">
-			<th>$r.translate("results.contextinfo.context")</th>
+			<th scope="row">$r.translate("results.contextinfo.context")</th>
 			<td>
 				<strong>$r.escapeHtml($contextTitle)</strong>
 				<small class="hidden-xs text-muted small"> 
@@ -52,7 +52,7 @@
 		</tr>
 		#end
 		<tr class="o_qti_testname">
-			<th>$r.translate("results.contextinfo.test")</th>
+			<th scope="row">$r.translate("results.contextinfo.test")</th>
 			<td><strong>$testTitle</strong>
 				<small class="hidden-xs text-muted small"> 
 					#if($testExternalRef) ${testExternalRef} #end
@@ -69,7 +69,9 @@
 	$r.render("assessedIdentityInfos")
 #end
 
-#if($r.isNotNull($testSessionNotFound) && $testSessionNotFound)
+#if($r.isTrue($testSessionError))
+<div class="o_error" role="alert">$r.translate("error.assessment.test.session")</div>
+#elseif($r.isTrue($testSessionNotFound))
 <div class="o_warning">$r.translate("assessment.test.session.reseted")</div>
 #end
 
@@ -92,7 +94,7 @@
 	<div class="o_sel_results_details o_block_large">
 	<table class="table table-condensed"><tbody>
 		<tr class="o_qti_run_durationinfo">
-			<th>$r.translate("results.duration")</th>
+			<th scope="row">$r.translate("results.duration")</th>
 			<td class="o_sel_assessmenttest_duration">
 					$r.formatDurationInMillis($testResults.duration) 
 				<span class="hidden-xs hidden-sm text-muted small o_block_inline_left">
@@ -100,8 +102,21 @@
 				</span>
 			</td>
 		</tr>
+		#if($r.isNotEmpty($extraTimeInMinutes) || $r.isNotEmpty($compensationExtraTimeInMinutes))
+		<tr class="o_qti_run_extratime">
+			<th scope="row">$r.translate("results.extra.time.label")</th>
+			<td class="o_sel_assessmenttest_extratime">
+			#if($r.isNotEmpty($extraTimeInMinutes))
+				<span><i class="o_icon o_icon_extra_time"> </i> $r.translate("results.extra.time", ${extraTimeInMinutes})</span>
+			#end
+			#if($r.isNotEmpty($compensationExtraTimeInMinutes))
+				<span><i class="o_icon o_icon_disadvantage_compensation"> </i> $r.translate("results.extra.time.compensation", ${compensationExtraTimeInMinutes})</span>
+			#end
+			</td>
+		</tr>
+		#end
 		<tr class="o_qti_run_questioninfo">
-			<th>$r.translate("question.progress.answered")</th>
+			<th scope="row">$r.translate("question.progress.answered")</th>
 			<td>
 				<div>
 					<span title="$r.translateInAttribute("question.progress.answered")">$testResults.numberOfAnsweredQuestions</span> 
@@ -112,7 +127,7 @@
 		</tr>
 		#if(${testResults.hasScore()})
 		<tr class="o_qti_scoreinfo o_sel_assessmenttest_scores">
-			<th>$r.translate("results.score.yourscore")</th>
+			<th scope="row">$r.translate("results.score.yourscore")</th>
 			<td>
 				<div>
 				#if ($testResults.hasMaxScore())
@@ -131,7 +146,7 @@
 		#end
 		#if ($testResults.cutValue)
 		<tr class="o_qti_cutinfo">
-			<th>$r.translate("score.cut")</th>
+			<th scope="row">$r.translate("score.cut")</th>
 			<td>
 				$testResults.cutValue
 			</td>
@@ -139,14 +154,12 @@
 		#end
 		#if(${testResults.hasPass()})
 		<tr class="o_qti_stateinfo #if(${testResults.getCalculatedPassed().booleanValue()}) o_passed #elseif(!${testResults.getCalculatedPassed().booleanValue()}) o_failed #else o_unknown #end">
-			<th>$r.translate("passed.yourpassed")</th>
+			<th scope="row">$r.translate("passed.yourpassed")</th>
 			<td> 
 				#if(${testResults.getCalculatedPassed().booleanValue()})	
-					<i class="o_icon o_icon_passed"></i> 
-					$r.translate("passed.yes")
+					<i class="o_icon o_icon_passed"> </i> $r.translate("passed.yes")
 				#elseif(!${testResults.getCalculatedPassed().booleanValue()})		
-					<i class="o_icon o_icon_failed"></i> 
-					$r.translate("passed.no")
+					<i class="o_icon o_icon_failed"> </i> $r.translate("passed.no")
 				#else
 					$r.translateWithPackage("org.olat.course.nodes.st", "passed.noinfo")
 				#end
@@ -155,7 +168,7 @@
 		#end
 		#if($r.isNotNull($signatureUrl))
 		<tr class="o_qti_signature">
-			<th>$r.translate("digital.signature.download")</th>
+			<th scope="row">$r.translate("digital.signature.download")</th>
 			<td><a href="$signatureUrl" target="_blank"><i class="o_icon o_icon-fw o_icon_download"> </i> $r.translate("digital.signature.download.link")</a></td> 
 		</tr>
 		#end
@@ -164,7 +177,7 @@
 		#set($itemResult = $itemResults.get(0))
 		#if($r.isNotEmpty($itemResult.getSubResults()))
 		<tr class="o_qti_signature">
-			<th>$r.translate("results.questions.overview")</th>
+			<th scope="row">$r.translate("results.questions.overview")</th>
 			<td>
 			<div class="o_qti_section_sublisting">
 				#foreach($subResults in $itemResult.getSubResults())
@@ -387,7 +400,11 @@
 				#end
 			</h3>
 			#if($r.isNotEmpty($itemResult.rubrics))
-			<div class="o_info o_assessmentsection_rubrics">$r.xssScan($itemResult.rubrics)</div>
+			<div class="o_info o_assessmentsection_rubrics">
+				#foreach($rubric in $itemResult.rubrics)
+					<div class='rubric clearfix'>$r.render($rubric)</div>
+				#end
+			</div>
 			#end
 		#end
 	#else
@@ -409,11 +426,11 @@
 	 	#if($itemResult.metadataVisible)
 		<table class="table"><tbody>
 			<tr class="o_qti_item_id">
-				<th>ID</th>
+				<th scope="row">ID</th>
 				<td>$itemResult.itemIdentifier</td> 
 			</tr>
 			<tr class="o_sel_assessmentitem_status">
-				<th>$r.translate("results.session.status")</th>
+				<th scope="row">$r.translate("results.session.status")</th>
 				<td>
 					#if(${itemResult.hasPass()})
 						#if(${itemResult.getPass().booleanValue()})	
@@ -427,7 +444,7 @@
 			</tr>
 			#if(${itemResult.hasScore()})
 			<tr class="o_sel_assessmentitem_score">
-				<th>$r.translate("results.score.yourscore")</th>
+				<th scope="row">$r.translate("results.score.yourscore")</th>
 				<td>
 					<div class="col-xs-3 col-md-2" style='padding-left:0;'>
 						<span title="$r.translateInAttribute("results.score.yourscore")" class="o_sel_assessmentitem_score">$itemResult.score</span>
@@ -449,23 +466,32 @@
 			</tr>
 			#elseif(${itemResult.hasMaxScore()})
 			<tr>
-				<th>$r.translate("score.max")</th>
+				<th scope="row">$r.translate("score.max")</th>
 				<td><span class="o_sel_assessmentitem_maxscore">$itemResult.maxScore</span></td> 
 			</tr>
 			#end
 			#if(${itemResult.hasPass()})
 			<tr class="o_state #if(${testResults.getPass().booleanValue()}) o_passed #elseif(!${testResults.getPass().booleanValue()}) o_failed #else o_unknown #end">
-				<th>$r.translate("passed.yourpassed")</th>
+				<th scope="row">$r.translate("passed.yourpassed")</th>
 				<td> 
 				#if(${itemResult.getPass().booleanValue()})	
 					<i class="o_icon o_icon_passed"></i> 
 					$r.translate("passed.yes")
 				#elseif(!${itemResult.getPass().booleanValue()})		
-					<i class="o_icon o_icon_failed"></i> 
+					<i class="o_icon o_icon_failed"> </i> 
 					$r.translate("passed.no")
 				#else
 					$r.translateWithPackage("org.olat.course.nodes.st", "passed.noinfo")
 				#end
+				</td>
+			</tr>
+			#end
+			#if($r.isNotEmpty(${itemResult.getAssessmentDocuments()}))
+			<tr>
+				<th scope="row">$r.translate("assessment.item.docs")</th>
+				<td><ul class="list-unstyled">#foreach($doc in ${itemResult.getAssessmentDocuments()})
+					<li><a href="$submissionMapperUri/assessmentdocs/${itemResult.itemSessionKey}/${doc.filename}?href=assessmentdocs/${candidateSessionKey}/${itemResult.itemSessionKey}/${doc.filename}" target="_blank"><i class="o_icon o_icon-fw $r.getFiletypeIconCss($doc.filename)"> </i> $r.escapeHtml($doc.filename)</a></li>
+				#end</ul>
 				</td>
 			</tr>
 			#end
@@ -475,7 +501,7 @@
 		#if($r.isNotEmpty($itemResult.comment))
 		<div class="o_sel_assessmentitem_comment o_qti_item_comment">
 			<h4>$r.translate("results.comment")</h4>
-			$r.escapeHtml($itemResult.comment) 
+			$itemResult.comment
 		</div>
 		#end
 		

@@ -59,9 +59,6 @@ public final class PreviewIdentity implements Identity, User {
 		key = CodeHelper.getRAMUniqueID();
 	}
 
-	/**
-	 * @see org.olat.core.commons.persistence.Persistable#getSelectedMessageKey()
-	 */
 	@Override
 	public Long getKey() {
 		return key;
@@ -72,14 +69,16 @@ public final class PreviewIdentity implements Identity, User {
 		return null;
 	}
 
-	/**
-	 * @see org.olat.core.id.Identity#getName()
-	 */
 	@Override
 	public String getName() {
 		return "JaneDoe";
 	}
 	
+	@Override
+	public String getNickName() {
+		return "u" + getKey();
+	}
+
 	@Override
 	public String getEmail() {
 		return data.get(UserConstants.EMAIL);
@@ -158,6 +157,21 @@ public final class PreviewIdentity implements Identity, User {
 	@Override
 	public Integer getStatus() {
 		return Identity.STATUS_ACTIV;
+	}
+
+	@Override
+	public Date getInactivationDate() {
+		return null;
+	}
+
+	@Override
+	public Date getReactivationDate() {
+		return null;
+	}
+
+	@Override
+	public Date getExpirationDate() {
+		return null;
 	}
 
 	@Override

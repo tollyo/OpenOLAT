@@ -19,6 +19,7 @@
  */
 package org.olat.selenium.page.course;
 
+import java.time.Duration;
 import java.util.List;
 
 import org.junit.Assert;
@@ -141,26 +142,43 @@ public class AssessmentToolPage {
 		By scoreBy = By.cssSelector(".o_sel_assessment_form_score input[type='text']");
 		browser.findElement(scoreBy).sendKeys(Float.toString(score));
 		
+		return closeAssessment();
+	}
+	
+	public AssessmentToolPage setAssessmentPassed(Boolean passed) {
+		String val = passed == null ? "undefined" : passed.toString();
+		By passedBy = By.cssSelector(".o_sel_assessment_form_passed input[type='radio'][value='" + val + "']");
+		browser.findElement(passedBy).click();
+		return this;
+	}
+	
+	public AssessmentToolPage setAssessmentVisibility(boolean visible) {
+		String val = visible ? "visible" : "hidden";
+		By visibleBy = By.cssSelector(".o_sel_assessment_form_visibility input[type='radio'][value='" + val + "']");
+		browser.findElement(visibleBy).click();
+		return this;
+	}
+	
+	public AssessmentToolPage closeAssessment() {
 		By saveBy = By.cssSelector("button.btn.o_sel_assessment_form_save_and_close");
 		browser.findElement(saveBy).click();
 		OOGraphene.waitBusy(browser);
 		return this;
 	}
 	
+	public AssessmentToolPage reopenAssessment() {
+		By saveBy = By.cssSelector("a.o_sel_assessment_form_reopen");
+		browser.findElement(saveBy).click();
+		OOGraphene.waitBusy(browser);
+		return this;
+	}
+	
 	public AssessmentToolPage assertPassed(UserVO user) {
-		By userInfosBy = By.cssSelector("div.o_user_infos div.o_user_infos_inner table tr td");
-		List<WebElement> userInfoList = browser.findElements(userInfosBy);
-		Assert.assertFalse(userInfoList.isEmpty());
-		boolean foundFirstName = false;
-		for(WebElement userInfo:userInfoList) {
-			foundFirstName |= userInfo.getText().contains(user.getFirstName());
-		}
-		Assert.assertTrue(foundFirstName);
+		By userInfosBy = By.xpath("//div[@class='o_user_infos']/div[@class='o_user_infos_inner']//tr[contains(@class,'o_userDisplayName')]/td[text()[contains(.,'" + user.getFirstName() + "')]]");
+		OOGraphene.waitElement(userInfosBy, browser);
 		
 		By passedBy = By.cssSelector("div.o_table_wrapper table tr td.text-left span.o_state.o_passed");
-		List<WebElement> passedEl = browser.findElements(passedBy);
-		Assert.assertFalse(passedEl.isEmpty());
-		Assert.assertTrue(passedEl.get(0).isDisplayed());
+		OOGraphene.waitElement(passedBy, browser);
 		return this;
 	}
 	
@@ -172,7 +190,7 @@ public class AssessmentToolPage {
 	 */
 	public AssessmentToolPage assertProgress(UserVO user, int progress) {
 		By progressBy = By.xpath("//div[contains(@class,'o_table_wrapper')]/table//tr[td/a[contains(.,'" + user.getFirstName() + "')]]/td/div[@class='progress'][div[@title='" + progress + "%']]");
-		OOGraphene.waitElement(progressBy, 15, 1, browser);
+		OOGraphene.waitElement(progressBy, Duration.ofSeconds(15), Duration.ofSeconds(1), browser);
 		return this;
 	}
 	
@@ -234,7 +252,6 @@ public class AssessmentToolPage {
 	 * @return
 	 */
 	public CoursePageFragment clickToolbarRootCrumb() {
-		OOGraphene.closeBlueMessageWindow(browser);
 		By toolbarBackBy = By.xpath("//li[contains(@class,'o_breadcrumb_back')]/following-sibling::li/a");
 		browser.findElement(toolbarBackBy).click();
 		OOGraphene.waitBusy(browser);

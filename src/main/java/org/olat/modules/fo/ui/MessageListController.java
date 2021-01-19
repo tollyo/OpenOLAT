@@ -31,7 +31,7 @@ import javax.servlet.http.HttpServletRequest;
 
 import org.olat.basesecurity.BaseSecurityModule;
 import org.olat.core.commons.fullWebApp.popup.BaseFullWebappPopupLayoutFactory;
-import org.olat.core.commons.persistence.DBFactory;
+import org.olat.core.commons.persistence.DB;
 import org.olat.core.commons.services.mark.Mark;
 import org.olat.core.commons.services.mark.MarkResourceStat;
 import org.olat.core.commons.services.mark.MarkingService;
@@ -78,13 +78,14 @@ import org.olat.core.util.StringHelper;
 import org.olat.core.util.Util;
 import org.olat.core.util.coordinate.CoordinatorManager;
 import org.olat.core.util.event.GenericEventListener;
+import org.olat.core.util.filter.FilterFactory;
 import org.olat.core.util.prefs.Preferences;
 import org.olat.core.util.resource.OresHelper;
 import org.olat.core.util.vfs.VFSContainer;
 import org.olat.core.util.vfs.VFSItem;
 import org.olat.core.util.vfs.VFSLeaf;
 import org.olat.core.util.vfs.VFSMediaResource;
-import org.olat.core.util.vfs.filters.VFSItemMetaFilter;
+import org.olat.core.util.vfs.filters.VFSLeafButSystemFilter;
 import org.olat.course.nodes.FOCourseNode;
 import org.olat.modules.fo.Forum;
 import org.olat.modules.fo.ForumCallback;
@@ -99,6 +100,7 @@ import org.olat.modules.fo.export.FinishCallback;
 import org.olat.modules.fo.export.SendMailStepForm;
 import org.olat.modules.fo.export.Step_1_SelectCourse;
 import org.olat.modules.fo.manager.ForumManager;
+import org.olat.modules.fo.manager.QuoterFilter;
 import org.olat.modules.fo.portfolio.ForumMediaHandler;
 import org.olat.modules.fo.ui.MessageEditController.EditMode;
 import org.olat.modules.fo.ui.events.DeleteMessageEvent;
@@ -107,8 +109,6 @@ import org.olat.modules.fo.ui.events.ErrorEditMessage;
 import org.olat.modules.fo.ui.events.SelectMessageEvent;
 import org.olat.modules.portfolio.PortfolioV2Module;
 import org.olat.modules.portfolio.ui.component.MediaCollectorComponent;
-import org.olat.portfolio.EPUIFactory;
-import org.olat.portfolio.manager.EPFrontendManager;
 import org.olat.properties.Property;
 import org.olat.properties.PropertyManager;
 import org.olat.repository.RepositoryEntry;
@@ -163,12 +163,13 @@ public class MessageListController extends BasicController implements GenericEve
 	private final String thumbnailMapper;
 	private final ForumCallback foCallback;
 	private final OLATResourceable forumOres;
-	private final boolean isAdministrativeUser;
 	private final List<UserPropertyHandler> userPropertyHandlers;
 	
 	private LoadMode loadMode;
 	private List<MessageView> backupViews;
 
+	@Autowired
+	private DB dbInstance;
 	@Autowired
 	private UserManager userManager;
 	@Autowired
@@ -181,8 +182,6 @@ public class MessageListController extends BasicController implements GenericEve
 	private MarkingService markingService;
 	@Autowired
 	private BaseSecurityModule securityModule;
-	@Autowired
-	private EPFrontendManager epMgr;
 	@Autowired
 	private PortfolioV2Module portfolioModule;
 	@Autowired
@@ -200,7 +199,7 @@ public class MessageListController extends BasicController implements GenericEve
 		formatter = Formatter.getInstance(getLocale());
 		forumOres = OresHelper.createOLATResourceableInstance("Forum", forum.getKey());
 		guestOnly = ureq.getUserSession().getRoles().isGuestOnly();
-		isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
+		boolean isAdministrativeUser = securityModule.isUserAllowedAdminProps(ureq.getUserSession().getRoles());
 		userPropertyHandlers = userManager.getUserPropertyHandlersFor(USER_PROPS_ID, isAdministrativeUser);
 		
 		thumbnailMapper = registerCacheableMapper(ureq, "fo_att_" + forum.getKey(), new AttachmentsMapper());
@@ -430,12 +429,8 @@ public class MessageListController extends BasicController implements GenericEve
 	private MessageView loadView(UserRequest ureq, MessageLight message) {
 		Set<Long> rms =  null;
 		Map<String,Mark> marks = Collections.emptyMap();
-		Map<String,Long> artefactStats = Collections.emptyMap();
 		List<String> subPaths = Collections.singletonList(message.getKey().toString());
 		if(!guestOnly) {
-			String businessPath = BusinessControlFactory.getInstance().getAsString(getWindowControl().getBusinessControl()) + "[Message:" + message.getKey() + "]";
-			artefactStats = epMgr.getNumOfArtefactsByStartingBusinessPath(businessPath, getIdentity());
-
 			marks = new HashMap<>();
 			List<Mark> markList = markingService.getMarkManager().getMarks(forumOres, getIdentity(), subPaths);
 			for(Mark mark:markList) {
@@ -448,22 +443,21 @@ public class MessageListController extends BasicController implements GenericEve
 		for(MarkResourceStat stat:statList) {
 			stats.put(stat.getSubPath(), stat);
 		}
-
-		MessageView view = new MessageView(message, userPropertyHandlers, getLocale());
+		
+		String body = message.getBody();
+		String messageMapperUri = thumbnailMapper + "/" + message.getKey() + "/";
+		body = FilterFactory.getBaseURLToMediaRelativeURLFilter(messageMapperUri).filter(body);
+		MessageView view = new MessageView(message, body, userPropertyHandlers, getLocale());
 		view.setNumOfChildren(0);
-		addMessageToCurrentMessagesAndVC(ureq, message, view, marks, stats, artefactStats, rms);
+		addMessageToCurrentMessagesAndVC(ureq, message, view, marks, stats, rms);
 		return view;
 	}
 	
 	private List<MessageView> loadThread(UserRequest ureq, List<MessageLight> messages, boolean reorder) {
 		Set<Long> rms =  null;
 		Map<String,Mark> marks = Collections.emptyMap();
-		Map<String,Long> artefactStats = Collections.emptyMap();
 		if(!guestOnly) {
 			rms = forumManager.getReadSet(getIdentity(), forum);
-
-			String businessPath = BusinessControlFactory.getInstance().getAsString(getWindowControl().getBusinessControl()) + "[Message:";
-			artefactStats = epMgr.getNumOfArtefactsByStartingBusinessPath(businessPath, getIdentity());
 
 			marks = new HashMap<>(marks.size() * 2 + 1);
 			List<Mark> markList = markingService.getMarkManager().getMarks(forumOres, getIdentity(), null);
@@ -487,7 +481,10 @@ public class MessageListController extends BasicController implements GenericEve
 		List<MessageView> views = new ArrayList<>(messages.size());
 		Map<Long,MessageView> keyToViews = new HashMap<>();
 		for(MessageLight msg:messages) {
-			MessageView view = new MessageView(msg, userPropertyHandlers, getLocale());
+			String body = msg.getBody();
+			String messageMapperUri = thumbnailMapper + "/" + msg.getKey() + "/";
+			body = FilterFactory.getBaseURLToMediaRelativeURLFilter(messageMapperUri).filter(body);
+			MessageView view = new MessageView(msg, body, userPropertyHandlers, getLocale());
 			view.setNumOfChildren(0);
 			views.add(view);
 			keyToViews.put(msg.getKey(), view);
@@ -508,7 +505,7 @@ public class MessageListController extends BasicController implements GenericEve
 		
 		//append ui things
 		for (MessageLight msg: messages) {
-			addMessageToCurrentMessagesAndVC(ureq, msg, keyToViews.get(msg.getKey()), marks, stats, artefactStats, rms);
+			addMessageToCurrentMessagesAndVC(ureq, msg, keyToViews.get(msg.getKey()), marks, stats, rms);
 		}
 		
 		mainVC.contextPut("messages", views);
@@ -577,8 +574,7 @@ public class MessageListController extends BasicController implements GenericEve
 	}
 	
 	private void addMessageToCurrentMessagesAndVC(UserRequest ureq, MessageLight m, MessageView messageView,
-			Map<String,Mark> marks, Map<String,MarkResourceStat> stats, Map<String,Long> artefactStats,
-			Set<Long> readSet) {
+			Map<String,Mark> marks, Map<String,MarkResourceStat> stats, Set<Long> readSet) {
 		
 		// all values belonging to a message are stored in this map
 		// these values can be accessed in velocity. make sure you clean up
@@ -605,6 +601,12 @@ public class MessageListController extends BasicController implements GenericEve
 				messageView.setModifierFirstName(modifier.getUser().getProperty(UserConstants.FIRSTNAME, getLocale()));
 				messageView.setModifierLastName(modifier.getUser().getProperty(UserConstants.LASTNAME, getLocale()));
 			}
+			
+			if(m.getModificationDate() != null) {
+				messageView.setFormattedModificationDate(formatter.formatDateAndTime(m.getModificationDate()));
+			} else {
+				messageView.setFormattedModificationDate(messageView.getFormattedLastModified());
+			}	
 		} else {
 			messageView.setModified(false);
 		}
@@ -621,9 +623,19 @@ public class MessageListController extends BasicController implements GenericEve
 		
 		// message attachments
 		VFSContainer msgContainer = forumManager.getMessageContainer(forum.getKey(), m.getKey());
-		messageView.setMessageContainer(msgContainer);
-		List<VFSItem> attachments = new ArrayList<>(msgContainer.getItems(new VFSItemMetaFilter()));				
-		messageView.setAttachments(attachments);
+		if(msgContainer != null) {
+			messageView.setMessageContainer(msgContainer);
+			List<VFSItem> attachmentsItem = msgContainer.getItems(new VFSLeafButSystemFilter());
+			List<VFSLeaf> attachments = new ArrayList<>(attachmentsItem.size());
+			for(VFSItem attachmentItem:attachmentsItem) {
+				if(attachmentItem instanceof VFSLeaf) {
+					attachments.add((VFSLeaf)attachmentItem);
+				}
+			}
+			messageView.setAttachments(attachments);
+		} else {
+			messageView.setAttachments(new ArrayList<>());
+		}
 
 		// number of children and modify/delete permissions
 		int numOfChildren = messageView.getNumOfChildren();
@@ -658,6 +670,9 @@ public class MessageListController extends BasicController implements GenericEve
 			if (creator.getStatus().equals(Identity.STATUS_DELETED)) {
 				// keep link to show something, but disable
 				visitingCardLink.setEnabled(false);
+			} else if(creator.getStatus().equals(Identity.STATUS_INACTIVE)) {
+				visitingCardLink.setIconRightCSS("o_icon o_icon_identity_inactive");
+				visitingCardLink.setTitle("creator.inactive");
 			}
 		}
 
@@ -714,22 +729,12 @@ public class MessageListController extends BasicController implements GenericEve
 		}
 		
 		if(userIsMsgCreator && !StringHelper.containsNonWhitespace(m.getPseudonym())) {
-			OLATResourceable messageOres = OresHelper.createOLATResourceableInstance("Forum", m.getKey());
-			String businessPath = BusinessControlFactory.getInstance().getAsString(getWindowControl().getBusinessControl())
-					+ "[Message:" + m.getKey() + "]";
-			Long artefact = artefactStats.get(businessPath);
-			int numOfArtefact = artefact == null ? 0 : artefact.intValue();
 			if(portfolioModule.isEnabled()) {
+				String businessPath = BusinessControlFactory.getInstance().getAsString(getWindowControl().getBusinessControl())
+						+ "[Message:" + m.getKey() + "]";
 				String collectorId = "eportfolio_" + keyString;
 				Component collectorCmp = new MediaCollectorComponent(collectorId, getWindowControl(), m, forumMediaHandler, businessPath);
 				mainVC.put(collectorId, collectorCmp);
-			} else  {
-				Controller ePFCollCtrl = EPUIFactory
-						.createArtefactCollectWizzardController(ureq, getWindowControl(), numOfArtefact, messageOres, businessPath);
-				if (ePFCollCtrl != null) {
-					messageView.setArtefact(ePFCollCtrl);
-					mainVC.put("eportfolio_" + keyString, ePFCollCtrl.getInitialComponent());
-				}
 			}
 		}
 	}
@@ -822,11 +827,11 @@ public class MessageListController extends BasicController implements GenericEve
 			String messageKey = cmd.substring(index + 1);
 			
 			int position = Integer.parseInt(attachmentPosition);
-			Long key = new Long(messageKey);
+			Long key = Long.valueOf(messageKey);
 			for(MessageView view:backupViews) {
 				if(view.getKey().equals(key)) {
-					List<VFSItem> attachments = view.getAttachments();
-					VFSLeaf attachment = (VFSLeaf)attachments.get(position - 1);//velocity counter start with 1
+					List<VFSLeaf> attachments = view.getAttachments();
+					VFSLeaf attachment = attachments.get(position - 1);//velocity counter start with 1
 					VFSMediaResource fileResource = new VFSMediaResource(attachment);
 					fileResource.setDownloadable(true); // prevent XSS attack
 					res = fileResource;
@@ -877,8 +882,6 @@ public class MessageListController extends BasicController implements GenericEve
 						thread = message;
 					}
 					reloadModel(ureq, message);
-				} else {
-					showInfo("header.cannoteditmessage");
 				}
 			}
 			cmc.deactivate();
@@ -965,26 +968,8 @@ public class MessageListController extends BasicController implements GenericEve
 			}			
 			newMessage.setTitle(reString + parentMessage.getTitle());
 			if (quote) {
-				// load message to form as quotation				
-				StringBuilder quoteSb = new StringBuilder();
-				quoteSb.append("<p></p><div class=\"o_quote_wrapper\"><div class=\"o_quote_author mceNonEditable\">");
-				String date = formatter.formatDateAndTime(parentMessage.getCreationDate());
-				String creatorName;
-				if(StringHelper.containsNonWhitespace(parentMessage.getPseudonym())) {
-					creatorName = parentMessage.getPseudonym();
-				} else if(parentMessage.isGuest()) {
-					creatorName = translate("guest");
-				} else {
-					User creator = parentMessage.getCreator().getUser();
-					creatorName = creator.getProperty(UserConstants.FIRSTNAME, getLocale()) + " " + creator.getProperty(UserConstants.LASTNAME, getLocale());
-				}
-				
-				quoteSb.append(translate("msg.quote.intro", new String[]{ date, creatorName}))
-				     .append("</div><blockquote class=\"o_quote\">")
-				     .append(parentMessage.getBody())
-				     .append("</blockquote></div>")
-				     .append("<p></p>");
-				newMessage.setBody(quoteSb.toString());
+				String quoted = buildReplyWithQuote(parentMessage);
+				newMessage.setBody(quoted);
 			}
 
 			replyMessageCtrl = new MessageEditController(ureq, getWindowControl(), forum, foCallback, newMessage, parentMessage, EditMode.reply);
@@ -997,6 +982,31 @@ public class MessageListController extends BasicController implements GenericEve
 		} else {
 			showInfo("may.not.reply.msg");
 		}
+	}
+	
+	private String buildReplyWithQuote(Message parentMessage) {
+		// load message to form as quotation				
+		StringBuilder quoteSb = new StringBuilder();
+		quoteSb.append("<p></p><div class=\"o_quote_wrapper\"><div class=\"o_quote_author mceNonEditable\">");
+		String date = formatter.formatDateAndTime(parentMessage.getCreationDate());
+		String creatorName;
+		if(StringHelper.containsNonWhitespace(parentMessage.getPseudonym())) {
+			creatorName = parentMessage.getPseudonym();
+		} else if(parentMessage.isGuest()) {
+			creatorName = translate("guest");
+		} else {
+			User creator = parentMessage.getCreator().getUser();
+			creatorName = creator.getProperty(UserConstants.FIRSTNAME, getLocale()) + " " + creator.getProperty(UserConstants.LASTNAME, getLocale());
+		}
+		
+		String originalBody = parentMessage.getBody();
+		String filteredBody = new QuoterFilter().filter(originalBody);
+		quoteSb.append(translate("msg.quote.intro", new String[]{ date, creatorName}))
+		     .append("</div><blockquote class=\"o_quote\">")
+		     .append(filteredBody)
+		     .append("</blockquote></div>")
+		     .append("<p></p>");
+		return quoteSb.toString();
 	}
 	
 	private void doConfirmDeleteMessage(UserRequest ureq, MessageView message) {
@@ -1130,18 +1140,18 @@ public class MessageListController extends BasicController implements GenericEve
 	private void doArchiveThread(UserRequest ureq, Message currMsg) {
 		Message m = currMsg.getThreadtop();
 		Long topMessageId = (m == null) ? currMsg.getKey() : m.getKey();
-		
-		VFSContainer forumContainer = forumManager.getForumContainer(forum.getKey());
-		ForumDownloadResource download = new ForumDownloadResource("Forum", forum, foCallback, topMessageId, forumContainer, getLocale());
+		ForumDownloadResource download = new ForumDownloadResource("Forum", forum, foCallback, topMessageId, getLocale());
 		ureq.getDispatchResult().setResultingMediaResource(download);
 	}
 	
 	private void doToogleSticky() {
+		thread = forumManager.getMessageById(thread.getKey());
+		
 		Status status = Status.getStatus(thread.getStatusCode());
 		status.setSticky(!status.isSticky());
 		thread.setStatusCode(Status.getStatusCode(status));
 		thread = forumManager.updateMessage(thread, false);
-		DBFactory.getInstance().commit();
+		dbInstance.commit();
 		
 		stickyButton.setVisible(!status.isSticky() && foCallback.mayEditMessageAsModerator());
 		removeStickyButton.setVisible(status.isSticky() && foCallback.mayEditMessageAsModerator());
@@ -1165,7 +1175,7 @@ public class MessageListController extends BasicController implements GenericEve
 			status.setClosed(true);
 			thread.setStatusCode(Status.getStatusCode(status));
 			thread = forumManager.updateMessage(thread, false);
-			DBFactory.getInstance().commit();// before sending async event
+			dbInstance.commit();// before sending async event
 			
 			closeThreadButton.setVisible(false);
 			openThreadButton.setVisible(!guestOnly);
@@ -1184,7 +1194,7 @@ public class MessageListController extends BasicController implements GenericEve
 			status.setClosed(false);
 			thread.setStatusCode(Status.getStatusCode(status));
 			thread = forumManager.updateMessage(thread, true);
-			DBFactory.getInstance().commit();// before sending async event
+			dbInstance.commit();// before sending async event
 			
 			closeThreadButton.setVisible(!guestOnly);
 			openThreadButton.setVisible(false);
@@ -1209,7 +1219,7 @@ public class MessageListController extends BasicController implements GenericEve
 			status.setHidden(true);
 			thread.setStatusCode(Status.getStatusCode(status));
 			thread = forumManager.updateMessage(thread, false);
-			DBFactory.getInstance().commit();// before sending async event
+			dbInstance.commit();// before sending async event
 			
 			hideThreadButton.setVisible(false);
 			showThreadButton.setVisible(!guestOnly);
@@ -1234,7 +1244,7 @@ public class MessageListController extends BasicController implements GenericEve
 			status.setHidden(false);
 			thread.setStatusCode(Status.getStatusCode(status));
 			thread = forumManager.updateMessage(thread, true);
-			DBFactory.getInstance().commit();// before sending async event
+			dbInstance.commit();// before sending async event
 			
 			hideThreadButton.setVisible(!guestOnly);
 			showThreadButton.setVisible(false);
@@ -1453,7 +1463,7 @@ public class MessageListController extends BasicController implements GenericEve
 			Message parentMessage = forumManager.getMessageById(parentMessageKey);
 			message = forumManager.moveMessage(message, parentMessage);
 			markRead(message);
-			DBFactory.getInstance().commit();//commit before sending event
+			dbInstance.commit();//commit before sending event
 			
 			ThreadLocalUserActivityLogger.log(ForumLoggingAction.FORUM_MESSAGE_MOVE, getClass(), LoggingResourceable.wrap(message));
 			Long threadKey = parentMessage.getThreadtop() == null ? parentMessage.getKey() : parentMessage.getThreadtop().getKey();
@@ -1506,37 +1516,70 @@ public class MessageListController extends BasicController implements GenericEve
 		@Override
 		public MediaResource handle(String relPath, HttpServletRequest request) {
 			String[] query = relPath.split("/"); // expected path looks like this /messageId/attachmentUUID/filename
+			
+			MediaResource resource = null;
 			if (query.length == 4) {
-				try {
-					Long mId = Long.valueOf(Long.parseLong(query[1]));
-					MessageView view = null;
-					for (MessageView m : backupViews) {
-						// search for message in current message map
-						if (m.getKey().equals(mId)) {
-							view = m;
-							break;
-						}
+				MessageView view = getView(query[1]);
+				if (view != null) {
+					if("media".equals(query[2])) {
+						resource = getMedia(view, query[3]);
+					} else {
+						resource = getThumbnail(view, query[2]);
 					}
-					if (view != null) {
-						List<VFSItem> attachments = view.getAttachments();
-						for (VFSItem vfsItem : attachments) {
-							VFSMetadata meta = vfsItem.getMetaInfo();
-							if (meta instanceof VFSLeaf && meta.getUuid().equals(query[2])) {
-								VFSLeaf thumb = vfsRepositoryService.getThumbnail((VFSLeaf)vfsItem, meta, 200, 200, false);
-								if(thumb != null) {
-									// Positive lookup, send as response
-									return new VFSMediaResource(thumb);
-								}
-								break;
-							}
-						}
-					}
-				} catch (NumberFormatException e) {
-					//
 				}
 			}
 			// In any error case, send not found
-			return new NotFoundMediaResource();
+			if(resource == null) {
+				resource = new NotFoundMediaResource();
+			}
+			return resource;
+		}
+		 
+		private MessageView getView(String queryParam) {
+			MessageView view = null;
+			try {
+				Long mId = Long.valueOf(Long.parseLong(queryParam ));
+				for (MessageView m : backupViews) {
+					// search for message in current message map
+					if (m.getKey().equals(mId)) {
+						view = m;
+						break;
+					}
+				}
+			} catch (NumberFormatException e) {
+				//
+			}
+			return view;
+		}
+		
+		private MediaResource getMedia(MessageView view, String queryParam) {
+			VFSContainer messageContainer = view.getMessageContainer();
+			if(messageContainer == null) return null;
+			VFSItem mediaItem = messageContainer.resolve("media");
+			if(mediaItem instanceof VFSContainer) {
+				VFSContainer mediaContainer = (VFSContainer)mediaItem;
+				VFSItem media = mediaContainer.resolve(queryParam);
+				if(media instanceof VFSLeaf) {
+					return new VFSMediaResource((VFSLeaf)media);
+				}
+			}
+			return null;
+		}
+		
+		private MediaResource getThumbnail(MessageView view, String queryParam) {
+			List<VFSLeaf> attachments = view.getAttachments();
+			for (VFSLeaf attachment : attachments) {
+				VFSMetadata meta = attachment.getMetaInfo();
+				if (meta.getUuid().equals(queryParam)) {
+					VFSLeaf thumb = vfsRepositoryService.getThumbnail(attachment, meta, 200, 200, false);
+					if(thumb != null) {
+						// Positive lookup, send as response
+						return new VFSMediaResource(thumb);
+					}
+					break;
+				}
+			}
+			return null;
 		}
 	}
 }

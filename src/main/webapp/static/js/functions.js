@@ -9,6 +9,7 @@ OPOL = {};
 //used to mark form dirty and warn user to save first.
 var o2c=0;
 var o3c=new Array();//array holds flexi.form id's
+var o2cExclusions=new Array();
 // o_info is a global object that contains global variables
 o_info.guibusy = false;
 o_info.linkbusy = false;
@@ -251,6 +252,11 @@ var BFormatter = {
 		} catch(e) {
 			if (window.console) console.log("error in BFormatter.alignTableColumns: ", e);
 		}	
+	},
+	// Format bytes in a human readable format
+	formatBytes : function(size) {
+	    var i = Math.floor( Math.log(size) / Math.log(1024) );
+	    return ( size / Math.pow(1024, i) ).toFixed(2) * 1 + ' ' + ['B', 'kB', 'MB', 'GB', 'TB'][i];
 	}
 };
 
@@ -329,7 +335,7 @@ function o2cl() {
 		if (o_info.linkbusy) {
 			return false;
 		} else {
-			var doreq = (o2c==0 || confirm(o_info.dirty_form));
+			var doreq = (!isFlexiFormDirty() || confirm(o_info.dirty_form));
 			if (doreq) o_beforeserver();
 			return doreq;
 		}
@@ -345,7 +351,7 @@ function o2cl_dirtyCheckOnly() {
 		if (o_info.linkbusy) {
 			return false;
 		} else {
-			return (o2c==0 || confirm(o_info.dirty_form));
+			return (!isFlexiFormDirty() || confirm(o_info.dirty_form));
 		}
 	} catch(e) {
 		if(window.console) console.log(e);
@@ -383,7 +389,7 @@ function o_onc(response) {
 	var te = response.responseText;
 	BLoader.executeGlobalJS("o_info.last_o_onc="+te+";", 'o_onc');
 	//asynchronous! from polling
-	o_ainvoke(o_info.last_o_onc,false);
+	o_ainvoke(o_info.last_o_onc);
 }
 
 function o_allowNextClick() {
@@ -404,18 +410,15 @@ Array.prototype.search = function(s,q){
     if(this[i].constructor == Array){
       if(this[i].search(s,q)){
         return true;
-        break;
       }
      } else {
        if(q){
          if(this[i].indexOf(s) != -1){
            return true;
-           break;
          }
       } else {
         if(this[i]==s){
           return true;
-          break;
         }
       }
     }
@@ -494,6 +497,34 @@ function b_AddOnDomReplacementFinishedUniqueCallback(funct) {
 	b_AddOnDomReplacementFinishedCallback(funct);
 }
 
+function o_postInvoke(r, newWindow) {
+	var cmdcnt = r["cmdcnt"];
+	if (cmdcnt > 0) {
+		var cs = r["cmds"];
+		for (var i=0; i<cmdcnt; i++) {
+			var acmd = cs[i];
+			var co = acmd["cmd"];
+			if(co == 8) {
+				var url = acmd["cda"].nwrurl;
+				if(url == "close-window") {
+					if(newWindow == null) {
+						try {
+							window.close();// try without much hope
+						} catch(e) {
+							//
+						}
+					} else {
+						newWindow.close();
+					}
+				} else if(newWindow != null) {
+					newWindow.location.href = url;
+					newWindow.focus();
+				}
+			}
+		}
+	}
+}
+
 // main interpreter for ajax mode
 var o_debug_trid = 0;
 function o_ainvoke(r) {
@@ -550,6 +581,7 @@ function o_ainvoke(r) {
 								newc = jQuery('#' + newcId);
 								replaceElement = true;
 							}
+							
 							if (newc != null) {
 								var eds = jQuery('div.o_richtext_mce textarea', newc);
 								for(var t=0; t<eds.length; t++) {
@@ -579,6 +611,11 @@ function o_ainvoke(r) {
 									} catch(e) {
 										if(window.console) console.log(e);
 									}
+								}
+								
+								var videos = jQuery('div.o_video_run video', newc);
+								if(videos.length > 0) {
+									destroyRunningVideos(videos);
 								}
 								
 								if(civis) { // needed only for ie 6/7 bug where an empty div requires space on screen
@@ -782,24 +819,24 @@ function setFormDirty(formId) {
 
 //Pop-up window for context-sensitive help
 function contextHelpWindow(URI) {
-	helpWindow = window.open(URI, "HelpWindow", "height=760, width=940, left=0, top=0, location=no, menubar=no, resizable=yes, scrollbars=yes, toolbar=no");
+	var helpWindow = window.open(URI, "HelpWindow", "height=760, width=940, left=0, top=0, location=no, menubar=no, resizable=yes, scrollbars=yes, toolbar=no");
 	helpWindow.focus();
 }
 
 function o_openPopUp(url, windowname, width, height, menubar) {
 	// generic window popup function
-	attributes = "height=" + height + ", width=" + width + ", resizable=yes, scrollbars=yes, left=100, top=100, ";
+	var attributes = "height=" + height + ", width=" + width + ", resizable=yes, scrollbars=yes, left=100, top=100, ";
 	if (menubar) {
 		attributes += "location=yes, menubar=yes, status=yes, toolbar=yes";
 	} else {
-		attributes += "location=no, menubar=no, status=no, toolbar=no";
+		attributes += "location=no, menubar=no,status=no,toolbar=no";
 	}
 
 	var win;
 	try {
 		win = window.open(url, windowname, attributes);
 	} catch(e) {
-		win = window.open(url, 'OpenOLAT', attributes);
+		win = window.open(url, 'OpenOlat', attributes);
 	}
 	
 	win.focus();
@@ -820,11 +857,11 @@ function b_handleFileUploadFormChange(fileInputElement, fakeInputElement, saveBu
 
 	fileInputElement.setCustomValidity('');
 
+	var fileSize = formInputFileSize(fileInputElement);
 	if (fileInputElement.hasAttribute('data-max-size')) {
 		// check if the file selected does satisfy the max-size constraint
 		var maxSize = fileInputElement.getAttribute('data-max-size');
 		if (maxSize) {
-			var fileSize = formInputFileSize(fileInputElement);
 			if (fileSize > maxSize) {
 				// show a validation error message, reset the fileInputElement and stop processing
 				// to prevent unneeded uploads of potentially really big files
@@ -859,18 +896,41 @@ function b_handleFileUploadFormChange(fileInputElement, fakeInputElement, saveBu
 	if (slashPos != -1) {
 		fileName=fileName.substring(slashPos + 1); 
 	}
-	fakeInputElement.value=fileName;
-	// mark save button as dirty
-	if (saveButton) {
-		saveButton.className='o_button_dirty'
+	// add file name to fake input field
+	if (fakeInputElement) {		
+		fakeInputElement.value=fileName;
+	} else {
+		// in drop-down mode, add filename above input field
+		var fileSizeFormatted = fileSize;
+		if(fileSize < 250 * 1024) {
+			fileSizeFormatted = (fileSize / 1024).toFixed(1) + " KB";
+		} else if(fileSize < 250 * 1024 * 1024) {
+			fileSizeFormatted = (fileSize / 1024 / 1024).toFixed(1) + " MB";
+		} else {
+			fileSizeFormatted = (fileSize / 1024 / 1024 / 1024).toFixed(1) + " GB";
+		}
+		var inputWrapperEl = jQuery(fileInputElement).parent();
+		var fileHtml = "<div class='o_filemeta'><i class='o_icon o_icon-fw o_filetype_file'> </i> " + fileName + " <span class='text-muted o_filesize'>(" + fileSizeFormatted + ")</span></div>";
+		var existingFileEl = inputWrapperEl.parent().find('.o_file');
+		if (existingFileEl.length == 0) {
+			jQuery(fileHtml).insertBefore(inputWrapperEl);						
+		} else {
+			jQuery(existingFileEl[0]).replaceWith(fileHtml);			
+		}
+		
 	}
 	// set focus to next element if available
 	var elements = fileInputElement.form.elements;
+	var fileInputCheckElement = (fakeInputElement ? fakeInputElement : fileInputElement);
 	for (i=0; i < elements.length; i++) {
 		var elem = elements[i];
-		if (elem.name == fakeInputElement.name && i+1 < elements.length) {
+		if (elem.name == fileInputCheckElement.name && i+1 < elements.length) {
 			elements[i+1].focus();
 		}
+	}
+	// mark save button as dirty
+	if (saveButton) {
+		saveButton.className='o_button_dirty'
 	}
 }
 
@@ -913,6 +973,20 @@ function gotonode(nodeid) {
 		}
 	} catch (e) {
 		alert('Goto node error:' + e);
+	}
+}
+
+function gototool(toolname) {
+	try {
+		if (typeof o_activateCourseTool != 'undefined') {
+			o_activateCourseTool(toolname);
+		} else {
+			if (opener && typeof opener.o_activateCourseTool != 'undefined') {
+				opener.o_activateCourseTool(toolname);
+			}
+		}
+	} catch (e) {
+		alert('Goto tool error:' + e);
 	}
 }
 
@@ -985,7 +1059,7 @@ OPOL.adjustHeight = function() {
 		var col2 = col2El.length == 0 ? 0 : col2El.outerHeight(true);
 		var col3El = jQuery('#o_main_center_content');
 		var col3 = col3El.length == 0 ? 0 : col3El.outerHeight(true);
-
+		
 		var contentHeight = Math.max(col1, col2, col3);
 		// Assign new column height
 		if (col1El.length > 0) {
@@ -1001,6 +1075,50 @@ OPOL.adjustHeight = function() {
 		if(window.console)	console.log(e);
 	}
 };
+
+/**
+ * Method to make the center content larger if it contains an element that does not have enough 
+ */
+OPOL.adjustContentHeightForAbsoluteElement = function(itemDomSelector) {
+	try {
+		var itemsDom = jQuery(itemDomSelector);
+		if(itemsDom.length == 0) {
+			// Element not found in DOM
+			return;
+		}
+		itemsDom = jQuery(itemsDom[0]);
+		var mainDom = itemsDom.closest('#o_main_center_content_inner');
+		if(mainDom == null) {
+			// Not within center column, nothing to adjust
+			return;
+		}
+		// Current available height
+		mainDom = jQuery(mainDom);
+		var mainOffset = mainDom.offset();
+		var mainHeight = mainDom.outerHeight(true);
+		var availableHeight = mainOffset.top + mainHeight;
+		
+		// Calculate minimum required height based on the position of the previous DOM element 
+		// (e.g. the pull-down button). Absolute positioned element have not offset
+		var prevDom = itemsDom.prev();
+		if (prevDom.length == 0) { 
+			// No previous element, don't know what to do
+			return;
+		}
+		var prevOffset = prevDom.offset();
+		var prevHeight = prevDom.outerHeight(true);
+		var itemsHeight = itemsDom.outerHeight(true);
+		var requiredHeight = prevOffset.top + prevHeight + itemsHeight;
+		// Check if entire element fits into main element, if not enlarge
+		var missingHeight = (requiredHeight - availableHeight);
+		if (missingHeight > 0) {
+			var newHeight = (mainHeight + missingHeight) + 'px';
+			mainDom.css('min-height', newHeight);
+		}			
+	} catch (e) {
+		if(window.console)	console.log(e);
+	}
+}
 
 /* Set the container page width to full width of the window or use standard page width */
 OPOL.setContainerFullWidth = function(full) {
@@ -1156,7 +1274,7 @@ function b_resizeIframeToMainMaxHeight(iframeId) {
 		potentialHeight = potentialHeight - theIframe.offset().top;
 		// resize now
 		var height = (potentialHeight > colsHeight ? potentialHeight : colsHeight);
-		theIframe.height(height);
+		theIframe.height(height);			
 	}
 }
 // for gui debug mode
@@ -1269,6 +1387,15 @@ function o_ffEvent(formNam, dispIdField, dispId, eventIdField, eventInt){
 			formValid = false;
 		});
 	if (formValid) {
+		if(arguments.length > 4) {
+			for(var j=4; j<arguments.length; j++) {
+				if(arguments[j] == "oo-opennewwindow-oo") {
+					o_info.newWindow = window.open("","_blank");
+					o_info.newWindow.blur();
+				}
+			}
+		}
+		
 		var enctype = form.attr('enctype');
 		if(enctype && enctype.indexOf("multipart") == 0) {
 			form.submit(); // jQuery send onsubmit events
@@ -1296,21 +1423,72 @@ function o_TableMultiActionEvent(formNam, action){
 }
 
 function o_XHRSubmit(formNam) {
+	if(o_info.submit="submit" && jQuery('#' + formNam + " button.btn.o_new_window").length >= 1) {
+		if(typeof o_info.newWindow === "undefined" || o_info.newWindow == null) {
+			o_info.newWindow = window.open("","_blank");
+			o_info.newWindow.blur();
+		}
+	}
+	
+	o_info.submit=null;
+	var newWindow = o_info.newWindow;
+	o_info.newWindow = null;
 	if(o_info.linkbusy) {
+		if(newWindow !== "undefined" && newWindow != null) {
+			newWindow.close();
+		}
 		return false;
 	}
 
 	o_beforeserver();
-	var push = true;
+	var thisWindow = window;
 	var form = jQuery('#' + formNam);
 	var enctype = form.attr('enctype');
 	if(enctype && enctype.indexOf("multipart") == 0) {
-		var iframeName = "openolat-submit-" + ("" + Math.random()).substr(2);
-		var iframe = o_createIFrame(iframeName);
-		document.body.appendChild(iframe);
-		form.attr('target', iframe.name);
-		return true;
+		if (window.FormData && ("upload" in (jQuery.ajaxSettings.xhr())) && !('ActiveXObject' in window)) {
+			if(typeof top.tinymce !== 'undefined') {
+				top.tinymce.triggerSave(true,true);
+			}
+	
+			// Send files via XHR and show upload progress
+			var formData = new FormData(form[0]);	
+			var targetUrl = form.attr("action");
+			jQuery.ajax(targetUrl,{
+				xhr: function() {
+					var xhr = new window.XMLHttpRequest();						
+					xhr.upload.addEventListener("loadstart", o_XHRLoadstart, false);
+					xhr.upload.addEventListener("progress", o_XHRProgress, false);
+					xhr.upload.addEventListener("loadend", o_XHRLoadend, false);
+					return xhr;
+			    },
+				type:'POST',
+				data: formData,
+				cache: false,
+				contentType: false,
+				enctype: 'multipart/form-data',
+			    processData: false,
+				dataType: 'json',
+				success: function(returnedData, textStatus, jqXHR) {
+					o_onXHRSuccess(returnedData, textStatus, jqXHR);
+					if(newWindow !== "undefined" && newWindow != null) {
+						o_postInvoke(returnedData, newWindow);
+					} else {
+						o_postInvoke(returnedData, thisWindow);
+					}
+				},
+				error: o_onXHRError
+			});
+			return false;
+		} else {
+			// iframe fallback for very old browsers without upload progress. Subject to be removed in future OO releses
+			var iframeName = "openolat-submit-" + ("" + Math.random()).substr(2);
+			var iframe = o_createIFrame(iframeName);
+			document.body.appendChild(iframe);
+			form.attr('target', iframe.name);
+			return true;
+		}
 	} else {
+		// Normal non-multipart forms
 		var data = form.serializeArray();
 		if(arguments.length > 1) {
 			var argLength = arguments.length;
@@ -1323,33 +1501,72 @@ function o_XHRSubmit(formNam) {
 				}
 			}
 		}
-
-		var targetUrl = form.attr("action");
-		jQuery.ajax(targetUrl,{
+	
+		var actionUrl = form.attr("action");
+		jQuery.ajax(actionUrl, {
 			type:'POST',
 			data: data,
 			cache: false,
 			dataType: 'json',
-			success: function(data, textStatus, jqXHR) {
-				try {
-					o_ainvoke(data);
-					if(push) {
-						var businessPath = data['businessPath'];
-						var documentTitle = data['documentTitle'];
-						var historyPointId = data['historyPointId'];
-						if(businessPath) {
-							o_pushState(historyPointId, documentTitle, businessPath);
-						}
-					}
-				} catch(e) {
-					if(window.console) console.log(e);
-				} finally {
-					o_afterserver();
+			success: function(returnedData, textStatus, jqXHR) {
+				o_onXHRSuccess(returnedData, textStatus, jqXHR);
+				if(newWindow !== "undefined" && newWindow != null) {
+					o_postInvoke(returnedData, newWindow);
+				} else {
+					o_postInvoke(returnedData, thisWindow);
 				}
 			},
 			error: o_onXHRError
 		});
 		return false;
+	}
+}
+
+function o_XHRLoadstart(evt) {
+	// Do only once: remove spinner and show upload progress 
+	jQuery('#o_ajax_progress').show();
+	jQuery('#o_ajax_busy .o_icon_busy').hide();
+	o_info.ajaxBusyLastProgress = Date.now();
+}
+function o_XHRProgress(evt) {
+    if (evt.lengthComputable) {
+        var percentComplete = Math.floor((evt.loaded / evt.total) * 100);
+        // only upldate UI once in a while, painting is a lot slower than progress updates
+        var now = Date.now();
+		if (now - o_info.ajaxBusyLastProgress > 100) {        			
+			o_info.ajaxBusyLastProgress = now;
+			jQuery('#o_ajax_busy .progress-bar').attr('aria-valuenow', percentComplete).css('width', percentComplete + '%');        		
+			jQuery('#o_ajax_progress .o_progress_info').text(BFormatter.formatBytes(evt.loaded) + '  /  ' + BFormatter.formatBytes(evt.total));        	
+		}
+		if (percentComplete == 100) {
+			// Cleanup now, even when on server side something is still working
+			o_XHRLoadend();
+		}
+    }
+}
+function o_XHRLoadend() {
+	// Upload done, reset progress bar and activate spinner again to indicated server activity
+    jQuery('#o_ajax_busy .progress-bar').attr('aria-valuenow', 0).css('width', 0 + '%');        		
+	jQuery('#o_ajax_progress').hide();
+	jQuery('#o_ajax_busy .o_icon_busy').show();   	
+	jQuery('#o_ajax_progress .o_progress_info').text('');
+	o_info.ajaxBusyLastProgress = null;
+}
+
+
+function o_onXHRSuccess (data, textStatus, jqXHR) {
+	try {	
+		o_ainvoke(data);
+		var businessPath = data['businessPath'];
+		var documentTitle = data['documentTitle'];
+		var historyPointId = data['historyPointId'];
+		if(businessPath) {
+			o_pushState(historyPointId, documentTitle, businessPath);
+		}
+	} catch(e) {
+		if(window.console) console.log(e);
+	} finally {
+		o_afterserver();
 	}
 }
 
@@ -1381,7 +1598,7 @@ function o_showFormDirtyDialog(onIgnoreCallback) {
 }
 
 function o_ffXHREvent(formNam, dispIdField, dispId, eventIdField, eventInt, dirtyCheck, push, submit) {
-	if(dirtyCheck && o2c==1) {
+	if(dirtyCheck && isFlexiFormDirty()) {
 		// Copy function arguments and set the dirtyCheck to false for execution in callback.
 		// Note that the argument list is dynamic, there are potentially more arguments than
 		// listed in the function (e.g. in QTI2)
@@ -1393,11 +1610,14 @@ function o_ffXHREvent(formNam, dispIdField, dispId, eventIdField, eventInt, dirt
 		}
 		return o_showFormDirtyDialog(onIgnoreCallback);
 	} else {
+		// Start event execution, start server to prevent concurrent executions of other events.
+		// This check will call o_beforeserver(). 
+		// o_afterserver() called when AJAX call terminates
 		if(!o2cl_noDirtyCheck()) return false;
 	}	
-	// Start event execution, start server to prevend concurrent executions of other events. 
-	// o_afterserver() called when AJAX call terminates
-	o_beforeserver();
+	// Don't call o_beforeserver() here because already called in o2cl_noDirtyCheck()
+	// The window.suppressOlatOnUnloadOnce works only once (needed in SCORM).
+	// o_beforeserver();
 	
 	var data = new Object();
 	if(submit) {
@@ -1410,17 +1630,29 @@ function o_ffXHREvent(formNam, dispIdField, dispId, eventIdField, eventInt, dirt
 				data[nameValue.name] = nameValue.value;
 			}
 		}
+	} else {
+		data['_csrf'] = jQuery('#' + formNam + " input[name='_csrf']").val();
 	}
 	
+	var openInNewWindow = false;
 	data['dispatchuri'] = dispId;
 	data['dispatchevent'] = eventInt;
 	if(arguments.length > 8) {
 		var argLength = arguments.length;
-		for(var i=8; i<argLength; i=i+2) {
-			if(argLength > i+1) {
-				data[arguments[i]] = arguments[i+1];
+		for(var j=8; j<argLength; j=j+2) {
+			if(argLength > j+1) {
+				data[arguments[j]] = arguments[j+1];
+				if(arguments[j] == "oo-opennewwindow-oo") {
+					openInNewWindow = true;
+				}
 			}
 		}
+	}
+	
+	var newTargetWindow = null;
+	if(openInNewWindow) {
+		newTargetWindow = window.open("","_blank");
+		newTargetWindow.blur();
 	}
 	
 	var targetUrl = jQuery('#' + formNam).attr("action");
@@ -1429,17 +1661,19 @@ function o_ffXHREvent(formNam, dispIdField, dispId, eventIdField, eventInt, dirt
 		data: data,
 		cache: false,
 		dataType: 'json',
-		success: function(data, textStatus, jqXHR) {
+		success: function(responseData, textStatus, jqXHR) {
 			try {
-				o_ainvoke(data);
+				o_ainvoke(responseData);
 				if(push) {
-					var businessPath = data['businessPath'];
-					var documentTitle = data['documentTitle'];
-					var historyPointId = data['historyPointId'];
+					var businessPath = responseData['businessPath'];
+					var documentTitle = responseData['documentTitle'];
+					var historyPointId = responseData['historyPointId'];
 					if(businessPath) {
 						o_pushState(historyPointId, documentTitle, businessPath);
 					}
 				}
+				
+				o_postInvoke(responseData, newTargetWindow);
 			} catch(e) {
 				if(window.console) console.log(e);
 			} finally {
@@ -1454,6 +1688,12 @@ function o_ffXHRNFEvent(formNam, dispIdField, dispId, eventIdField, eventInt) {
 	var data = new Object();
 	data['dispatchuri'] = dispId;
 	data['dispatchevent'] = eventInt;
+	
+	var csrfEl = jQuery('#' + formNam + " input[name='_csrf']");
+	if(csrfEl != null && csrfEl.length > 0) {
+		data['_csrf'] = csrfEl.val();
+	}
+	
 	if(arguments.length > 5) {
 		var argLength = arguments.length;
 		for(var i=5; i<argLength; i=i+2) {
@@ -1485,7 +1725,7 @@ function o_XHRWikiEvent(link) {
 }
 
 function o_XHREvent(targetUrl, dirtyCheck, push) {
-	if(dirtyCheck && o2c==1) {
+	if(dirtyCheck && isFlexiFormDirty()) {
 		// Copy function arguments and set the dirtyCheck to false for execution in callback.
 		// Note that the argument list is dynamic, there are potentially more arguments than
 		// listed in the function
@@ -1497,35 +1737,49 @@ function o_XHREvent(targetUrl, dirtyCheck, push) {
 		}
 		return o_showFormDirtyDialog(onIgnoreCallback);		
 	} else {
+		// Start event execution, start server to prevent concurrent executions of other events.
+		// This check will call o_beforeserver(). 
+		// o_afterserver() called when AJAX call terminates
 		if(!o2cl_noDirtyCheck()) return false;
-	}
-	// Start event execution, start server to prevend concurrent executions of other events. 
-	// o_afterserver() called when AJAX call terminates
-	o_beforeserver();
-	
+	}	
+	// Don't call o_beforeserver() here because already called in o2cl_noDirtyCheck()
+	// The window.suppressOlatOnUnloadOnce works only once (needed in SCORM).
+	// o_beforeserver();
+
 	var data = new Object();
+	var openInNewWindow = false;
 	if(arguments.length > 3) {
 		var argLength = arguments.length;
 		for(var i=3; i<argLength; i=i+2) {
 			if(argLength > i+1) {
 				data[arguments[i]] = arguments[i+1];
+				if(arguments[i] == "oo-opennewwindow-oo") {
+					openInNewWindow = true;
+				}
 			}
 		}
 	}
 	
+	var targetWindow = null;
+	if(openInNewWindow) {
+		targetWindow = window.open("","_blank");
+		targetWindow.blur();
+	} else {
+		targetWindow = window;
+	}
+
 	jQuery.ajax(targetUrl,{
 		type:'POST',
 		data: data,
 		cache: false,
 		dataType: 'json',
-		success: function(data, textStatus, jqXHR) {
+		success: function(responseData, textStatus, jqXHR) {
 			try {
-				
 				if(push) {
 					try {
-						var businessPath = data['businessPath'];
-						var documentTitle = data['documentTitle'];
-						var historyPointId = data['historyPointId'];
+						var businessPath = responseData['businessPath'];
+						var documentTitle = responseData['documentTitle'];
+						var historyPointId = responseData['historyPointId'];
 						if(businessPath) {
 							// catch separately - nothing must fail here!
 							o_pushState(historyPointId, documentTitle, businessPath);
@@ -1534,7 +1788,8 @@ function o_XHREvent(targetUrl, dirtyCheck, push) {
 						if(window.console) console.log(e);
 					}
 				}
-				o_ainvoke(data);
+				o_ainvoke(responseData);
+				o_postInvoke(responseData, targetWindow);
 			} catch(e) {
 				if(window.console) console.log(e);
 			} finally {
@@ -1578,7 +1833,7 @@ function o_onXHRError(jqXHR, textStatus, errorThrown) {
 		var msg = o_info.oo_noresponse.replace("reload.html", window.document.location.href);
 		showMessageBox('error', o_info.oo_noresponse_title, msg, undefined);
 	} else if(window.console) {
-		console.log('Error status 2', textStatus, errorThrown, jqXHR.responseText);
+		console.log('Error status 2', jqXHR.status, textStatus, errorThrown, jqXHR.responseText);
 		console.log(jqXHR);
 	}
 }
@@ -1649,6 +1904,38 @@ function checkDrakes() {
 	}
 }
 
+function destroyRunningVideos(videos) {
+	try {
+		if(videos !== "undefined" && videos != null && videos.length > 0) {
+			videos.each(function(index, el) {
+				// try to stop media element player
+				try {
+					if(this.player) {
+						this.player.setMuted(true);
+						this.player.pause();
+						this.player.remove();
+					} else {
+						if(window.console) console.log('Not found');
+					} 
+				} catch(e) {
+					if(window.console) console.log(e);
+				}
+				
+				// try to unload video element
+				try {
+					el.pause();
+					el.removeAttribute('src'); // empty source
+					el.load();
+				} catch(e) {
+					if(window.console) console.log(e);
+				}
+			});
+		}
+	} catch(e) {
+		if(window.console) console.log(e);
+	}
+}
+
 //try to mimic the FileUtils.normalizeFilename method
 function o_normalizeFilename(filename) {
 	filename = filename.replace(/\s/g, "_")
@@ -1693,14 +1980,42 @@ function setFlexiFormDirty(formId, hideMessage){
 	});
 }
 
-//
-//
+function isFlexiFormDirty() {
+	if(o2c == 1) {
+		for (var i=0; i<o2cExclusions.length; i++) {
+	        if(document.getElementById(o2cExclusions[i]) != null) {
+	        	return false;
+	        }
+	    }
+		return true;
+	}
+	return false;
+}
+
+function addFormDirtyExclusion(elementId) {
+	for (var i=0; i<o2cExclusions.length; i++) {
+        if (o2cExclusions[i] === elementId) {
+            return;
+        }
+    }
+	
+	o2cExclusions.push(elementId);
+}
+
+function o_submitByEnter(event) {
+	if(event.which == 13) {
+		o_info.submit="submit"
+	} else {
+		o_info.submit=null;
+	}
+}
+
 function o_ffRegisterSubmit(formId, submElmId){
 	jQuery('#'+formId).data('FlexiSubmit', submElmId);
 }
 
 function dismissInfoBox(uuid) {
-	javascript:jQuery('#' + uuid).remove();
+	jQuery('#' + uuid).remove();
 	return true;
 }
 /*
@@ -2146,8 +2461,11 @@ var OOEdusharing = {
 		return html;
 	},
 	
-	replaceWithRendered: function(node, identifier, width, height, esClass, showLicense, showInfos, isIFrame) {
+	replaceWithRendered: function(node, identifier, version, width, height, esClass, showLicense, showInfos, isIFrame) {
 		var url = o_info.uriprefix.replace("auth", "edusharing") + "render?identifier=" + identifier;
+		if (version >= 0) {
+			url = url + "&version=" + version;
+		}
 		if (width > 0) {
 			url = url + "&width=" + width;
 		}
@@ -2181,6 +2499,7 @@ var OOEdusharing = {
 				var goToData = OOEdusharing.replaceGoTo(data, identifier);
 				var esNode = container.append(goToData);
 				node.replaceWith(esNode);
+				OPOL.adjustContentHeightForAbsoluteElement('.o_edusharing_container .edusharing_metadata_wrapper');
 			},
 			error : function(XMLHttpRequest, textStatus, errorThrown) {
 				node.replaceWith("<div class='o_warning'>edu-sharing not available</div>");
@@ -2190,6 +2509,7 @@ var OOEdusharing = {
 		
 	replace: function(node, isIFrame) {
 		var identifier = node.data("es_identifier");
+		var version = node.data("es_version");
 		var width = node.attr("width");
 		var height = node.attr("height");
 		var esClass = node.attr('class');
@@ -2197,7 +2517,7 @@ var OOEdusharing = {
 		var showInfos = node.data("es_show_infos");
 		
 		var spinner = OOEdusharing.replaceWithSpinner(node, width, height);
-		OOEdusharing.replaceWithRendered(spinner, identifier, width, height, esClass, showLicense, showInfos, isIFrame);
+		OOEdusharing.replaceWithRendered(spinner, identifier, version, width, height, esClass, showLicense, showInfos, isIFrame);
 	},
 	
 	/**

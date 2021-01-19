@@ -22,6 +22,7 @@ package org.olat.modules.quality.generator.ui;
 import java.util.Date;
 import java.util.List;
 
+import org.apache.logging.log4j.Logger;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
 import org.olat.core.gui.components.dropdown.Dropdown;
@@ -45,6 +46,7 @@ import org.olat.core.gui.control.generic.dtabs.Activateable2;
 import org.olat.core.id.Organisation;
 import org.olat.core.id.context.ContextEntry;
 import org.olat.core.id.context.StateEntry;
+import org.olat.core.logging.Tracing;
 import org.olat.modules.quality.generator.QualityGenerator;
 import org.olat.modules.quality.generator.QualityGeneratorService;
 import org.olat.modules.quality.ui.GeneratorReportAccessController;
@@ -60,6 +62,8 @@ import org.springframework.beans.factory.annotation.Autowired;
  */
 public class GeneratorController extends BasicController implements TooledController, Activateable2 {
 
+	private static final Logger log = Tracing.createLoggerFor(GeneratorController.class);
+
 	private Dropdown enableDropdown;
 	private Link enableLink;
 	private Link disableLink;
@@ -67,13 +71,15 @@ public class GeneratorController extends BasicController implements TooledContro
 	private Link configurationLink;
 	private Link reportAccessLink;
 	private Link whiteListLink;
+	private Link blackListLink;
 	private final ButtonGroupComponent segmentButtonsCmp;
 	private final TooledStackedPanel stackPanel;
 	private final StackedPanel mainPanel;
 	
 	private GeneratorEditController configCtrl;
 	private GeneratorReportAccessController reportAccessCtrl;
-	private GeneratorWhiteListController whiteListCtrl;
+	private Controller whiteListCtrl;
+	private Controller blackListCtrl;
 	private CloseableModalController cmc;
 	private GeneratorEnableConfirmationController enableConfirmationCtrl;
 	private GeneratorDisableConfirmationController disableConfirmationCtrl;
@@ -103,6 +109,10 @@ public class GeneratorController extends BasicController implements TooledContro
 		if (generatorService.hasWhiteListController(generator)) {
 			whiteListLink = LinkFactory.createLink("generator.white.list", getTranslator(), this);
 			segmentButtonsCmp.addButton(whiteListLink, false);
+		}
+		if (generatorService.hasBlackListController(generator)) {
+			blackListLink = LinkFactory.createLink("generator.black.list", getTranslator(), this);
+			segmentButtonsCmp.addButton(blackListLink, false);
 		}
 		
 		mainPanel = putInitialPanel(new SimpleStackedPanel("dataCollectionSegments"));
@@ -165,6 +175,8 @@ public class GeneratorController extends BasicController implements TooledContro
 			doOpenReportAccess(ureq);
 		} else if(whiteListLink == source) {
 			doOpenWhiteList(ureq);
+		} else if(blackListLink == source) {
+			doOpenBlackList(ureq);
 		} else if (stackPanel == source && stackPanel.getLastController() == this && event instanceof PopEvent) {
 			PopEvent popEvent = (PopEvent) event;
 			if (popEvent.isClose()) {
@@ -243,6 +255,15 @@ public class GeneratorController extends BasicController implements TooledContro
 		stackPanel.pushController(translate("generator.white.list"), whiteListCtrl);
 		segmentButtonsCmp.setSelectedButton(whiteListLink);
 	}
+	
+	private void doOpenBlackList(UserRequest ureq) {
+		blackListCtrl = generatorService.getBlackListController(ureq, getWindowControl(), secCallback, stackPanel,
+				generator);
+		listenTo(blackListCtrl);
+		stackPanel.popUpToController(this);
+		stackPanel.pushController(translate("generator.black.list"), blackListCtrl);
+		segmentButtonsCmp.setSelectedButton(blackListLink);
+	}
 
 	private void doConfirmEnableGenerator(UserRequest ureq) {
 		if (configCtrl.validateBeforeActivation(ureq)) {
@@ -263,6 +284,7 @@ public class GeneratorController extends BasicController implements TooledContro
 		generator.setEnabled(true);
 		generator.setLastRun(fromDate);
 		generator = generatorService.updateGenerator(generator);
+		log.info("Generator {} enabled by {}", generator, getIdentity());
 		updateUI(ureq);	
 	}
 	

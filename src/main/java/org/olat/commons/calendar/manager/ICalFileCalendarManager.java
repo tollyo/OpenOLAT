@@ -36,7 +36,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.text.ParseException;
@@ -255,9 +254,9 @@ public class ICalFileCalendarManager implements CalendarManager, InitializingBea
 				cal.addEvent(calEvent);
 			} else if (comp instanceof VTimeZone) {
 				log.info("createKalendar: VTimeZone Component is not supported and will not be added to calender");
-				log.debug("createKalendar: VTimeZone=" + comp);
+				log.debug("createKalendar: VTimeZone={}", comp);
 			} else {
-				log.warn("createKalendar: unknown Component=" + comp);
+				log.warn("createKalendar: unknown Component={}", comp);
 			}
 		}
 		return cal;
@@ -270,7 +269,7 @@ public class ICalFileCalendarManager implements CalendarManager, InitializingBea
 	@Override
 	public Calendar readCalendar(String type, String calendarID) {
 		if(log.isDebugEnabled()) {
-			log.debug("readCalendar from file, type=" + type + "  calendarID=" + calendarID);
+			log.debug("readCalendar from file, type={} calendarID={}", type, calendarID);
 		}
 		
 		File calendarFile = getCalendarFile(type, calendarID);
@@ -527,7 +526,7 @@ public class ICalFileCalendarManager implements CalendarManager, InitializingBea
 	}
 	
 	private VEvent getVEvent(KalendarEvent kEvent) {
-		VEvent vEvent = new VEvent();
+		VEvent vEvent;
 		if (!kEvent.isAllDayEvent()) {
 			// regular VEvent
 			DateTime dtBegin = new DateTime(kEvent.getBegin());
@@ -614,8 +613,8 @@ public class ICalFileCalendarManager implements CalendarManager, InitializingBea
 						Url url = new Url();
 						url.setValue(link.getURI());
 						urlOnce = url;
-					} catch (URISyntaxException e) {
-						log.error("Invalid URL:" + link.getURI());
+					} catch (Exception e) {
+						log.error("Invalid URL: {}", link.getURI());
 					}
 				}
 			}
@@ -659,7 +658,7 @@ public class ICalFileCalendarManager implements CalendarManager, InitializingBea
 		String recurenceId = kEvent.getRecurrenceID();
 		if(StringHelper.containsNonWhitespace(recurenceId)) {
 			try {
-				RecurrenceId recurId = new RecurrenceId(tz);
+				RecurrenceId recurId;
 				// VALUE=DATE recurrence id need to be specially saved
 				if(recurenceId.length() < 9) {
 					recurId = new RecurrenceId(tz);
@@ -670,7 +669,7 @@ public class ICalFileCalendarManager implements CalendarManager, InitializingBea
 				
 				vEventProperties.add(recurId);
 			} catch (ParseException e) {
-				log.error("cannot create recurrence ID: " + recurenceId, e);
+				log.error("cannot create recurrence ID: {}", recurenceId, e);
 			}
 		}
 		
@@ -682,7 +681,7 @@ public class ICalFileCalendarManager implements CalendarManager, InitializingBea
 				RRule rrule = new RRule(recur);
 				vEventProperties.add(rrule);
 			} catch (ParseException e) {
-				log.error("cannot create recurrence rule: " + recurrence.toString(), e);
+				log.error("cannot create recurrence rule: {}", recurrence, e);
 			}
 		}
 		
@@ -701,6 +700,9 @@ public class ICalFileCalendarManager implements CalendarManager, InitializingBea
 		// video stream
 		if(StringHelper.containsNonWhitespace(kEvent.getLiveStreamUrl())) {
 			vEventProperties.add(new XProperty(ICAL_X_OLAT_VIDEO_STREAM_URL, kEvent.getLiveStreamUrl()));
+		}
+		if (kEvent.getLiveStreamUrlTemplateKey() != null) {
+			vEventProperties.add(new XProperty(ICAL_X_OLAT_VIDEO_STREAM_URL_TEMPLATE_KEY, kEvent.getLiveStreamUrlTemplateKey().toString()));
 		}
 		
 		return vEvent;
@@ -889,6 +891,10 @@ public class ICalFileCalendarManager implements CalendarManager, InitializingBea
 		if(liveStreamUrl != null) {
 			calEvent.setLiveStreamUrl(liveStreamUrl.getValue());
 		}
+		
+		Property liveStreamUrlTemplateKey = event.getProperty(ICAL_X_OLAT_VIDEO_STREAM_URL_TEMPLATE_KEY);
+		if (liveStreamUrlTemplateKey != null)
+			calEvent.setLiveStreamUrlTemplateKey(Long.parseLong(liveStreamUrlTemplateKey.getValue()));
 		
 		return calEvent;
 	}
@@ -1131,9 +1137,7 @@ public class ICalFileCalendarManager implements CalendarManager, InitializingBea
 	@Override
 	public boolean updateEventFrom(final Kalendar cal, final KalendarEvent kalendarEvent) {
 		OLATResourceable calOres = getOresHelperFor(cal);
-		Boolean updatedSuccessful = CoordinatorManager.getInstance().getCoordinator().getSyncer().doInSync( calOres, () -> {
-			return updateEventAlreadyInSync(cal, kalendarEvent);
-		});
+		Boolean updatedSuccessful = CoordinatorManager.getInstance().getCoordinator().getSyncer().doInSync( calOres, () -> updateEventAlreadyInSync(cal, kalendarEvent));
 		return updatedSuccessful.booleanValue();
     }
 
@@ -1538,7 +1542,7 @@ public class ICalFileCalendarManager implements CalendarManager, InitializingBea
 				RRule rrule = new RRule(recur);
 				return rrule.getValue();
 			} catch (ParseException e) {
-				log.error("cannot create recurrence rule: " + recurrence.toString(), e);
+				log.error("cannot create recurrence rule: {}", recurrence, e);
 			}
 		}
 		

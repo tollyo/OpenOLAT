@@ -188,8 +188,8 @@ public class PageDAO {
 		  .append(" left join page.section as section")
 		  .append(" left join section.binder as binder")
 		  .append(" where exists (select pageMember from bgroupmember as pageMember")
-		  .append("     inner join pageMember.identity as ident on (ident.key=:ownerKey and pageMember.role='").append(PortfolioRoles.owner.name()).append("')")
-		  .append("  	where pageMember.group.key=page.baseGroup.key or pageMember.group.key=binder.baseGroup.key")
+		  .append("   inner join pageMember.identity as ident on (ident.key=:ownerKey and pageMember.role='").append(PortfolioRoles.owner.name()).append("')")
+		  .append("   where pageMember.group.key=page.baseGroup.key or pageMember.group.key=binder.baseGroup.key")
 		  .append(" )");
 
 		List<Long> count = dbInstance.getCurrentEntityManager()
@@ -206,8 +206,8 @@ public class PageDAO {
 		  .append(" left join fetch page.section as section")
 		  .append(" left join fetch section.binder as binder")
 		  .append(" where exists (select pageMember from bgroupmember as pageMember")
-		  .append("     inner join pageMember.identity as ident on (ident.key=:ownerKey and pageMember.role='").append(PortfolioRoles.owner.name()).append("')")
-		  .append("  	where pageMember.group.key=page.baseGroup.key or pageMember.group.key=binder.baseGroup.key")
+		  .append("   inner join pageMember.identity as ident on (ident.key=:ownerKey and pageMember.role='").append(PortfolioRoles.owner.name()).append("')")
+		  .append("   where pageMember.group.key=page.baseGroup.key or pageMember.group.key=binder.baseGroup.key")
 		  .append(" )");
 		if(StringHelper.containsNonWhitespace(searchString)) {
 			searchString = makeFuzzyQueryString(searchString);
@@ -356,7 +356,7 @@ public class PageDAO {
 			.setFirstResult(0)
 			.setMaxResults(1)
 			.getResultList();
-		return counts != null && !counts.isEmpty() && counts.get(0) != null && counts.get(0).intValue() >= 0;
+		return counts != null && !counts.isEmpty() && counts.get(0) != null && counts.get(0).longValue() >= 0;
 	}
 	
 	public List<Page> getLastPages(IdentityRef owner, int maxResults) {
@@ -566,6 +566,8 @@ public class PageDAO {
 		}
 		if(after) {
 			index++;
+		} else if(sibling == null) {
+			index = 0;
 		}
 		
 		List<PagePart> parts = body.getParts();

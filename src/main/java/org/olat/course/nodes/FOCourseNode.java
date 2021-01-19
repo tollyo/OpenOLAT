@@ -25,6 +25,7 @@
 
 package org.olat.course.nodes;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -79,8 +80,7 @@ import org.olat.modules.ModuleConfiguration;
 import org.olat.modules.fo.Forum;
 import org.olat.modules.fo.ForumCallback;
 import org.olat.modules.fo.ForumModule;
-import org.olat.modules.fo.archiver.ForumArchiveManager;
-import org.olat.modules.fo.archiver.formatters.ForumStreamedRTFFormatter;
+import org.olat.modules.fo.archiver.ForumArchive;
 import org.olat.modules.fo.manager.ForumManager;
 import org.olat.properties.Property;
 import org.olat.repository.RepositoryEntry;
@@ -186,9 +186,9 @@ public class FOCourseNode extends AbstractAccessableCourseNode {
 		return new NodeRunConstructionResult(forumC);
 	}
 
-	private boolean isModerator(UserCourseEnvironment userCourseEnv, NodeEvaluation ne) {
+	public boolean isModerator(UserCourseEnvironment userCourseEnv, NodeEvaluation ne) {
 		if (hasCustomPreConditions()) {
-			return ne != null? ne.isCapabilityAccessible("moderator"): false;
+			return ne != null && ne.isCapabilityAccessible("moderator");
 		} else if (getModuleConfiguration().getBooleanSafe(CONFIG_COACH_MODERATE_ALLOWED) && userCourseEnv.isCoach()) {
 			return true;
 		}
@@ -197,7 +197,7 @@ public class FOCourseNode extends AbstractAccessableCourseNode {
 	
 	public boolean isPoster(UserCourseEnvironment userCourseEnv, NodeEvaluation ne) {
 		if (hasCustomPreConditions()) {
-			return ne != null ? ne.isCapabilityAccessible("poster") : false;
+			return ne != null && ne.isCapabilityAccessible("poster");
 		} else if ((getModuleConfiguration().getBooleanSafe(CONFIG_COACH_POST_ALLOWED) && userCourseEnv.isCoach())
 				|| (getModuleConfiguration().getBooleanSafe(CONFIG_PARTICIPANT_POST_ALLOWED) && userCourseEnv.isParticipant())) {
 			return true;
@@ -278,8 +278,7 @@ public class FOCourseNode extends AbstractAccessableCourseNode {
 	private Forum createForum(final CourseEnvironment courseEnv) {
 		final ForumManager fom = CoreSpringFactory.getImpl(ForumManager.class);
 		// creates resourceable from FOCourseNode.class and the current node id as key
-		OLATResourceable courseNodeResourceable = OresHelper.createOLATResourceableInstance(FOCourseNode.class,
-				new Long(getIdent()));
+		OLATResourceable courseNodeResourceable = OresHelper.createOLATResourceableInstance(FOCourseNode.class, Long.valueOf(getIdent()));
 		// o_clusterOK by:ld
 		return CoordinatorManager.getInstance().getCoordinator().getSyncer().doInSync(courseNodeResourceable,
 				new SyncerCallback<Forum>() {
@@ -337,7 +336,7 @@ public class FOCourseNode extends AbstractAccessableCourseNode {
 	@Override
 	public Controller createPreviewController(UserRequest ureq, WindowControl wControl,
 			UserCourseEnvironment userCourseEnv, CourseNodeSecurityCallback nodeSecCallback) {
-		return new FOPreviewController(ureq, wControl, nodeSecCallback.getNodeEvaluation());
+		return new FOPreviewController(ureq, wControl, this, userCourseEnv, nodeSecCallback);
 	}
 
 	@Override
@@ -458,8 +457,14 @@ public class FOCourseNode extends AbstractAccessableCourseNode {
 		String forumName = "forum_" + Formatter.makeStringFilesystemSave(getShortTitle()) + "_"
 				+ Formatter.formatDatetimeFilesystemSave(new Date(System.currentTimeMillis()));
 		forumName = ZipUtil.concat(archivePath, forumName);
-		ForumStreamedRTFFormatter rtff = new ForumStreamedRTFFormatter(exportStream, forumName, false, locale);
-		CoreSpringFactory.getImpl(ForumArchiveManager.class).applyFormatter(rtff, forumKey, null);
+
+		try {
+			Forum forum = loadOrCreateForum(course.getCourseEnvironment());
+			ForumArchive archiver = new ForumArchive(forum, null, locale, null);
+			archiver.export(forumName + ".docx", exportStream);
+		} catch (IOException e) {
+			log.error("", e);
+		}
 		return true;
 	}
 

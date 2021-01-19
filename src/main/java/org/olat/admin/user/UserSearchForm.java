@@ -36,6 +36,7 @@ import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.Event;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.translator.Translator;
+import org.olat.core.id.UserConstants;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.UserSession;
 import org.olat.core.util.Util;
@@ -58,7 +59,9 @@ import org.springframework.beans.factory.annotation.Autowired;
  */
 public class UserSearchForm extends FormBasicController {
 	
-	private final boolean isAdminProps, cancelButton, allowReturnKey;
+	private final boolean isAdminProps;
+	private final boolean cancelButton;
+	private final boolean allowReturnKey;
 	private FormLink searchButton;
 	
 	protected TextElement login;
@@ -112,14 +115,16 @@ public class UserSearchForm extends FormBasicController {
 		// "this e-mail exists already"
 		for (UserPropertyHandler userPropertyHandler : userPropertyHandlers) {
 			FormItem ui = propFormItems.get(userPropertyHandler.getName());
-			String uiValue = userPropertyHandler.getStringValue(ui);
-			// add value for later non-empty search check
-			if (StringHelper.containsNonWhitespace(uiValue)) {
-				full.append(uiValue.trim());
-				filled = true;
+			if(ui != null) {
+				String uiValue = userPropertyHandler.getStringValue(ui);
+				// add value for later non-empty search check
+				if (StringHelper.containsNonWhitespace(uiValue)) {
+					full.append(uiValue.trim());
+					filled = true;
+				}
+	
+				lastFormElement = ui;
 			}
-
-			lastFormElement = ui;
 		}
 
 		// Don't allow searches with * or %  or @ chars only (wild cards). We don't want
@@ -156,17 +161,20 @@ public class UserSearchForm extends FormBasicController {
 		Translator tr = Util.createPackageTranslator(UserPropertyHandler.class, getLocale(),  getTranslator());
 
 		for (UserPropertyHandler userPropertyHandler : userPropertyHandlers) {
-			if (userPropertyHandler == null) continue;
+			if (userPropertyHandler == null || (userPropertyHandler.getName().equals(UserConstants.NICKNAME) && isAdminProps)) {
+				continue;
+			}
 			
 			FormItem fi = userPropertyHandler.addFormItem(getLocale(), null, getClass().getCanonicalName(), false, formLayout);
 			fi.setTranslator(tr);
 			
 			// DO NOT validate email field => see OLAT-3324, OO-155, OO-222
-			if (userPropertyHandler instanceof EmailProperty && fi instanceof TextElement) {
+			if ((userPropertyHandler instanceof EmailProperty || userPropertyHandler.getName().equals(UserConstants.NICKNAME)) 
+					&& fi instanceof TextElement) {
 				TextElement textElement = (TextElement)fi;
 				textElement.setItemValidatorProvider(null);
 			}
-			
+
 			fi.setElementCssClass("o_sel_user_search_".concat(userPropertyHandler.getName().toLowerCase()));
 			propFormItems.put(userPropertyHandler.getName(), fi);
 		}

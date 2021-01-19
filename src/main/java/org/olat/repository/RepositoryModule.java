@@ -55,7 +55,9 @@ public class RepositoryModule extends AbstractSpringModule {
 	private static final String CATALOG_SITE_ENABLED = "site.catalog.enable";
 	private static final String CATALOG_ENABLED = "catalog.enable";
 	private static final String CATALOG_BROWSING_ENABLED = "catalog.brwosing.enable";
-	private static final String CATALOG_ADD_AT_LAST = "catalog.add.last";
+	private static final String CATALOG_MULTI_SELECT_ENABLED = "catalog.multi.select.enable";
+	private static final String CATALOG_ADD_ENTRY_POSITION = "catalog.add.entry.position";
+	private static final String CATALOG_ADD_CATEGORY_POSITION = "catalog.add.catalog.position";
 	private static final String MYCOURSES_SEARCH_ENABLED = "mycourses.search.enabled";
 	private static final String MYCOURSES_ALL_RESOURCES_ENABLED = "mycourses.all.resources.enabled";
 	
@@ -66,6 +68,7 @@ public class RepositoryModule extends AbstractSpringModule {
 	
 	private static final String LIFECYCLE_AUTO_CLOSE = "repo.lifecycle.auto.close";
 	private static final String LIFECYCLE_AUTO_DELETE = "repo.lifecycle.auto.delete";
+	private static final String LIFECYCLE_AUTO_DEFINITIVELY_DELETE = "repo.lifecycle.auto.definitively.delete";
 	private static final String LIFECYCLE_NOTIFICATION_CLOSE_DELETE = "rrepo.lifecylce.notification.close.delete";
 	
 	private static final String TAXONOMY_TREE_KEY = "taxonomy.tree.key";
@@ -76,8 +79,12 @@ public class RepositoryModule extends AbstractSpringModule {
 	private boolean catalogEnabled;
 	@Value("${repo.catalog.browsing.enable}")
 	private boolean catalogBrowsingEnabled;
-	@Value("${catalog.add.last:true}")
-	private boolean catalogAddLast;
+	@Value("${catalog.multi.select.enable:false}")
+	private boolean catalogMultiSelectEnabled;
+	@Value("${catalog.add.entry.position:0}")
+	private int catalogAddEntryPosition;
+	@Value("${catalog.add.category.position:0}")
+	private int catalogAddCategoryPosition;
 	
 	@Value("${repo.managed}")
 	private boolean managedRepositoryEntries;
@@ -94,6 +101,8 @@ public class RepositoryModule extends AbstractSpringModule {
 	private String lifecycleAutoClose;
 	@Value("${repo.lifecycle.auto.delete:}")
 	private String lifecycleAutoDelete;
+	@Value("${repo.lifecycle.auto.definitively.delete:}")
+	private String lifecycleAutoDefinitivelyDelete;
 	@Value("${repo.lifecylce.notification.close.delete:}")
 	private String lifecycleNotificationByCloseDelete;
 	
@@ -161,10 +170,15 @@ public class RepositoryModule extends AbstractSpringModule {
 		if(StringHelper.containsNonWhitespace(catalogRepo)) {
 			catalogEnabled = "true".equals(catalogRepo);
 		}
-		
+
 		String myCourses = getStringPropertyValue(CATALOG_BROWSING_ENABLED, true);
 		if(StringHelper.containsNonWhitespace(myCourses)) {
 			catalogBrowsingEnabled = "true".equals(myCourses);
+		}
+
+		String catalogMultiSelect = getStringPropertyValue(CATALOG_MULTI_SELECT_ENABLED, true);
+		if(StringHelper.containsNonWhitespace(catalogMultiSelect)) {
+			catalogMultiSelectEnabled = "true".equals(catalogMultiSelect);
 		}
 		
 		String myCoursesSearch = getStringPropertyValue(MYCOURSES_SEARCH_ENABLED, true);
@@ -202,6 +216,8 @@ public class RepositoryModule extends AbstractSpringModule {
 			lifecycleAutoDelete = autoDelete;
 		}
 		
+		lifecycleAutoDefinitivelyDelete = getStringPropertyValue(LIFECYCLE_AUTO_DEFINITIVELY_DELETE, lifecycleAutoDefinitivelyDelete);
+		
 		String notificationCloseDelete = getStringPropertyValue(LIFECYCLE_NOTIFICATION_CLOSE_DELETE, true);
 		if(StringHelper.containsNonWhitespace(notificationCloseDelete)) {
 			lifecycleNotificationByCloseDelete = notificationCloseDelete;
@@ -211,11 +227,12 @@ public class RepositoryModule extends AbstractSpringModule {
 		if(StringHelper.containsNonWhitespace(taxonomyTreeKeyObj)) {
 			taxonomyTreeKey = taxonomyTreeKeyObj;
 		}
-		
-		String catalogAddLastObj = getStringPropertyValue(CATALOG_ADD_AT_LAST, true);
-		if(StringHelper.containsNonWhitespace(taxonomyTreeKeyObj)) {
-			catalogAddLast = "true".equals(catalogAddLastObj);
-		}
+
+		// 0 -> Alphabetical
+		// 1 -> Add on top
+		// 2 -> Add on bottom
+		catalogAddEntryPosition = getIntPropertyValue(CATALOG_ADD_ENTRY_POSITION, catalogAddEntryPosition);
+		catalogAddCategoryPosition = getIntPropertyValue(CATALOG_ADD_CATEGORY_POSITION, catalogAddCategoryPosition);
 	}
 
 	/**
@@ -278,14 +295,32 @@ public class RepositoryModule extends AbstractSpringModule {
 		catalogBrowsingEnabled = enabled;
 		setStringProperty(CATALOG_BROWSING_ENABLED, Boolean.toString(enabled), true);
 	}
-	
-	public boolean isCatalogAddAtLast() {
-		return catalogAddLast;
+
+	public boolean isCatalogMultiSelectEnabled() {
+		return catalogMultiSelectEnabled;
 	}
-	
-	public void setCatalogAddAtLast(boolean addAtLast) {
-		catalogAddLast = addAtLast;
-		setStringProperty(CATALOG_ADD_AT_LAST, Boolean.toString(addAtLast), true);
+
+	public void setCatalogMultiSelectEnabled(boolean enabled) {
+		this.catalogMultiSelectEnabled = enabled;
+		setStringProperty(CATALOG_MULTI_SELECT_ENABLED, Boolean.toString(enabled), true);
+	}
+
+	public int getCatalogAddEntryPosition() {
+		return catalogAddEntryPosition;
+	}
+
+	public void setCatalogAddEntryPosition(int position) {
+		catalogAddEntryPosition = position;
+		setIntProperty(CATALOG_ADD_ENTRY_POSITION, position, true);
+	}
+
+	public int getCatalogAddCategoryPosition() {
+		return catalogAddCategoryPosition;
+	}
+
+	public void setCatalogAddCategoryPosition(int position) {
+		catalogAddCategoryPosition = position;
+		setIntProperty(CATALOG_ADD_CATEGORY_POSITION, position, true);
 	}
 
 	public boolean isMyCoursesSearchEnabled() {
@@ -320,7 +355,7 @@ public class RepositoryModule extends AbstractSpringModule {
 			try {
 				return RepositoryEntryAllowToLeaveOptions.valueOf(defaultAllowToLeaveOption);
 			} catch (Exception e) {
-				log.error("Unrecognised option for repo.allow.to.leave: " + defaultAllowToLeaveOption);
+				log.error("Unrecognised option for repo.allow.to.leave: {}", defaultAllowToLeaveOption);
 				return RepositoryEntryAllowToLeaveOptions.atAnyTime;
 			}
 		}
@@ -338,7 +373,7 @@ public class RepositoryModule extends AbstractSpringModule {
 	}
 
 	public String getLifecycleAutoClose() {
-		return lifecycleAutoClose;
+		return "-".equals(lifecycleAutoClose) ? null : lifecycleAutoClose;
 	}
 	
 	public RepositoryEntryLifeCycleValue getLifecycleAutoCloseValue() {
@@ -346,12 +381,12 @@ public class RepositoryModule extends AbstractSpringModule {
 	}
 
 	public void setLifecycleAutoClose(String lifecycleAutoClose) {
-		this.lifecycleAutoClose = lifecycleAutoClose;
-		setStringProperty(LIFECYCLE_AUTO_CLOSE, lifecycleAutoClose, true);
+		this.lifecycleAutoClose = StringHelper.containsNonWhitespace(lifecycleAutoClose) ? lifecycleAutoClose : "-";
+		setStringProperty(LIFECYCLE_AUTO_CLOSE, this.lifecycleAutoClose, true);
 	}
 
 	public String getLifecycleAutoDelete() {
-		return lifecycleAutoDelete;
+		return "-".equals(lifecycleAutoDelete) ? null : lifecycleAutoDelete;
 	}
 	
 	public RepositoryEntryLifeCycleValue getLifecycleAutoDeleteValue() {
@@ -359,10 +394,24 @@ public class RepositoryModule extends AbstractSpringModule {
 	}
 
 	public void setLifecycleAutoDelete(String lifecycleAutoDelete) {
-		this.lifecycleAutoDelete = lifecycleAutoDelete;
-		setStringProperty(LIFECYCLE_AUTO_DELETE, lifecycleAutoDelete, true);
+		this.lifecycleAutoDelete = StringHelper.containsNonWhitespace(lifecycleAutoDelete) ? lifecycleAutoDelete : "-";
+		setStringProperty(LIFECYCLE_AUTO_DELETE, this.lifecycleAutoDelete, true);
 	}
 	
+	public String getLifecycleAutoDefinitivelyDelete() {
+		return "-".equals(lifecycleAutoDefinitivelyDelete) ? null : lifecycleAutoDefinitivelyDelete;
+	}
+	
+	public RepositoryEntryLifeCycleValue getLifecycleAutoDefinitivelyDeleteValue() {
+		return RepositoryEntryLifeCycleValue.parse(lifecycleAutoDefinitivelyDelete);
+	}
+
+	public void setLifecycleAutoDefinitivelyDelete(String lifecycleAutoDefinitivelyDelete) {
+		this.lifecycleAutoDefinitivelyDelete = StringHelper.containsNonWhitespace(lifecycleAutoDefinitivelyDelete) ? lifecycleAutoDefinitivelyDelete: "-";
+		setStringProperty(LIFECYCLE_AUTO_DEFINITIVELY_DELETE, this.lifecycleAutoDefinitivelyDelete, true);
+	}
+	
+
 	public boolean isLifecycleNotificationByCloseDeleteEnabled() {
 		return "enabled".equals(lifecycleNotificationByCloseDelete);
 	}

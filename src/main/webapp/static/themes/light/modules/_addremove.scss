@@ -1,0 +1,23 @@
+.o_addremove_add_active {
+	background-color: $o-addremove-add-color !important;
+
+	&:hover {
+		background-color: darken($o-addremove-add-color, 10%);
+	}
+}
+
+.o_addremove_remove_active {	
+	background-color: $o-addremove-remove-color !important;
+
+	&:hover {
+		background-color: darken($o-addremove-remove-color, 10%);
+	}
+}
+
+.o_badge_added {
+	background-color: $state-success-text;
+}
+
+.o_badge_removed {
+	background-color: $state-danger-text;
+}

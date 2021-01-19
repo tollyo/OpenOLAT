@@ -96,9 +96,6 @@ public class LayoutAdminController extends FormBasicController {
 		initForm(ureq);
 	}
 
-	/**
-	 * @see org.olat.core.gui.components.form.flexible.impl.FormBasicController#initForm(org.olat.core.gui.components.form.flexible.FormItemContainer, org.olat.core.gui.control.Controller, org.olat.core.gui.UserRequest)
-	 */
 	@Override
 	protected void initForm(FormItemContainer formLayout, Controller listener, UserRequest ureq) {
 		//themes
@@ -120,6 +117,7 @@ public class LayoutAdminController extends FormBasicController {
 		themeSelection.addActionListener(FormEvent.ONCHANGE);
 		forceThemeReload = uifactory.addFormLink("forceThemeReload", "form.theme.forceReload", null, themeCont, Link.BUTTON_SMALL);
 		forceThemeReload.setExampleKey("form.theme.forceReload.help", null);
+		forceThemeReload.setIconLeftCSS("o_icon o_icon_refresh");
 
 		//logo
 		FormLayoutContainer logoCont = FormLayoutContainer.createDefaultFormLayout("logo", getTranslator());
@@ -132,7 +130,7 @@ public class LayoutAdminController extends FormBasicController {
 		deleteLogo = uifactory.addFormLink("deleteimg", "delete", null, logoCont, Link.BUTTON);
 		deleteLogo.setVisible(hasLogo);
 		
-		logoUpload = uifactory.addFileElement(getWindowControl(), "customizing.logo", "customizing.logo", logoCont);
+		logoUpload = uifactory.addFileElement(getWindowControl(), getIdentity(), "customizing.logo", "customizing.logo", logoCont);
 		logoUpload.setMaxUploadSizeKB(1024, null, null);
 		logoUpload.setPreview(ureq.getUserSession(), true);
 		logoUpload.addActionListener(FormEvent.ONCHANGE);
@@ -180,7 +178,7 @@ public class LayoutAdminController extends FormBasicController {
 
 		String oldFooterUrl = layoutModule.getFooterLinkUri();
 		footerUrl = uifactory.addTextElement("footerUrl", "footerUrl.description", 256, oldFooterUrl, footerCont);
-		footerUrl.setPlaceholderKey("linkUrl.default", null);
+		footerUrl.setPlaceholderKey("footerUrl.default", null);
 		
 		String oldFooterLine = layoutModule.getFooterLine();
 		footerLine = uifactory.addTextAreaElement("footerLine", "footerLine.description", -1, 3, 50, true, false, oldFooterLine, footerCont);

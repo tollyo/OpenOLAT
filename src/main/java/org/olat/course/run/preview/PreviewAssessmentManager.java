@@ -42,6 +42,7 @@ import org.olat.course.run.scoring.ScoreEvaluation;
 import org.olat.course.run.userview.UserCourseEnvironment;
 import org.olat.group.BusinessGroup;
 import org.olat.modules.assessment.AssessmentEntry;
+import org.olat.modules.assessment.Overridable;
 import org.olat.modules.assessment.Role;
 import org.olat.modules.assessment.model.AssessmentEntryStatus;
 import org.olat.modules.assessment.model.AssessmentRunStatus;
@@ -97,7 +98,7 @@ final class PreviewAssessmentManager implements AssessmentManager {
 	}
 
 	@Override
-	public void saveNodeAttempts(CourseNode courseNode, Identity identity, Identity assessedIdentity, Integer attempts, Role by) {
+	public void saveNodeAttempts(CourseNode courseNode, Identity identity, Identity assessedIdentity, Integer attempts, Date lastAttempt, Role by) {
 		nodeAttempts.put(courseNode.getIdent(), attempts);
 	}
 
@@ -147,7 +148,7 @@ final class PreviewAssessmentManager implements AssessmentManager {
 
 	@Override
 	public void updateCurrentCompletion(CourseNode courseNode, Identity assessedIdentity, UserCourseEnvironment userCourseEnvironment,
-			Double currentCompletion, AssessmentRunStatus runStatus, Role by) {
+			Date start, Double currentCompletion, AssessmentRunStatus runStatus, Role by) {
 		//
 	}
 
@@ -160,7 +161,7 @@ final class PreviewAssessmentManager implements AssessmentManager {
 
 	@Override
 	public void updateFullyAssessed(CourseNode courseNode, UserCourseEnvironment userCourseEnvironment, Boolean fullyAssessed,
-			AssessmentEntryStatus status, Role by) {
+			AssessmentEntryStatus status) {
 		//
 	}
 
@@ -254,6 +255,20 @@ final class PreviewAssessmentManager implements AssessmentManager {
 		if(incrementUserAttempts) {
 			incrementNodeAttempts(courseNode, identity, userCourseEnvironment, by);
 		}
+	}
+	@Override
+	public Overridable<Boolean> getRootPassed(UserCourseEnvironment userCourseEnvironment) {
+		return Overridable.empty();
+	};
+
+	@Override
+	public Overridable<Boolean> overrideRootPassed(Identity coach, UserCourseEnvironment userCourseEnvironment, Boolean passed) {
+		return Overridable.empty();
+	}
+
+	@Override
+	public Overridable<Boolean> resetRootPassed(Identity coach, UserCourseEnvironment userCourseEnvironment) {
+		return Overridable.empty();
 	}
 
 	@Override

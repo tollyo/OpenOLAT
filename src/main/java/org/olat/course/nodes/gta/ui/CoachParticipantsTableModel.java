@@ -27,6 +27,7 @@ import org.olat.core.gui.components.form.flexible.impl.elements.table.DefaultFle
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiSortableColumnDef;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.FlexiTableColumnModel;
 import org.olat.core.gui.components.form.flexible.impl.elements.table.SortableFlexiTableDataModel;
+import org.olat.core.util.StringHelper;
 import org.olat.course.nodes.gta.ui.component.SubmissionDateCellRenderer;
 import org.olat.user.propertyhandlers.UserPropertyHandler;
 
@@ -71,12 +72,16 @@ public class CoachParticipantsTableModel extends DefaultFlexiTableDataModel<Coac
 	public Object getValueAt(CoachedIdentityRow row, int col) {
 		if(col == CGCols.mark.ordinal()) {
 			return row.getMarkLink();
-		} else if(col == CGCols.username.ordinal()) {
-			return row.getIdentity().getIdentityName();
 		} else if(col == CGCols.taskStatus.ordinal()) {
 			return row.getTaskStatus();
 		} else if(col == CGCols.taskName.ordinal()) {
-			return row.getTaskName();
+			return row.getDownloadTaskFileLink() == null ? row.getTaskName() : row.getDownloadTaskFileLink();
+		} else if(col == CGCols.taskTitle.ordinal()) {
+			String title = row.getTaskTitle();
+			if(!StringHelper.containsNonWhitespace(title)) {
+				title = row.getTaskName();
+			}
+			return title;
 		} else if(col == CGCols.submissionDate.ordinal()) {
 			return SubmissionDateCellRenderer.cascading(row);
 		} else if(col == CGCols.userVisibility.ordinal()) {
@@ -99,7 +104,7 @@ public class CoachParticipantsTableModel extends DefaultFlexiTableDataModel<Coac
 	
 	public enum CGCols implements FlexiSortableColumnDef {
 		mark("table.header.mark"),
-		username("username"),
+		taskTitle("table.header.group.taskTitle"),
 		taskName("table.header.group.taskName"),
 		taskStatus("table.header.group.step"),
 		submissionDate("table.header.submissionDate"),

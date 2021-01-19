@@ -21,6 +21,7 @@ package org.olat.modules.quality.generator.provider.courselectures;
 
 import static org.olat.modules.quality.generator.ProviderHelper.addDays;
 import static org.olat.modules.quality.generator.ProviderHelper.addMinutes;
+import static org.olat.modules.quality.generator.ProviderHelper.subtractDays;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -29,6 +30,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Predicate;
 
 import org.apache.logging.log4j.Logger;
 import org.olat.basesecurity.BaseSecurityManager;
@@ -36,6 +38,7 @@ import org.olat.basesecurity.GroupRoles;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.form.flexible.impl.Form;
 import org.olat.core.gui.components.stack.TooledStackedPanel;
+import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.translator.Translator;
 import org.olat.core.id.Identity;
@@ -60,8 +63,8 @@ import org.olat.modules.quality.generator.provider.courselectures.manager.Course
 import org.olat.modules.quality.generator.provider.courselectures.manager.LectureBlockInfo;
 import org.olat.modules.quality.generator.provider.courselectures.manager.SearchParameters;
 import org.olat.modules.quality.generator.provider.courselectures.ui.CourseLectureProviderConfigController;
+import org.olat.modules.quality.generator.ui.CurriculumElementBlackListController;
 import org.olat.modules.quality.generator.ui.CurriculumElementWhiteListController;
-import org.olat.modules.quality.generator.ui.GeneratorWhiteListController;
 import org.olat.modules.quality.generator.ui.ProviderConfigController;
 import org.olat.modules.quality.ui.security.GeneratorSecurityCallback;
 import org.olat.repository.RepositoryEntry;
@@ -83,6 +86,7 @@ public class CourseLecturesProvider implements QualityGeneratorProvider {
 
 	public static final String TYPE = "course-lecture";
 	public static final String CONFIG_KEY_DURATION_DAYS = "duration.days";
+	public static final String CONFIG_KEY_ANNOUNCEMENT_COACH_DAYS = "announcement.coach.days";
 	public static final String CONFIG_KEY_INVITATION_AFTER_DC_START_DAYS = "invitation.after.dc.start.days";
 	public static final String CONFIG_KEY_MINUTES_BEFORE_END = "minutes before end";
 	public static final String CONFIG_KEY_REMINDER1_AFTER_DC_DAYS = "reminder1.after.dc.start.days";
@@ -138,17 +142,9 @@ public class CourseLecturesProvider implements QualityGeneratorProvider {
 
 		List<Organisation> organisations = generatorService.loadGeneratorOrganisations(generator);
 		SearchParameters searchParams = getSeachParameters(generator, configs, organisations, fromDate, toDate);
-		Long count = loadLectureBlockCount(generator, searchParams);
+		int count = loadLectureBlockInfo(generator, configs, searchParams).size();
 		
 		return translator.translate("generate.info", new String[] { String.valueOf(count)});
-	}
-
-	private Long loadLectureBlockCount(QualityGenerator generator, SearchParameters searchParams) {
-		if(log.isDebugEnabled()) log.debug("Generator " + generator + " searches with " + searchParams);
-		
-		Long count = providerDao.loadLectureBlockCount(searchParams);
-		if(log.isDebugEnabled()) log.debug("Generator " + generator + " found " + count + " entries");
-		return count;
 	}
 
 	@Override
@@ -157,10 +153,22 @@ public class CourseLecturesProvider implements QualityGeneratorProvider {
 	}
 
 	@Override
-	public GeneratorWhiteListController getWhiteListController(UserRequest ureq, WindowControl wControl,
+	public Controller getWhiteListController(UserRequest ureq, WindowControl wControl,
 			GeneratorSecurityCallback secCallback, TooledStackedPanel stackPanel, QualityGenerator generator,
 			QualityGeneratorConfigs configs) {
 		return new CurriculumElementWhiteListController(ureq, wControl, stackPanel, generator, configs);
+	}
+
+	@Override
+	public boolean hasBlackListController() {
+		return true;
+	}
+
+	@Override
+	public Controller getBlackListController(UserRequest ureq, WindowControl wControl,
+			GeneratorSecurityCallback secCallback, TooledStackedPanel stackPanel, QualityGenerator generator,
+			QualityGeneratorConfigs configs) {
+		return new CurriculumElementBlackListController(ureq, wControl, stackPanel, generator, configs);
 	}
 
 	@Override
@@ -168,7 +176,7 @@ public class CourseLecturesProvider implements QualityGeneratorProvider {
 			Date fromDate, Date toDate) {
 		List<Organisation> organisations = generatorService.loadGeneratorOrganisations(generator);
 		SearchParameters searchParams = getSeachParameters(generator, configs, organisations, fromDate, toDate);
-		List<LectureBlockInfo> infos = loadLectureBlockInfo(generator, searchParams);
+		List<LectureBlockInfo> infos = loadLectureBlockInfo(generator, configs, searchParams);
 		
 		List<QualityDataCollection> dataCollections = new ArrayList<>();
 		for (LectureBlockInfo lectureBlockInfo: infos) {
@@ -178,11 +186,19 @@ public class CourseLecturesProvider implements QualityGeneratorProvider {
 		return dataCollections;
 	}
 
-	private List<LectureBlockInfo> loadLectureBlockInfo(QualityGenerator generator, SearchParameters searchParams) {
-		if(log.isDebugEnabled()) log.debug("Generator " + generator + " searches with " + searchParams);
+	private List<LectureBlockInfo> loadLectureBlockInfo(QualityGenerator generator, QualityGeneratorConfigs configs,
+			SearchParameters searchParams) {
+		log.debug("Generator {} searches with {}", generator, searchParams);
 		
 		List<LectureBlockInfo> blockInfos = providerDao.loadLectureBlockInfo(searchParams);
-		if(log.isDebugEnabled()) log.debug("Generator " + generator + " found " + blockInfos.size() + " entries");
+		log.debug("Generator {} found {} entries", generator, blockInfos.size());
+		
+		String minutesBeforeEnd = configs.getValue(CONFIG_KEY_MINUTES_BEFORE_END);
+		String duration = configs.getValue(CONFIG_KEY_DURATION_DAYS);
+		Predicate<? super LectureBlockInfo> deadlineIsInPast = new DeadlineIsInPast(minutesBeforeEnd, duration);
+		blockInfos.removeIf(deadlineIsInPast);
+		log.debug("Generator {} has {} entries after removal of entries with deadline in past..", generator, blockInfos.size());
+		
 		return blockInfos;
 	}
 	
@@ -195,7 +211,7 @@ public class CourseLecturesProvider implements QualityGeneratorProvider {
 		Identity teacher = securityManager.loadIdentityByKey(lectureBlockInfo.getTeacherKey());
 		String topicKey =  getTopicKey(configs);
 		
-		// create data collection	
+		// create data collection
 		Long generatorProviderKey = CONFIG_KEY_TOPIC_COACH.equals(topicKey)? course.getKey(): teacher.getKey();
 		QualityDataCollection dataCollection = qualityService.createDataCollection(courseOrganisations, formEntry,
 				generator, generatorProviderKey);
@@ -210,16 +226,20 @@ public class CourseLecturesProvider implements QualityGeneratorProvider {
 		String duration = configs.getValue(CONFIG_KEY_DURATION_DAYS);
 		Date deadline = addDays(dcStart, duration);
 		dataCollection.setDeadline(deadline);
+		
 		String titleTemplate = configs.getValue(CONFIG_KEY_TITLE);
 		String title = titleCreator.merge(titleTemplate, Arrays.asList(course, teacher.getUser()));
 		dataCollection.setTitle(title);
 
+		QualityReminderType coachReminderType = null;
 		if (CONFIG_KEY_TOPIC_COACH.equals(topicKey)) {
 			dataCollection.setTopicType(QualityDataCollectionTopicType.IDENTIY);
 			dataCollection.setTopicIdentity(teacher);
+			coachReminderType = QualityReminderType.ANNOUNCEMENT_COACH_TOPIC;
 		} else if (CONFIG_KEY_TOPIC_COURSE.equals(topicKey)) {
 			dataCollection.setTopicType(QualityDataCollectionTopicType.REPOSITORY);
 			dataCollection.setTopicRepositoryEntry(course);
+			coachReminderType = QualityReminderType.ANNOUNCEMENT_COACH_CONTEXT;
 		}
 		
 		dataCollection = qualityService.updateDataCollectionStatus(dataCollection, QualityDataCollectionStatus.READY);
@@ -253,6 +273,14 @@ public class CourseLecturesProvider implements QualityGeneratorProvider {
 		}
 		
 		// make reminders
+		String announcementDay = configs.getValue(CONFIG_KEY_ANNOUNCEMENT_COACH_DAYS);
+		if (StringHelper.containsNonWhitespace(announcementDay) && coachReminderType != null) {
+			Date announcementDate = subtractDays(dcStart, announcementDay);
+			if (dataCollection.getStart().after(new Date())) { // no announcement if already started
+				qualityService.createReminder(dataCollection, announcementDate, coachReminderType);
+			}
+		}
+		
 		String invitationDay = configs.getValue(CONFIG_KEY_INVITATION_AFTER_DC_START_DAYS);
 		if (StringHelper.containsNonWhitespace(invitationDay)) {
 			Date invitationDate = addDays(dcStart, invitationDay);
@@ -287,12 +315,18 @@ public class CourseLecturesProvider implements QualityGeneratorProvider {
 		String minutesBeforeEnd = configs.getValue(CONFIG_KEY_MINUTES_BEFORE_END);
 		minutesBeforeEnd = StringHelper.containsNonWhitespace(minutesBeforeEnd)? minutesBeforeEnd: "0";
 		Date from = addMinutes(fromDate, minutesBeforeEnd);
-		searchParams.setFrom(from);
 		Date to = addMinutes(toDate, minutesBeforeEnd);
+		
+		String announcementDays = configs.getValue(CONFIG_KEY_ANNOUNCEMENT_COACH_DAYS);
+		if (StringHelper.containsNonWhitespace(announcementDays)) {
+			to = addDays(to, announcementDays);
+		}
+		
+		searchParams.setFrom(from);
 		searchParams.setTo(to);
 		
 		Collection<CurriculumElementRef> curriculumElementRefs = CurriculumElementWhiteListController.getCurriculumElementRefs(configs);
-		searchParams.setCurriculumElementRefs(curriculumElementRefs);
+		searchParams.setWhiteListRefs(curriculumElementRefs);
 		
 		String minLectures = configs.getValue(CONFIG_KEY_TOTAL_LECTURES_MIN);
 		if (StringHelper.containsNonWhitespace(minLectures)) {

@@ -56,6 +56,8 @@ import org.springframework.beans.factory.annotation.Autowired;
  */
 public class MemberSearchForm extends FormBasicController implements ExtendedFlexiTableSearchController {
 	
+	public static final String PROPS_IDENTIFIER = MemberSearchForm.class.getCanonicalName();
+	
 	private String[] roleKeys = { GroupRoles.owner.name(), GroupRoles.coach.name(), GroupRoles.participant.name(), GroupRoles.waiting.name() };
 	private String[] originKeys = new String[]{ Origin.all.name(), Origin.repositoryEntry.name(), Origin.businessGroup.name(), Origin.curriculum.name() };
 	
@@ -87,12 +89,12 @@ public class MemberSearchForm extends FormBasicController implements ExtendedFle
 		login = uifactory.addTextElement("login", "search.login", 128, "", leftContainer);
 		login.setDisplaySize(28);
 
-		userPropertyHandlers = userManager.getUserPropertyHandlersFor(getClass().getCanonicalName(), false);
+		userPropertyHandlers = userManager.getUserPropertyHandlersFor(PROPS_IDENTIFIER, false);
 		propFormItems = new HashMap<>();
 		for (UserPropertyHandler userPropertyHandler : userPropertyHandlers) {
 			if (userPropertyHandler == null) continue;
 
-			FormItem fi = userPropertyHandler.addFormItem(getLocale(), null, getClass().getCanonicalName(), false, leftContainer);
+			FormItem fi = userPropertyHandler.addFormItem(getLocale(), null, PROPS_IDENTIFIER, false, leftContainer);
 			fi.setTranslator(this.getTranslator());
 			// DO NOT validate email field => see OLAT-3324, OO-155, OO-222
 			if (userPropertyHandler instanceof EmailProperty && fi instanceof TextElement) {

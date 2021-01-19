@@ -62,6 +62,7 @@ import org.olat.course.ICourse;
 import org.olat.course.Structure;
 import org.olat.course.editor.PublishStepCatalog.CategoryLabel;
 import org.olat.course.nodeaccess.NodeAccessService;
+import org.olat.course.nodeaccess.NodeAccessType;
 import org.olat.course.nodes.CourseNode;
 import org.olat.course.nodes.CourseNodeConfiguration;
 import org.olat.course.nodes.CourseNodeFactory;
@@ -75,13 +76,9 @@ import org.olat.repository.CatalogEntry;
 import org.olat.repository.RepositoryEntry;
 import org.olat.repository.RepositoryEntryStatusEnum;
 import org.olat.repository.RepositoryManager;
-import org.olat.repository.RepositoryService;
 import org.olat.repository.controllers.EntryChangedEvent;
 import org.olat.repository.controllers.EntryChangedEvent.Change;
 import org.olat.repository.manager.CatalogManager;
-import org.olat.resource.accesscontrol.ACService;
-import org.olat.resource.accesscontrol.Offer;
-import org.olat.resource.accesscontrol.OfferAccess;
 import org.olat.resource.references.Reference;
 import org.olat.resource.references.ReferenceManager;
 import org.olat.user.UserManager;
@@ -270,7 +267,8 @@ public class PublishProcess {
 		 * virtual course editor for using the validation facilities of the editor
 		 * environment.
 		 */
-		CourseEditorEnv tmpCEV = new CourseEditorEnvImpl(cloneCETM, course.getCourseEnvironment().getCourseGroupManager(), locale);
+		CourseEditorEnv tmpCEV = new CourseEditorEnvImpl(cloneCETM,
+				course.getCourseEnvironment().getCourseGroupManager(), locale, NodeAccessType.of(course));
 		// the resulting object is not needed, but constructor makes
 		// initializations within tmpCEV!! thus important step.
 		new EditorUserCourseEnvironmentImpl(tmpCEV, null);
@@ -692,53 +690,6 @@ public class PublishProcess {
 		MultiUserEvent modifiedEvent = new EntryChangedEvent(repositoryEntry, author, Change.modifiedAtPublish, "publish");
 		CoordinatorManager.getInstance().getCoordinator().getEventBus().fireEventToListenersOf(modifiedEvent, repositoryEntry);
 	}
-	
-	public void changeAccessAndProperties(Identity author, CourseAccessAndProperties accessAndProps) {
-		ACService acService = CoreSpringFactory.getImpl(ACService.class);
-		RepositoryManager manager = RepositoryManager.getInstance();
-		
-		RepositoryEntry entry = accessAndProps.getRepositoryEntry();
-		
-		entry = manager.setAccess(entry,
-				accessAndProps.isAllUsers(), accessAndProps.isGuests(), accessAndProps.isBookable(),
-				accessAndProps.getSetting(), accessAndProps.getOrganisations());
-		
-		entry = manager.setAccessAndProperties(entry, accessAndProps.getStatus(),
-				accessAndProps.isAllUsers(), accessAndProps.isGuests(),
-				accessAndProps.isCanCopy(), accessAndProps.isCanReference(), accessAndProps.isCanDownload());
-		
-		List<OfferAccess> offerAccess = accessAndProps.getOfferAccess();
-		List<Offer> deletedOffers = accessAndProps.getDeletedOffer();
-		if(entry.isBookable()) {
-			// 1: add new and update existing offerings
-			for (OfferAccess newLink : offerAccess) {
-				if(accessAndProps.getConfirmationEmail() != null) {
-					Offer offer = newLink.getOffer();
-					boolean confirmation = accessAndProps.getConfirmationEmail().booleanValue();
-					if(offer.isConfirmationEmail() != confirmation) {
-						offer.setConfirmationEmail(confirmation);
-						if(offer.getKey() != null) {
-							acService.save(offer);
-						}
-					}
-				}
-				acService.saveOfferAccess(newLink);
-			}
-		} else {
-			for (OfferAccess deletedOffer : offerAccess) {
-				acService.deleteOffer(deletedOffer.getOffer());
-			}
-		}
-		// 2: remove offerings not available anymore
-		for (Offer deletedOffer : deletedOffers) {
-			acService.deleteOffer(deletedOffer);
-		}
-		
-		MultiUserEvent modifiedEvent = new EntryChangedEvent(repositoryEntry, author, Change.modifiedAtPublish, "publish");
-		CoordinatorManager.getInstance().getCoordinator().getEventBus().fireEventToListenersOf(modifiedEvent, repositoryEntry);
-		CoordinatorManager.getInstance().getCoordinator().getEventBus().fireEventToListenersOf(modifiedEvent, RepositoryService.REPOSITORY_EVENT_ORES);
-	}
-	
 	
 	private String translate(String i18n, String arg) {
 		return translator.translate(i18n, new String[]{arg});

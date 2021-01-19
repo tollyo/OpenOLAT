@@ -25,8 +25,6 @@
 
 package org.olat.collaboration;
 
-import java.io.File;
-import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -59,26 +57,20 @@ import org.olat.core.id.context.ContextEntry;
 import org.olat.core.logging.AssertException;
 import org.olat.core.logging.Tracing;
 import org.olat.core.logging.activity.ThreadLocalUserActivityLogger;
-import org.olat.core.util.FileUtils;
 import org.olat.core.util.Util;
-import org.olat.core.util.ZipUtil;
 import org.olat.core.util.coordinate.CoordinatorManager;
-import org.olat.core.util.coordinate.SyncerCallback;
-import org.olat.core.util.coordinate.SyncerExecutor;
-import org.olat.core.util.i18n.I18nModule;
 import org.olat.core.util.mail.ContactMessage;
-import org.olat.core.util.vfs.LocalFolderImpl;
 import org.olat.core.util.vfs.NamedContainerImpl;
 import org.olat.core.util.vfs.Quota;
 import org.olat.core.util.vfs.QuotaManager;
 import org.olat.core.util.vfs.VFSContainer;
-import org.olat.core.util.vfs.VFSLeaf;
 import org.olat.core.util.vfs.VFSManager;
 import org.olat.core.util.vfs.callbacks.VFSSecurityCallback;
 import org.olat.course.CorruptedCourseException;
 import org.olat.course.CourseFactory;
 import org.olat.course.CourseModule;
 import org.olat.course.ICourse;
+import org.olat.course.nodes.portfolio.PortfolioCourseNodeRunController;
 import org.olat.course.run.calendar.CourseLinkProviderController;
 import org.olat.group.BusinessGroup;
 import org.olat.group.BusinessGroupService;
@@ -87,13 +79,12 @@ import org.olat.instantMessaging.InstantMessagingModule;
 import org.olat.instantMessaging.ui.ChatToolController;
 import org.olat.modules.adobeconnect.ui.AdobeConnectMeetingDefaultConfiguration;
 import org.olat.modules.adobeconnect.ui.AdobeConnectRunController;
+import org.olat.modules.bigbluebutton.ui.BigBlueButtonMeetingDefaultConfiguration;
+import org.olat.modules.bigbluebutton.ui.BigBlueButtonRunController;
 import org.olat.modules.co.ContactFormController;
 import org.olat.modules.fo.Forum;
 import org.olat.modules.fo.ForumCallback;
 import org.olat.modules.fo.ForumUIFactory;
-import org.olat.modules.fo.archiver.ForumArchiveManager;
-import org.olat.modules.fo.archiver.formatters.ForumFormatter;
-import org.olat.modules.fo.archiver.formatters.ForumRTFFormatter;
 import org.olat.modules.fo.manager.ForumManager;
 import org.olat.modules.openmeetings.OpenMeetingsModule;
 import org.olat.modules.openmeetings.manager.OpenMeetingsException;
@@ -110,17 +101,11 @@ import org.olat.modules.portfolio.PortfolioService;
 import org.olat.modules.portfolio.PortfolioV2Module;
 import org.olat.modules.portfolio.manager.BinderUserInformationsDAO;
 import org.olat.modules.portfolio.ui.BinderController;
+import org.olat.modules.teams.ui.TeamsMeetingsRunController;
 import org.olat.modules.wiki.DryRunAssessmentProvider;
 import org.olat.modules.wiki.WikiManager;
 import org.olat.modules.wiki.WikiSecurityCallback;
 import org.olat.modules.wiki.WikiSecurityCallbackImpl;
-import org.olat.modules.wiki.WikiToZipUtils;
-import org.olat.portfolio.EPSecurityCallback;
-import org.olat.portfolio.EPSecurityCallbackImpl;
-import org.olat.portfolio.EPUIFactory;
-import org.olat.portfolio.manager.EPFrontendManager;
-import org.olat.portfolio.model.structel.PortfolioStructureMap;
-import org.olat.portfolio.ui.structel.EPCreateMapController;
 import org.olat.properties.NarrowedPropertyManager;
 import org.olat.properties.Property;
 import org.olat.properties.PropertyManager;
@@ -159,6 +144,7 @@ public class CollaborationTools implements Serializable {
 	public static final String KEY_PORTFOLIO = "portfolioMapKey";
 	public static final String KEY_OPENMEETINGS = "openMeetingsKey";
 	public static final String KEY_ACONNECTMEETINGS = "adobeConnectKey";
+	public static final String KEY_BIGBLUEBUTTON = "bigBlueButtonKey";
 
 	/**
 	 * <code>PROP_CAT_BG_COLLABTOOLS</code> identifies properties concerning
@@ -204,9 +190,17 @@ public class CollaborationTools implements Serializable {
 	 */
 	public static final String TOOL_OPENMEETINGS = "hasOpenMeetings";
 	/**
-	 * constant used to identify the open meetings for a group
+	 * constant used to identify the Adobe Connect for a group
 	 */
 	public static final String TOOL_ADOBECONNECT = "hasAdobeConnect";
+	/**
+	 * constant used to identify the BigBlueButton for a group
+	 */
+	public static final String TOOL_BIGBLUEBUTTON = "hasBigBlueButton";
+	/**
+	 * constant used to identify the BigBlueButton for a group
+	 */
+	public static final String TOOL_TEAMS = "hasTeams";
 	
 	/**
 	 * Only owners have write access to the calendar.
@@ -233,6 +227,8 @@ public class CollaborationTools implements Serializable {
 	private static final String KEY_NEWS_ACCESS = "newsAccess";
 	public static final String KEY_CALENDAR_ACCESS = "cal";
 	public static final String KEY_FOLDER_ACCESS = "folder";
+	private static final String KEY_BIGBLUEBUTTON_ACCESS = "folder";
+	private static final String KEY_TEAMS_ACCESS = "teams";
 
 	//o_clusterOK by guido
 	private Hashtable<String, Boolean> cacheToolStates;
@@ -348,35 +344,28 @@ public class CollaborationTools implements Serializable {
 		if(forumProperty != null) {
 			forum = fom.loadForum(forumProperty.getLongValue());
 		} else {
-			forum = coordinatorManager.getCoordinator().getSyncer().doInSync(ores, new SyncerCallback<Forum>(){
-				@Override
-				public Forum execute() {
-					Forum aforum;
-					Long forumKey;
-					Property forumKeyProperty = npm.findProperty(null, null, PROP_CAT_BG_COLLABTOOLS, KEY_FORUM);
-					if (forumKeyProperty == null) {
-						// First call of forum, create new forum and save
-						aforum = fom.addAForum();
-						forumKey = aforum.getKey();
-						if (log.isDebugEnabled()) {
-							log.debug("created new forum in collab tools: foid::" + forumKey.longValue() + " for ores::"
-									+ ores.getResourceableTypeName() + "/" + ores.getResourceableId());
-						}
-						forumKeyProperty = npm.createPropertyInstance(null, null, PROP_CAT_BG_COLLABTOOLS, KEY_FORUM, null, forumKey, null, null);
-						npm.saveProperty(forumKeyProperty);
-					} else {
-						// Forum does already exist, load forum with key from properties
-						forumKey = forumKeyProperty.getLongValue();
-						aforum = fom.loadForum(forumKey);
-						if (aforum == null) { throw new AssertException("Unable to load forum with key " + forumKey.longValue() + " for ores "
-								+ ores.getResourceableTypeName() + " with key " + ores.getResourceableId()); }
-						if (log.isDebugEnabled()) {
-							log.debug("loading forum in collab tools from properties: foid::" + forumKey.longValue() + " for ores::"
-									+ ores.getResourceableTypeName() + "/" + ores.getResourceableId());
-						}
-					}
-					return aforum;
+			forum = coordinatorManager.getCoordinator().getSyncer().doInSync(ores, () -> {
+				Forum aforum;
+				Long forumKey;
+				Property forumKeyProperty = npm.findProperty(null, null, PROP_CAT_BG_COLLABTOOLS, KEY_FORUM);
+				if (forumKeyProperty == null) {
+					// First call of forum, create new forum and save
+					aforum = fom.addAForum();
+					forumKey = aforum.getKey();
+					log.debug("created new forum in collab tools: foid::{} for ores::{}/{}",
+							forumKey, ores.getResourceableTypeName(),  ores.getResourceableId());
+					forumKeyProperty = npm.createPropertyInstance(null, null, PROP_CAT_BG_COLLABTOOLS, KEY_FORUM, null, forumKey, null, null);
+					npm.saveProperty(forumKeyProperty);
+				} else {
+					// Forum does already exist, load forum with key from properties
+					forumKey = forumKeyProperty.getLongValue();
+					aforum = fom.loadForum(forumKey);
+					if (aforum == null) { throw new AssertException("Unable to load forum with key " + forumKey.longValue() + " for ores "
+							+ ores.getResourceableTypeName() + " with key " + ores.getResourceableId()); }
+					log.debug("loading forum in collab tools from properties: foid::{} for ores::{}/{}",
+							forumKey, ores.getResourceableTypeName(), ores.getResourceableId());
 				}
+				return aforum;
 			});
 		}
 		return forum;
@@ -459,7 +448,7 @@ public class CollaborationTools implements Serializable {
 					ICourse course = CourseFactory.loadCourse(repoEntry);
 					courses.add(course);
 				} catch (CorruptedCourseException e) {
-					log.error("Course corrupted: " + repoEntry.getKey() + " (" + repoEntry.getOlatResource().getResourceableId() + ")", e);
+					log.error("Course corrupted: {} ({})", repoEntry.getKey(), repoEntry.getOlatResource().getResourceableId(), e);
 				}
 			}
 		}
@@ -537,42 +526,30 @@ public class CollaborationTools implements Serializable {
 		Property mapProperty = npm.findProperty(null, null, PROP_CAT_BG_COLLABTOOLS, KEY_PORTFOLIO);
 		if(mapProperty != null) {
 			return createPortfolioController(ureq, wControl, stackPanel, mapProperty);
-		} else {
-			return coordinatorManager.getCoordinator().getSyncer().doInSync(ores, () -> {
-				Controller ctrl;
-				Property mapKeyProperty = npm.findProperty(null, null, PROP_CAT_BG_COLLABTOOLS, KEY_PORTFOLIO);
-				if (mapKeyProperty == null) {
-					PortfolioV2Module moduleV2 = CoreSpringFactory.getImpl(PortfolioV2Module.class);
-					if(moduleV2.isEnabled()) {
-						PortfolioService portfolioService = CoreSpringFactory.getImpl(PortfolioService.class);
-						Binder binder = portfolioService.createNewBinder(group.getName(), group.getDescription(), null, null);
-						CoreSpringFactory.getImpl(BinderUserInformationsDAO.class).updateBinderUserInformationsInSync(binder, ureq.getIdentity());
-						mapKeyProperty = npm.createPropertyInstance(null, null, PROP_CAT_BG_COLLABTOOLS, KEY_PORTFOLIO, null, binder.getKey(), "2", null);
-						BinderSecurityCallback secCallback = BinderSecurityCallbackFactory.getCallbackForBusinessGroup();
-						BinderController binderCtrl = new BinderController(ureq, wControl, stackPanel, secCallback, binder, BinderConfiguration.createBusinessGroupConfig());					
-						List<ContextEntry> entries = BusinessControlFactory.getInstance().createCEListFromResourceType("Toc");
-						binderCtrl.activate(ureq, entries, null);
-						ctrl = binderCtrl;
-
-						ThreadLocalUserActivityLogger.addLoggingResourceInfo(LoggingResourceable.wrap(binder));
-						ThreadLocalUserActivityLogger.log(PortfolioLoggingAction.PORTFOLIO_BINDER_CREATED, getClass());
-					} else {
-						EPFrontendManager ePFMgr = CoreSpringFactory.getImpl(EPFrontendManager.class);
-						PortfolioStructureMap map = ePFMgr.createAndPersistPortfolioDefaultMap(group.getName(), group.getDescription());					
-						Translator pT = Util.createPackageTranslator(EPCreateMapController.class, ureq.getLocale());					
-						// add a page, as each map should have at least one per default!
-						ePFMgr.createAndPersistPortfolioPage(map, pT.translate("new.page.title"), pT.translate("new.page.desc"));
-						mapKeyProperty = npm.createPropertyInstance(null, null, PROP_CAT_BG_COLLABTOOLS, KEY_PORTFOLIO, null, map.getKey(), null, null);
-						EPSecurityCallback secCallback = new EPSecurityCallbackImpl(true, true);
-						ctrl = EPUIFactory.createMapViewController(ureq, wControl, map, secCallback);
-					}
-					npm.saveProperty(mapKeyProperty);
-				} else {
-					ctrl = createPortfolioController(ureq, wControl, stackPanel, mapProperty);
-				}
-				return ctrl;
-			});
 		}
+		return coordinatorManager.getCoordinator().getSyncer().doInSync(ores, () -> {
+			Controller ctrl;
+			Property mapKeyProperty = npm.findProperty(null, null, PROP_CAT_BG_COLLABTOOLS, KEY_PORTFOLIO);
+			PortfolioV2Module moduleV2 = CoreSpringFactory.getImpl(PortfolioV2Module.class);
+			if (mapKeyProperty == null && moduleV2.isEnabled()) {
+				PortfolioService portfolioService = CoreSpringFactory.getImpl(PortfolioService.class);
+				Binder binder = portfolioService.createNewBinder(group.getName(), group.getDescription(), null, null);
+				CoreSpringFactory.getImpl(BinderUserInformationsDAO.class).updateBinderUserInformationsInSync(binder, ureq.getIdentity());
+				mapKeyProperty = npm.createPropertyInstance(null, null, PROP_CAT_BG_COLLABTOOLS, KEY_PORTFOLIO, null, binder.getKey(), "2", null);
+				BinderSecurityCallback secCallback = BinderSecurityCallbackFactory.getCallbackForBusinessGroup();
+				BinderController binderCtrl = new BinderController(ureq, wControl, stackPanel, secCallback, binder, BinderConfiguration.createBusinessGroupConfig());					
+				List<ContextEntry> entries = BusinessControlFactory.getInstance().createCEListFromResourceType("Toc");
+				binderCtrl.activate(ureq, entries, null);
+				ctrl = binderCtrl;
+
+				ThreadLocalUserActivityLogger.addLoggingResourceInfo(LoggingResourceable.wrap(binder));
+				ThreadLocalUserActivityLogger.log(PortfolioLoggingAction.PORTFOLIO_BINDER_CREATED, getClass());
+				npm.saveProperty(mapKeyProperty);
+			} else {
+				ctrl = createPortfolioController(ureq, wControl, stackPanel, mapProperty);
+			}
+			return ctrl;
+		});
 	}
 	
 	/**
@@ -601,16 +578,8 @@ public class CollaborationTools implements Serializable {
 				ctrl = new BinderController(ureq, wControl, stackPanel, secCallback, binder, BinderConfiguration.createBusinessGroupConfig());
 			}
 		} else {
-			PortfolioStructureMap map = (PortfolioStructureMap) CoreSpringFactory.getImpl(EPFrontendManager.class)
-					.loadPortfolioStructureByKey(key);
-			if(map == null) {
-				Translator trans = Util.createPackageTranslator(this.getClass(), ureq.getLocale());
-				String text = trans.translate("error.missing.map");
-				ctrl = MessageUIFactory.createErrorMessage(ureq, wControl, "", text);
-			} else {
-				EPSecurityCallback secCallback = new EPSecurityCallbackImpl(true, true);
-				ctrl = EPUIFactory.createMapViewController(ureq, wControl, map, secCallback);
-			}
+			Translator trans = Util.createPackageTranslator(PortfolioCourseNodeRunController.class, ureq.getLocale());
+			ctrl = MessageUIFactory.createInfoMessage(ureq, wControl, "", trans.translate("error.portfolioV1"));
 		}
 		return ctrl;
 	}
@@ -622,6 +591,17 @@ public class CollaborationTools implements Serializable {
 	public Controller createAdobeConnectController(final UserRequest ureq, WindowControl wControl, final BusinessGroup group, boolean admin) {
 		AdobeConnectMeetingDefaultConfiguration configuration = new AdobeConnectMeetingDefaultConfiguration(true, true, true);
 		return new AdobeConnectRunController(ureq, wControl, null, null, group, configuration, admin, admin, false);
+	}
+	
+	public BigBlueButtonRunController createBigBlueButtonController(final UserRequest ureq, WindowControl wControl, final BusinessGroup group, boolean admin) {
+		BigBlueButtonMeetingDefaultConfiguration configuration = new BigBlueButtonMeetingDefaultConfiguration(false);
+		boolean administrator = admin || "all".equals(getBigBlueButtonAccessProperty());
+		return new BigBlueButtonRunController(ureq, wControl, null, null, group, configuration, administrator, administrator, false);
+	}
+	
+	public TeamsMeetingsRunController createTeamsController(final UserRequest ureq, WindowControl wControl, final BusinessGroup group, boolean admin) {
+		boolean administrator = admin || "all".equals(getTeamsAccessProperty());
+		return new TeamsMeetingsRunController(ureq, wControl, null, null, group, administrator, administrator, false);
 	}
 
 	/**
@@ -708,7 +688,7 @@ public class CollaborationTools implements Serializable {
 			try {
 				CoreSpringFactory.getImpl(OpenMeetingsManager.class).deleteAll(ores, null, null);
 			} catch (OpenMeetingsException e) {
-				log.error("A room could not be deleted for group: " + ores, e);
+				log.error("A room could not be deleted for group: {}", ores, e);
 			}
 		}
 
@@ -757,9 +737,7 @@ public class CollaborationTools implements Serializable {
 		// handle Boolean Values via String Field in Property DB Table
 		final String toolValueStr = toolValue ? TRUE : FALSE;
 		final PropertyManager pm = PropertyManager.getInstance();
-		coordinatorManager.getCoordinator().getSyncer().doInSync(ores, new SyncerExecutor() {
-			@Override
-			public void execute() {				
+		coordinatorManager.getCoordinator().getSyncer().doInSync(ores, () -> {			
 				Property property = getPropertyOf(selectedTool);
 				if (property == null) {
 					// not existing -> create it
@@ -776,7 +754,7 @@ public class CollaborationTools implements Serializable {
 				
 				// property becomes persistent
 				pm.saveProperty(property);
-			}});
+			});
 		this.dirty = true;
 		cacheToolStates.put(selectedTool, Boolean.valueOf(toolValue));
 	}
@@ -833,6 +811,63 @@ public class CollaborationTools implements Serializable {
 			npm.updateProperty(property);
 		}
 	}
+	
+	/**
+	 * @return Gets the BigBlueButton access property
+	 */
+	public String getBigBlueButtonAccessProperty() {
+		NarrowedPropertyManager npm = NarrowedPropertyManager.getInstance(ores);
+		Property property = npm.findProperty(null, null, PROP_CAT_BG_COLLABTOOLS, KEY_BIGBLUEBUTTON_ACCESS);
+		if (property == null) { // no entry
+			return null;
+		}
+		// read the text value of the existing property
+		return property.getStringValue();
+	}
+	
+	/**
+	 * @param Save BigBlueButton access property.
+	 */
+	public void saveBigBlueButtonAccessProperty(String access) {
+		NarrowedPropertyManager npm = NarrowedPropertyManager.getInstance(ores);
+		Property property = npm.findProperty(null, null, PROP_CAT_BG_COLLABTOOLS, KEY_BIGBLUEBUTTON_ACCESS);
+		if (property == null) { // create a new one
+			Property nP = npm.createPropertyInstance(null, null, PROP_CAT_BG_COLLABTOOLS, KEY_BIGBLUEBUTTON_ACCESS, null, null, access, null);
+			npm.saveProperty(nP);
+		} else { // modify the existing one
+			property.setStringValue(access);
+			npm.updateProperty(property);
+		}
+	}
+	
+	/**
+	 * @return Gets the Teams access property
+	 */
+	public String getTeamsAccessProperty() {
+		NarrowedPropertyManager npm = NarrowedPropertyManager.getInstance(ores);
+		Property property = npm.findProperty(null, null, PROP_CAT_BG_COLLABTOOLS, KEY_TEAMS_ACCESS);
+		if (property == null) { // no entry
+			return null;
+		}
+		// read the text value of the existing property
+		return property.getStringValue();
+	}
+	
+	/**
+	 * @param Save Teams access property.
+	 */
+	public void saveTeamsAccessProperty(String access) {
+		NarrowedPropertyManager npm = NarrowedPropertyManager.getInstance(ores);
+		Property property = npm.findProperty(null, null, PROP_CAT_BG_COLLABTOOLS, KEY_TEAMS_ACCESS);
+		if (property == null) { // create a new one
+			Property nP = npm.createPropertyInstance(null, null, PROP_CAT_BG_COLLABTOOLS, KEY_TEAMS_ACCESS, null, null, access, null);
+			npm.saveProperty(nP);
+		} else { // modify the existing one
+			property.setStringValue(access);
+			npm.updateProperty(property);
+		}
+	}
+	
 
 	/**
 	 * @return the news; if there is no news yet: return null;
@@ -1001,61 +1036,6 @@ public class CollaborationTools implements Serializable {
 		@Override
 		public SubscriptionContext getSubscriptionContext() {
 			return subsContext;
-		}
-	}
-
-	/**
-	 * It is assumed that this is only called by an administrator
-	 * (e.g. at deleteGroup) 
-	 * @param archivFilePath
-	 */
-	public void archive(String archivFilePath) {
-		if (isToolEnabled(CollaborationTools.TOOL_FORUM)) {
-			archiveForum(archivFilePath);
-		}
-		if (isToolEnabled(CollaborationTools.TOOL_WIKI)) {
-			archiveWiki(archivFilePath);
-		}
-		if (isToolEnabled(CollaborationTools.TOOL_FOLDER)) {
-			archiveFolder(archivFilePath);
-		}
-	}
-
-	private void archiveForum(String archivFilePath) {
-		Property forumKeyProperty = NarrowedPropertyManager.getInstance(ores).findProperty(null, null, PROP_CAT_BG_COLLABTOOLS, KEY_FORUM);
-		if (forumKeyProperty != null) {
-			VFSContainer archiveContainer = new LocalFolderImpl(new File(archivFilePath));
-			String archiveForumName = "del_forum_" + forumKeyProperty.getLongValue();
-			VFSContainer archiveForumContainer = archiveContainer.createChildContainer(archiveForumName);
-			ForumFormatter ff = new ForumRTFFormatter(archiveForumContainer, false, I18nModule.getDefaultLocale());
-			CoreSpringFactory.getImpl(ForumArchiveManager.class).applyFormatter(ff, forumKeyProperty.getLongValue(), null);
-		}
-	}
-
-	private void archiveWiki(String archivFilePath) { 
-		VFSContainer wikiContainer = WikiManager.getInstance().getWikiRootContainer(ores);
-		VFSLeaf wikiZip = WikiToZipUtils.getWikiAsZip(wikiContainer);
-		String exportFileName = "del_wiki_" + ores.getResourceableId() + ".zip";
-		File archiveDir = new File(archivFilePath);
-		if (!archiveDir.exists()) {
-			archiveDir.mkdir();
-		}
-		String fullFilePath = archivFilePath + File.separator + exportFileName;
-		
-		try {
-			FileUtils.bcopy(wikiZip.getInputStream(), new File(fullFilePath), "archive wiki");
-		} catch (IOException ioe) {
-			log.warn("Can not archive wiki repoEntry={}", ores.getResourceableId());
-		}		
-	}
-
-	private void archiveFolder(String archiveFilePath) {
-		LocalFolderImpl folderContainer = VFSManager.olatRootContainer(getFolderRelPath(), null);
-		File fFolderRoot = folderContainer.getBasefile();
-		if (fFolderRoot.exists()) {
-			String zipFileName = "del_folder_" + ores.getResourceableId() + ".zip";
-			String fullZipFilePath = archiveFilePath + File.separator + zipFileName;
-			ZipUtil.zipAll(fFolderRoot, new File(fullZipFilePath), true);
 		}
 	}
 

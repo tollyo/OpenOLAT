@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<persistence version="2.0"
-   xmlns="http://java.sun.com/xml/ns/persistence" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-   xsi:schemaLocation="
-        http://java.sun.com/xml/ns/persistence
-        http://java.sun.com/xml/ns/persistence/persistence_2_0.xsd">
+<persistence version="2.2"
+             xmlns="http://xmlns.jcp.org/xml/ns/persistence" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xsi:schemaLocation="
+        http://xmlns.jcp.org/xml/ns/persistence
+        http://xmlns.jcp.org/xml/ns/persistence/persistence_2_2.xsd">
 	<persistence-unit name="default">
 		<provider>org.hibernate.jpa.HibernatePersistenceProvider</provider> 
 		
@@ -28,15 +28,6 @@
 		<mapping-file>org/olat/course/nodes/projectbroker/datamodel/ProjectBroker.hbm.xml</mapping-file>
 		<mapping-file>org/olat/modules/openmeetings/model/OpenMeetingsReference.hbm.xml</mapping-file>
 		<mapping-file>org/olat/properties/Property.hbm.xml</mapping-file>
-		<mapping-file>org/olat/portfolio/model/artefacts/AbstractArtefact.hbm.xml</mapping-file>
-		<mapping-file>org/olat/modules/fo/portfolio/ForumArtefact.hbm.xml</mapping-file>
-		<mapping-file>org/olat/modules/wiki/portfolio/WikiArtefact.hbm.xml</mapping-file>
-		<mapping-file>org/olat/modules/webFeed/portfolio/BlogArtefact.hbm.xml</mapping-file>
-		<mapping-file>org/olat/modules/webFeed/portfolio/LiveBlogArtefact.hbm.xml</mapping-file>
-		<mapping-file>org/olat/course/assessment/portfolio/EfficiencyStatementArtefact.hbm.xml</mapping-file>
-		<mapping-file>org/olat/portfolio/model/structel/StructureElement.hbm.xml</mapping-file>
-		<mapping-file>org/olat/portfolio/model/notification/Notifications.hbm.xml</mapping-file>
-		<mapping-file>org/olat/portfolio/model/restriction/CollectRestriction.hbm.xml</mapping-file>
 		<mapping-file>org/olat/core/commons/services/mark/impl/MarkImpl.hbm.xml</mapping-file>
 		<mapping-file>org/olat/core/commons/services/tagging/model/TagImpl.hbm.xml</mapping-file>
 		<mapping-file>org/olat/core/util/mail/model/DBMail.hbm.xml</mapping-file>
@@ -45,13 +36,7 @@
 		<mapping-file>org/olat/course/db/impl/CourseDBEntryImpl.hbm.xml</mapping-file>
 
 		<!-- Start upgraders mapping -->
-		<mapping-file>org/olat/upgrade/model/BusinessGroupUpgrade.hbm.xml</mapping-file>
-		<mapping-file>org/olat/upgrade/model/BGResourceRelation.hbm.xml</mapping-file>
 		<mapping-file>org/olat/upgrade/model/RepositoryEntryUpgrade.hbm.xml</mapping-file>
-		<class>org.olat.upgrade.model.RepositoryEntryUpgradeToGroupRelation</class>
-		<class>org.olat.upgrade.model.EPMapUpgrade</class>
-		<class>org.olat.upgrade.model.EPMapUpgradeToGroupRelation</class>
-		<class>org.olat.upgrade.model.InvitationUpgrade</class>
 		<class>org.olat.upgrade.model.UpgradeTaxonomyLevel</class>
 		<class>org.olat.upgrade.model.UpgradeQuestionItem</class>
 		<class>org.olat.upgrade.model.CurriculumElementPos</class>
@@ -68,6 +53,7 @@
 		<class>org.olat.basesecurity.model.OrganisationTypeImpl</class>
 		<class>org.olat.basesecurity.model.OrganisationTypeToTypeImpl</class>
 		<class>org.olat.basesecurity.model.OrganisationImpl</class>
+		<class>org.olat.basesecurity.model.OrganisationRoleRightImpl</class>
 		<class>org.olat.basesecurity.model.RelationRoleImpl</class>
 		<class>org.olat.basesecurity.model.RelationRightImpl</class>
 		<class>org.olat.basesecurity.model.RelationRoleToRightImpl</class>
@@ -79,7 +65,8 @@
 		<class>org.olat.commons.calendar.model.CalendarUserConfiguration</class>
 		<class>org.olat.commons.info.model.InfoMessageImpl</class>
 		<class>org.olat.core.commons.services.csp.model.CSPLogImpl</class>
-		<class>org.olat.core.commons.services.doceditor.wopi.model.AccessImpl</class>
+		<class>org.olat.core.commons.services.doceditor.model.AccessImpl</class>
+		<class>org.olat.core.commons.services.doceditor.model.UserInfoImpl</class>
 		<class>org.olat.core.commons.services.license.model.LicenseTypeActivation</class>
 		<class>org.olat.core.commons.services.license.model.LicenseTypeImpl</class>
 		<class>org.olat.core.commons.services.license.model.ResourceLicenseImpl</class>
@@ -105,6 +92,11 @@
 		<class>org.olat.course.assessment.model.UserEfficiencyStatementLight</class>
 		<class>org.olat.course.assessment.model.UserEfficiencyStatementStandalone</class>
 		<class>org.olat.course.assessment.model.UserEfficiencyStatementForCoaching</class>
+		<class>org.olat.modules.contacttracing.model.ContactTracingLocationImpl</class>
+		<class>org.olat.modules.contacttracing.model.ContactTracingRegistrationImpl</class>
+		<class>org.olat.modules.dcompensation.model.DisadvantageCompensationImpl</class>
+		<class>org.olat.modules.dcompensation.model.DisadvantageCompensationAuditLogImpl</class>
+		<class>org.olat.course.disclaimer.model.CourseDisclaimerConsentImpl</class>
 		<class>org.olat.course.nodes.cl.model.DBCheckbox</class>
 		<class>org.olat.course.nodes.cl.model.DBCheck</class>
 		<class>org.olat.course.nodes.dialog.model.DialogElementImpl</class>
@@ -116,6 +108,7 @@
 		<class>org.olat.course.nodes.gta.model.TaskRevisionImpl</class>
 		<class>org.olat.course.nodes.gta.model.TaskRevisionDateImpl</class>
 		<class>org.olat.course.nodes.livestream.model.LaunchImpl</class>
+		<class>org.olat.course.nodes.livestream.model.UrlTemplateImpl</class>
 		<class>org.olat.course.certificate.model.CertificateImpl</class>
 		<class>org.olat.course.certificate.model.CertificateStandalone</class>
 		<class>org.olat.course.certificate.model.CertificateLightImpl</class>
@@ -172,7 +165,17 @@
 		<class>org.olat.ims.qti21.model.jpa.AssessmentTestMarksImpl</class>
 		<class>org.olat.modules.adobeconnect.model.AdobeConnectUserImpl</class>
 		<class>org.olat.modules.adobeconnect.model.AdobeConnectMeetingImpl</class>
+		<class>org.olat.modules.appointments.model.AppointmentImpl</class>
+		<class>org.olat.modules.appointments.model.OrganizerImpl</class>
+		<class>org.olat.modules.appointments.model.ParticipationImpl</class>
+		<class>org.olat.modules.appointments.model.TopicImpl</class>
+		<class>org.olat.modules.appointments.model.TopicToGroupImpl</class>
 		<class>org.olat.modules.assessment.model.AssessmentEntryImpl</class>
+		<class>org.olat.modules.bigbluebutton.model.BigBlueButtonMeetingImpl</class>
+		<class>org.olat.modules.bigbluebutton.model.BigBlueButtonMeetingTemplateImpl</class>
+		<class>org.olat.modules.bigbluebutton.model.BigBlueButtonServerImpl</class>
+		<class>org.olat.modules.bigbluebutton.model.BigBlueButtonAttendeeImpl</class>
+		<class>org.olat.modules.bigbluebutton.model.BigBlueButtonRecordingReferenceImpl</class>
 		<class>org.olat.modules.curriculum.model.CurriculumImpl</class>
 		<class>org.olat.modules.curriculum.model.CurriculumElementImpl</class>
 		<class>org.olat.modules.curriculum.model.CurriculumElementTypeImpl</class>
@@ -233,6 +236,7 @@
 		<class>org.olat.modules.portfolio.model.AssessmentSectionImpl</class>
 		<class>org.olat.modules.portfolio.model.AssignmentImpl</class>
 		<class>org.olat.modules.portfolio.model.BinderUserInfosImpl</class>
+		<class>org.olat.modules.portfolio.model.InvitationImpl</class>
 		<class>org.olat.modules.qpool.model.PoolImpl</class>
 		<class>org.olat.modules.qpool.model.PoolToItem</class>
 		<class>org.olat.modules.qpool.model.PoolItemShortView</class>
@@ -267,19 +271,21 @@
 		<class>org.olat.modules.taxonomy.model.TaxonomyLevelTypeToTypeImpl</class>
 		<class>org.olat.modules.taxonomy.model.TaxonomyCompetenceImpl</class>
 		<class>org.olat.modules.taxonomy.model.TaxonomyCompetenceAuditLogImpl</class>
+		<class>org.olat.modules.teams.model.TeamsMeetingImpl</class>
+		<class>org.olat.modules.teams.model.TeamsUserImpl</class>
+		<class>org.olat.modules.teams.model.TeamsAttendeeImpl</class>
 		<class>org.olat.modules.video.model.VideoTranscodingImpl</class>
 		<class>org.olat.modules.video.model.VideoMetaImpl</class>
 		<class>org.olat.modules.webFeed.model.FeedImpl</class>
 		<class>org.olat.modules.webFeed.model.ItemImpl</class>
 		<class>org.olat.ims.lti.model.LTIOutcomeImpl</class>
-		<class>org.olat.portfolio.model.InvitationImpl</class>
-		<class>org.olat.portfolio.model.structel.EPStructureElementToGroupRelation</class>
 		<class>org.olat.shibboleth.manager.ShibbolethAutoAccessMethod</class>
 		<class>org.olat.user.UserImpl</class>
 		<class>org.olat.user.model.AbsenceLeaveImpl</class>
 		<class>org.olat.user.model.UserDataExportImpl</class>
 		
 		<exclude-unlisted-classes>true</exclude-unlisted-classes>
+		<shared-cache-mode>ENABLE_SELECTIVE</shared-cache-mode>
 		<properties>
 			<property name="hibernate.generate_statistics" value="true"/>
 			<property name="hibernate.archive.autodetection" value=""/>
@@ -287,7 +293,6 @@
 			<property name="hibernate.query.in_clause_parameter_padding" value="true"/>
 			<property name="hibernate.connection.handling_mode" value="DELAYED_ACQUISITION_AND_RELEASE_AFTER_TRANSACTION"/>
 			<property name="hibernate.session_factory.interceptor" value="org.olat.core.commons.persistence.AuditInterceptor"/>
-			<property name="jboss.as.jpa.providerModule" value="org.hibernate:5.4" />
 		</properties>
 	</persistence-unit>
 </persistence>

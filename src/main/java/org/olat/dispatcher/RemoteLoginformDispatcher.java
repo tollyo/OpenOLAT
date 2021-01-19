@@ -19,14 +19,16 @@
  */
 package org.olat.dispatcher;
 
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import org.olat.admin.user.delete.service.UserDeletionManager;
+import org.apache.logging.log4j.Logger;
 import org.olat.basesecurity.AuthHelper;
+import org.olat.basesecurity.BaseSecurity;
 import org.olat.basesecurity.BaseSecurityModule;
 import org.olat.core.CoreSpringFactory;
 import org.olat.core.dispatcher.Dispatcher;
@@ -41,13 +43,13 @@ import org.olat.core.gui.media.ServletUtil;
 import org.olat.core.gui.render.StringOutput;
 import org.olat.core.gui.render.URLBuilder;
 import org.olat.core.id.Identity;
-import org.apache.logging.log4j.Logger;
 import org.olat.core.logging.Tracing;
 import org.olat.core.logging.activity.ThreadLocalUserActivityLoggerInstaller;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.UserSession;
 import org.olat.core.util.WebappHelper;
 import org.olat.login.OLATAuthenticationController;
+import org.olat.login.auth.AuthenticationStatus;
 import org.olat.login.auth.OLATAuthManager;
 
 /**
@@ -92,14 +94,14 @@ public class RemoteLoginformDispatcher implements Dispatcher {
 	private static final String PARAM_CREDENTIAL = "pwd";
 	private static final Logger log = Tracing.createLoggerFor(RemoteLoginformDispatcher.class);
 	
-	private UserDeletionManager userDeletionManager;
+	private BaseSecurity securityManager;
 	
 	/**
 	 * [used by Spring]
-	 * @param userDeletionManager
+	 * @param securityManager Base security
 	 */
-	public void setUserDeletionManager(UserDeletionManager userDeletionManager) {
-		this.userDeletionManager = userDeletionManager;
+	public void setSecurityManager(BaseSecurity securityManager) {
+		this.securityManager = securityManager;
 	}
 	
 	/**
@@ -120,7 +122,7 @@ public class RemoteLoginformDispatcher implements Dispatcher {
 			ureq = new UserRequestImpl(uriPrefix, request, response);
 				
 			if (! request.getMethod().equals(METHOD_POST)) {
-				log.warn("Wrong HTTP method, only POST allowed, but current method::" + request.getMethod());
+				log.warn("Wrong HTTP method, only POST allowed, but current method::{}", request.getMethod());
 				DispatcherModule.redirectToDefaultDispatcher(response); 
 				return;
 			}
@@ -139,9 +141,9 @@ public class RemoteLoginformDispatcher implements Dispatcher {
 			
 			// Authenticate user
 			OLATAuthManager olatAuthenticationSpi = CoreSpringFactory.getImpl(OLATAuthManager.class);
-			Identity identity = olatAuthenticationSpi.authenticate(null, userName, pwd);
+			Identity identity = olatAuthenticationSpi.authenticate(null, userName, pwd, new AuthenticationStatus());
 			if (identity == null) {
-				log.info("Could not authenticate user '" + userName + "', wrong password or user name");
+				log.info("Could not authenticate user '{}', wrong password or user name", userName);
 				// redirect to OLAT loginscreen, add error parameter so that the loginform can mark itself as errorfull
 				String loginUrl = WebappHelper.getServletContextPath() + DispatcherModule.getPathDefault() + "?" + OLATAuthenticationController.PARAM_LOGINERROR + "=true";
 				DispatcherModule.redirectTo(response, loginUrl); 
@@ -158,7 +160,7 @@ public class RemoteLoginformDispatcher implements Dispatcher {
 				int loginStatus = AuthHelper.doLogin(identity, BaseSecurityModule.getDefaultAuthProviderIdentifier(), ureq);
 				if (loginStatus == AuthHelper.LOGIN_OK) {
 					// redirect to authenticated environment
-					userDeletionManager.setIdentityAsActiv(identity);
+					securityManager.setIdentityLastLogin(identity);
 					
 					final String origUri = request.getRequestURI();
 					String restPart = origUri.substring(uriPrefix.length());
@@ -187,7 +189,7 @@ public class RemoteLoginformDispatcher implements Dispatcher {
 						}
 						
 						usess.putEntryInNonClearedStore(AuthenticatedDispatcher.AUTHDISPATCHER_BUSINESSPATH, businessPath);
-						String url = getRedirectToURL(usess);
+						String url = getRedirectToURL(usess, ureq);
 						DispatcherModule.redirectTo(response, url);
 					} else {
 						//redirect
@@ -213,13 +215,16 @@ public class RemoteLoginformDispatcher implements Dispatcher {
 		}
 	}
 	
-	private String getRedirectToURL(UserSession usess) {
-		Window w = Windows.getWindows(usess).getChiefController().getWindow();
+	private String getRedirectToURL(UserSession usess, UserRequest ureq) {
+		Window w = Windows.getWindows(usess).getChiefController(ureq).getWindow();
 		
-		URLBuilder ubu = new URLBuilder("", w.getInstanceId(), String.valueOf(w.getTimestamp()));
-		StringOutput sout = new StringOutput(30);
-		ubu.buildURI(sout, null, null);
-		
-		return WebappHelper.getServletContextPath() + DispatcherModule.PATH_AUTHENTICATED + sout.toString();
+		URLBuilder ubu = new URLBuilder("", w.getInstanceId(), w.getTimestamp(), usess.getCsrfToken());
+		try(StringOutput sout = new StringOutput(30)) {
+			ubu.buildURI(sout, null, null);
+			return WebappHelper.getServletContextPath() + DispatcherModule.PATH_AUTHENTICATED + sout.toString();
+		} catch(IOException e) {
+			log.error("", e);
+			return WebappHelper.getServletContextPath();
+		}
 	}
 }

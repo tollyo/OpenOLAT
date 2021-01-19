@@ -57,6 +57,10 @@ public interface AssessmentEntry extends AssessmentEntryLight {
 	public Integer getAttempts();
 
 	public void setAttempts(Integer attempts);
+	
+	public Date getLastAttempt();
+	
+	public void setLastAttempt(Date lastAttempt);
 
 	public void setScore(BigDecimal score);
 
@@ -112,6 +116,10 @@ public interface AssessmentEntry extends AssessmentEntryLight {
 	public AssessmentRunStatus getCurrentRunStatus();
 	
 	public void setCurrentRunStatus(AssessmentRunStatus runStatus);
+	
+	public Date getCurrentRunStartDate();
+	
+	public void setCurrentRunStartDate(Date date);
 
 	public String getComment();
 

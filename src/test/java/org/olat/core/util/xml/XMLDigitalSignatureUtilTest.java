@@ -24,7 +24,9 @@ import java.net.URL;
 import java.nio.file.Files;
 
 import org.junit.Assert;
+import org.junit.BeforeClass;
 import org.junit.Test;
+import org.olat.core.configuration.PersistedProperties;
 import org.olat.core.util.FileUtils;
 import org.olat.core.util.crypto.CryptoUtil;
 import org.olat.core.util.crypto.X509CertificatePrivateKeyPair;
@@ -39,6 +41,16 @@ import org.w3c.dom.NodeList;
  *
  */
 public class XMLDigitalSignatureUtilTest {
+	
+	/**
+	 * BouncyCastle is loaded and controller by PersistedProperties.
+	 */
+	@BeforeClass
+	public static void loadBouncyCastle() {
+		new PersistedProperties(event -> {
+			//
+		});
+	}
 	
 	/**
 	 * Preliminary test which read the certificate. The method is used in

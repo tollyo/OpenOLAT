@@ -21,6 +21,7 @@ package org.olat.core.util.pdf;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
@@ -124,7 +125,7 @@ public class PdfDocument {
         currentContentStream.beginText();
         currentContentStream.setFont(font, fontSize);
         currentContentStream.newLineAtOffset(marginLeftRight, currentY);
-        currentContentStream.showText(text);
+		showTextToStream(text, currentContentStream);
         currentContentStream.endText();
         
         float leading = lineHeightFactory * fontSize;
@@ -177,7 +178,7 @@ public class PdfDocument {
         currentContentStream.setFont(textFont, fontSize);
         currentContentStream.newLineAtOffset(marginLeftRight, currentY);            
         for (String line: lines) {
-        	currentContentStream.showText(line);
+			showTextToStream(line, currentContentStream);
             currentContentStream.newLineAtOffset(0, -leading);
             currentY -= leading; 
         }
@@ -217,7 +218,21 @@ public class PdfDocument {
     }
     
     public static String cleanString(String string) {
-    	return string.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ').replace('\u00A0', ' ');
+    	return string.replace('\n', ' ')
+    			.replace('\r', ' ')
+    			.replace('\t', ' ')
+    			.replace('\u00A0', ' ')
+    			.replace('\u2212', '-');
+    }
+    
+    public static void showTextToStream(String text, PDPageContentStream stream) throws IOException {
+    	String cleanedText = cleanString(text);
+    	try {
+			stream.showText(cleanedText);
+		} catch (IllegalArgumentException e) {
+			stream.showText(Normalizer.normalize(cleanedText, Normalizer.Form.NFKD)
+					.replaceAll("\\p{InCombiningDiacriticalMarks}+",""));
+		}
     }
     
     public void drawLine(float xStart, float yStart, float xEnd, float yEnd, float lineWidth) 
@@ -235,7 +250,7 @@ public class PdfDocument {
 		currentContentStream.beginText();
 		currentContentStream.setFont(font, fontSize);
 		currentContentStream.newLineAtOffset(textx, texty);
-		currentContentStream.showText(text);
+		showTextToStream(text, currentContentStream);
 		currentContentStream.endText();
     }
     

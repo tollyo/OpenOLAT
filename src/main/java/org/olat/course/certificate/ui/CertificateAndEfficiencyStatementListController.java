@@ -20,7 +20,6 @@
 package org.olat.course.certificate.ui;
 
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +49,7 @@ import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.Event;
 import org.olat.core.gui.control.WindowControl;
 import org.olat.core.gui.control.generic.closablewrapper.CloseableModalController;
+import org.olat.core.gui.control.generic.dtabs.Activateable2;
 import org.olat.core.gui.control.generic.modal.DialogBoxController;
 import org.olat.core.gui.control.generic.modal.DialogBoxUIFactory;
 import org.olat.core.gui.render.Renderer;
@@ -57,18 +57,18 @@ import org.olat.core.gui.render.StringOutput;
 import org.olat.core.gui.render.URLBuilder;
 import org.olat.core.gui.translator.Translator;
 import org.olat.core.id.Identity;
+import org.olat.core.id.context.ContextEntry;
+import org.olat.core.id.context.StateEntry;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.Util;
 import org.olat.core.util.coordinate.CoordinatorManager;
 import org.olat.core.util.event.GenericEventListener;
-import org.olat.core.util.vfs.VFSContainer;
 import org.olat.course.CorruptedCourseException;
 import org.olat.course.assessment.AssessmentModule;
 import org.olat.course.assessment.EfficiencyStatement;
 import org.olat.course.assessment.bulk.PassedCellRenderer;
 import org.olat.course.assessment.manager.EfficiencyStatementManager;
 import org.olat.course.assessment.model.UserEfficiencyStatementLight;
-import org.olat.course.assessment.portfolio.EfficiencyStatementArtefact;
 import org.olat.course.assessment.portfolio.EfficiencyStatementMediaHandler;
 import org.olat.course.certificate.CertificateEvent;
 import org.olat.course.certificate.CertificateLight;
@@ -79,10 +79,6 @@ import org.olat.modules.assessment.AssessmentService;
 import org.olat.modules.assessment.ui.component.LearningProgressCompletionCellRenderer;
 import org.olat.modules.portfolio.PortfolioV2Module;
 import org.olat.modules.portfolio.ui.wizard.CollectArtefactController;
-import org.olat.portfolio.EPArtefactHandler;
-import org.olat.portfolio.PortfolioModule;
-import org.olat.portfolio.model.artefacts.AbstractArtefact;
-import org.olat.portfolio.ui.artefacts.collect.ArtefactWizzardStepsController;
 import org.olat.repository.RepositoryEntry;
 import org.olat.repository.RepositoryManager;
 import org.olat.repository.RepositoryService;
@@ -94,15 +90,13 @@ import org.springframework.beans.factory.annotation.Autowired;
  * @author srosse, stephane.rosse@frentix.com, http://www.frentix.com
  *
  */
-public class CertificateAndEfficiencyStatementListController extends FormBasicController
-		implements BreadcrumbPanelAware, GenericEventListener {
+public class CertificateAndEfficiencyStatementListController extends FormBasicController implements BreadcrumbPanelAware, GenericEventListener, Activateable2 {
 	
 	private static final String CMD_SHOW = "cmd.show";
 	private static final String CMD_LAUNCH_COURSE = "cmd.launch.course";
 	private static final String CMD_DELETE = "cmd.delete";
-	private static final String CMD_ARTEFACT = "cmd.artefact";
 	private static final String CMD_MEDIA = "cmd.MEDIA";
-	
+
 	private FlexiTableElement tableEl;
 	private BreadcrumbPanel stackPanel;
 	private FormLink coachingToolButton;
@@ -111,16 +105,14 @@ public class CertificateAndEfficiencyStatementListController extends FormBasicCo
 	private CloseableModalController cmc;
 	private CollectArtefactController collectorCtrl;
 	private DialogBoxController confirmDeleteCtr;
-	private ArtefactWizzardStepsController ePFCollCtrl;
 	
 	private final boolean canModify;
 	private final boolean linkToCoachingTool;
+	private final boolean canLaunchCourse;
 	private final Identity assessedIdentity;
 	
 	@Autowired
 	private EfficiencyStatementManager esm;
-	@Autowired
-	private PortfolioModule portfolioModule;
 	@Autowired
 	private PortfolioV2Module portfolioV2Module;
 	@Autowired
@@ -135,21 +127,38 @@ public class CertificateAndEfficiencyStatementListController extends FormBasicCo
 	private AssessmentService assessmentService;
 	
 	public CertificateAndEfficiencyStatementListController(UserRequest ureq, WindowControl wControl) {
-		this(ureq, wControl, ureq.getUserSession().getIdentity(), false, true);
+		this(ureq, wControl, ureq.getUserSession().getIdentity(), false, true, true);
 	}
 	
-	public CertificateAndEfficiencyStatementListController(UserRequest ureq, WindowControl wControl,
-			Identity assessedIdentity, boolean linkToCoachingTool, boolean canModify) {
+	public CertificateAndEfficiencyStatementListController(UserRequest ureq, WindowControl wControl, Identity assessedIdentity, boolean linkToCoachingTool, boolean canModify, boolean canLaunchCourse) {
 		super(ureq, wControl, "cert_statement_list");
 		setTranslator(Util.createPackageTranslator(AssessmentModule.class, getLocale(), getTranslator()));
 		this.canModify = canModify;
 		this.assessedIdentity = assessedIdentity;
 		this.linkToCoachingTool = linkToCoachingTool;
+		this.canLaunchCourse = canLaunchCourse;
+
+		// Show heading
+		flc.contextPut("showHeading", true);
 		
 		initForm(ureq);
 		
 		CoordinatorManager.getInstance().getCoordinator().getEventBus()
 			.registerFor(this, getIdentity(), CertificatesManager.ORES_CERTIFICATE_EVENT);
+	}
+
+	public CertificateAndEfficiencyStatementListController(UserRequest ureq, WindowControl wControl, Identity assessedIdentity, boolean linkToCoachingTool, boolean canModify, boolean canLaunchCourse, boolean showHeading) {
+		this(ureq, wControl, assessedIdentity, linkToCoachingTool, canModify, canLaunchCourse);
+
+		// Set visibility of heading
+		flc.contextPut("showHeading", showHeading);
+	}
+	
+	public CertificateAndEfficiencyStatementListController(UserRequest ureq, WindowControl wControl, Identity assessedIdentity, boolean withFieldSet) {
+		this(ureq, wControl, assessedIdentity, false, false, true);
+		
+		// Show different header in user management
+		flc.contextPut("withFieldSet", withFieldSet);
 	}
 	
 	@Override
@@ -188,6 +197,7 @@ public class CertificateAndEfficiencyStatementListController extends FormBasicCo
 	@Override
 	protected void initForm(FormItemContainer formLayout, Controller listener, UserRequest ureq) {
 		if(linkToCoachingTool) {
+			flc.contextPut("withFieldSet", true);
 			coachingToolButton = uifactory.addFormLink("coaching.tool", formLayout, Link.BUTTON);
 		}
 		
@@ -202,9 +212,11 @@ public class CertificateAndEfficiencyStatementListController extends FormBasicCo
 		tableColumnModel.addFlexiColumnModel(new DefaultFlexiColumnModel(Cols.lastUserUpdate));
 		tableColumnModel.addFlexiColumnModel(new DefaultFlexiColumnModel(Cols.certificate, new DownloadCertificateCellRenderer(assessedIdentity, getLocale())));
 		tableColumnModel.addFlexiColumnModel(new DefaultFlexiColumnModel(Cols.recertification, new DateFlexiCellRenderer(getLocale())));
-		tableColumnModel.addFlexiColumnModel(new DefaultFlexiColumnModel("table.header.launchcourse",
-				translate("table.header.launchcourse"), CMD_LAUNCH_COURSE));
-		
+		if (canLaunchCourse) {
+			tableColumnModel.addFlexiColumnModel(new DefaultFlexiColumnModel("table.header.launchcourse",
+					translate("table.header.launchcourse"), CMD_LAUNCH_COURSE));
+		}
+	
 		if(canModify) {
 			DefaultFlexiColumnModel deleteColumn = new DefaultFlexiColumnModel(Cols.deleteEfficiencyStatement.i18nHeaderKey(), Cols.deleteEfficiencyStatement.ordinal(), CMD_DELETE,
 					new BooleanCellRenderer(new StaticFlexiCellRenderer(translate("table.action.delete"), CMD_DELETE), null));
@@ -217,13 +229,6 @@ public class CertificateAndEfficiencyStatementListController extends FormBasicCo
 				DefaultFlexiColumnModel portfolioColumn = new DefaultFlexiColumnModel( Cols.artefact, CMD_MEDIA,
 						new BooleanCellRenderer(new StaticFlexiCellRenderer(CMD_MEDIA, new AsArtefactCellRenderer()), null));
 				tableColumnModel.addFlexiColumnModel(portfolioColumn);
-			} else {
-				EPArtefactHandler<?> artHandler = portfolioModule.getArtefactHandler(EfficiencyStatementArtefact.ARTEFACT_TYPE);
-				if(portfolioModule.isEnabled() && artHandler != null && artHandler.isEnabled() && assessedIdentity.equals(getIdentity())) {
-					tableColumnModel.addFlexiColumnModel(new DefaultFlexiColumnModel("table.header.artefact",
-							Cols.efficiencyStatement.ordinal(), CMD_ARTEFACT,
-							new StaticFlexiCellRenderer(CMD_ARTEFACT, new AsArtefactCellRenderer())));
-				}
 			}
 		}
 		
@@ -231,6 +236,7 @@ public class CertificateAndEfficiencyStatementListController extends FormBasicCo
 		loadModel();
 		tableEl = uifactory.addTableElement(getWindowControl(), "certificates", tableModel, getTranslator(), formLayout);
 		tableEl.setElementCssClass("o_sel_certificates_table");
+		tableEl.setEmtpyTableMessageKey("table.statements.empty");
 	}
 	
 	private void loadModel() {
@@ -246,7 +252,7 @@ public class CertificateAndEfficiencyStatementListController extends FormBasicCo
 				.loadRootAssessmentEntriesByAssessedIdentity(assessedIdentity, courseEntryKeys).stream()
 				.filter(ae -> ae.getCompletion() != null)
 				.collect(Collectors.toMap(
-						ae -> ae.getRepositoryEntry().getKey(),
+						ae -> ae.getRepositoryEntryKey(),
 						ae -> ae.getCompletion()
 					));
 		
@@ -314,8 +320,6 @@ public class CertificateAndEfficiencyStatementListController extends FormBasicCo
 					doConfirmDelete(ureq, statement);
 				} else if(CMD_SHOW.equals(cmd)) {
 					doShowStatement(ureq, statement);
-				} else if(CMD_ARTEFACT.equals(cmd)) {
-					doCollectArtefact(ureq, statement.getDisplayName(), statement.getEfficiencyStatementKey());
 				} else if(CMD_MEDIA.equals(cmd)) {
 					doCollectMedia(ureq, statement.getDisplayName(), statement.getEfficiencyStatementKey());
 				}
@@ -400,21 +404,6 @@ public class CertificateAndEfficiencyStatementListController extends FormBasicCo
 			}
 		}
 	}
-	
-	private void doCollectArtefact(UserRequest ureq, String title, Long efficiencyStatementKey) {
-		EPArtefactHandler<?> artHandler = portfolioModule.getArtefactHandler(EfficiencyStatementArtefact.ARTEFACT_TYPE);
-		if(artHandler != null && artHandler.isEnabled() && assessedIdentity.equals(getIdentity())) {
-			AbstractArtefact artefact = artHandler.createArtefact();
-			artefact.setAuthor(getIdentity());//only author can create artefact
-			//no business path becouse we cannot launch an efficiency statement
-			artefact.setCollectionDate(new Date());
-			artefact.setTitle(translate("artefact.title", new String[]{ title }));
-			EfficiencyStatement fullStatement = esm.getUserEfficiencyStatementByKey(efficiencyStatementKey);
-			artHandler.prefillArtefactAccordingToSource(artefact, fullStatement);
-			ePFCollCtrl = new ArtefactWizzardStepsController(ureq, getWindowControl(), artefact, (VFSContainer)null);
-			listenTo(ePFCollCtrl);
-		}
-	}
 
 	private void doCollectMedia(UserRequest ureq, String title, Long efficiencyStatementKey) {
 		if(guardModalController(collectorCtrl)) return;
@@ -426,6 +415,11 @@ public class CertificateAndEfficiencyStatementListController extends FormBasicCo
 		cmc = new CloseableModalController(getWindowControl(), null, collectorCtrl.getInitialComponent(), true, title, true);
 		cmc.addControllerListener(this);
 		cmc.activate();
+	}
+
+	@Override
+	public void activate(UserRequest ureq, List<ContextEntry> entries, StateEntry state) {
+
 	}
 
 	public class AsArtefactCellRenderer implements FlexiCellRenderer {

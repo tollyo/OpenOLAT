@@ -19,6 +19,7 @@
 **/
 package org.olat.group.model;
 
+import java.util.Date;
 import java.util.List;
 
 import org.olat.repository.RepositoryEntryRef;
@@ -43,10 +44,12 @@ public class BusinessGroupQueryParams {
 	private boolean attendee;
 	private boolean waiting;
 	private Boolean publicGroups;
+	private Boolean managed;
 	private boolean marked;
 	private Boolean resources;
 	private boolean headless = false;
 	private boolean authorConnection;
+	private Date lastUsageBefore;
 	
 	private List<Long> businessGroupKeys;
 	private RepositoryEntryRef repositoryEntry;
@@ -148,6 +151,14 @@ public class BusinessGroupQueryParams {
 		this.publicGroups = publicGroups;
 	}
 
+	public Boolean getManaged() {
+		return managed;
+	}
+
+	public void setManaged(Boolean managed) {
+		this.managed = managed;
+	}
+
 	public boolean isMarked() {
 		return marked;
 	}
@@ -206,5 +217,13 @@ public class BusinessGroupQueryParams {
 	 */
 	public void setHeadless(boolean headless) {
 		this.headless = headless;
+	}
+
+	public Date getLastUsageBefore() {
+		return lastUsageBefore;
+	}
+
+	public void setLastUsageBefore(Date lastUsageBefore) {
+		this.lastUsageBefore = lastUsageBefore;
 	}
 }

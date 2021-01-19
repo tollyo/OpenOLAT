@@ -30,7 +30,6 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
-import org.olat.admin.user.delete.service.UserDeletionManager;
 import org.olat.basesecurity.AuthHelper;
 import org.olat.basesecurity.BaseSecurity;
 import org.olat.basesecurity.BaseSecurityModule;
@@ -43,7 +42,6 @@ import org.springframework.stereotype.Component;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 
 /**
  * 
@@ -54,6 +52,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
  * Initial Date:  7 apr. 2010 <br>
  * @author srosse, stephane.rosse@frentix.com
  */
+@Deprecated
 @Path("auth")
 @Component
 public class AuthenticationWebService {
@@ -65,15 +64,11 @@ public class AuthenticationWebService {
 	@Autowired
 	private RestSecurityBean securityBean;
 	@Autowired
-	private UserDeletionManager userDeletionManager;
-	@Autowired
 	private OLATAuthManager olatAuthenticationSpi;
 	
 	/**
 	 * Retrieves the version of the User Authentication Web Service
-	 * @response.representation.200.mediaType text/plain
-	 * @response.representation.200.doc The version of this specific Web Service
-	 * @response.representation.200.example 1.0
+	 * 
 	 * @return
 	 */
 	@GET
@@ -99,41 +94,29 @@ public class AuthenticationWebService {
 	 * When using the REST API, best-practice is to use basic authentication and
 	 * activate cookies in your HTTP client for automatic session management.
 	 * 
-	 * @response.representation.200.mediaType text/plain, application/xml
-	 * @response.representation.200.doc Say hello to the authenticated user, and
-	 *                                  give it a security
-	 *                                  token @response.representation.200.example
-	 *                                  &lt;hello&gt;Hello john&lt;/hello&gt;
-	 * @response.representation.401.doc The authentication has failed
-	 * @response.representation.404.doc The identity not found
-	 * @param username
-	 *            The username
-	 * @param password
-	 *            The password (the password is in clear text, not encrypted)
-	 * @param httpRequest
-	 *            The HTTP request
+	 * @param username The username
+	 * @param password The password (the password is in clear text, not encrypted)
+	 * @param httpRequest The HTTP request
 	 * @return
 	 */
 	@GET
 	@Path("{username}")
 	@Operation(summary = "Authenticates against OLAT Provider", description = "Authenticates against OLAT Provider and provides a security token if\n" + 
-			"	  authentication is successful. The security token is returned as a header\n" + 
-			"	  named X-OLAT-TOKEN. Given that the password is sent in clear text and not\n" + 
-			"	  encrypted, it is not advisable to use this service over a none secure\n" + 
-			"	  connection (https).\n" + 
-			"	  \n" + 
-			"	  This authentication method should only be used if basic authentication is\n" + 
-			"	  not possible.\n" + 
-			"	  \n" + 
-			"	  When using the REST API, best-practice is to use basic authentication and\n" + 
-			"	  activate cookies in your HTTP client for automatic session management.")
-	@ApiResponses({
-			@ApiResponse(responseCode = "200", description = "Say hello to the authenticated user, and\n" + 
-					"	 *                                  give it a security\n" + 
-					"	 *                                  token @response.representation.200.example\n" + 
-					"	 *                                  &lt;hello&gt;Hello john&lt;/hello&gt;"),
-			@ApiResponse(responseCode = "401", description = "The authentication has failed"),
-			@ApiResponse(responseCode = "404", description = "The identity not found") })	
+			" authentication is successful. The security token is returned as a header\n" + 
+			" named X-OLAT-TOKEN. Given that the password is sent in clear text and not\n" + 
+			" encrypted, it is not advisable to use this service over a none secure\n" + 
+			" connection (https).\n" + 
+			" \n" + 
+			" This authentication method should only be used if basic authentication is\n" + 
+			" not possible.\n" + 
+			" \n" + 
+			" When using the REST API, best-practice is to use basic authentication and\n" + 
+			" activate cookies in your HTTP client for automatic session management.", deprecated=true)
+	@ApiResponse(responseCode = "200", description = "Say hello to the authenticated user, and\n" + 
+			" *                                  give it a security token\n" + 
+			" *                                  &lt;hello&gt;Hello john&lt;/hello&gt;")
+	@ApiResponse(responseCode = "401", description = "The authentication has failed")
+	@ApiResponse(responseCode = "404", description = "The identity not found")
 	@Produces({MediaType.TEXT_PLAIN, MediaType.APPLICATION_XML})
 	public Response login(@PathParam("username") String username,
 			@QueryParam("password") String password,
@@ -149,7 +132,7 @@ public class AuthenticationWebService {
 	}
 	
 	private Response loginWithToken(String username, String secToken, HttpServletRequest httpRequest) {
-		Identity identity = securityManager.findIdentityByName(username);
+		Identity identity = securityManager.findIdentityByLogin(username);
 		if(identity == null) {
 			return Response.serverError().status(Status.UNAUTHORIZED).build();
 		}
@@ -172,14 +155,14 @@ public class AuthenticationWebService {
 	
 	private Response loginWithPassword(String username, String password, HttpServletRequest httpRequest) {
 		UserRequest ureq = RestSecurityHelper.getUserRequest(httpRequest);
-		Identity identity = olatAuthenticationSpi.authenticate(null, username, password);
+		Identity identity = olatAuthenticationSpi.authenticate(username, password);
 		if(identity == null) {
 			return Response.serverError().status(Status.UNAUTHORIZED).build();
 		}
 		
 		int loginStatus = AuthHelper.doHeadlessLogin(identity, BaseSecurityModule.getDefaultAuthProviderIdentifier(), ureq, true);
 		if (loginStatus == AuthHelper.LOGIN_OK) {
-			userDeletionManager.setIdentityAsActiv(identity);
+			securityManager.setIdentityLastLogin(identity);
 			//Forge a new security token
 			String token = securityBean.generateToken(identity, httpRequest.getSession(true));
 			return Response.ok("<hello identityKey=\"" + identity.getKey() + "\">Hello " + username + "</hello>", MediaType.APPLICATION_XML)

@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -45,9 +46,11 @@ import javax.mail.internet.MimeMessage;
 
 import org.apache.logging.log4j.Logger;
 import org.olat.basesecurity.BaseSecurity;
+import org.olat.basesecurity.BaseSecurityModule;
 import org.olat.basesecurity.OrganisationRoles;
 import org.olat.basesecurity.OrganisationService;
 import org.olat.basesecurity.model.OrganisationRefImpl;
+import org.olat.commons.calendar.CalendarUtils;
 import org.olat.core.commons.persistence.DB;
 import org.olat.core.gui.translator.Translator;
 import org.olat.core.helpers.Settings;
@@ -57,6 +60,7 @@ import org.olat.core.id.User;
 import org.olat.core.id.UserConstants;
 import org.olat.core.id.context.BusinessControlFactory;
 import org.olat.core.logging.Tracing;
+import org.olat.core.util.DateUtils;
 import org.olat.core.util.Encoder;
 import org.olat.core.util.Formatter;
 import org.olat.core.util.StringHelper;
@@ -78,6 +82,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.thoughtworks.xstream.XStream;
+import com.thoughtworks.xstream.security.ExplicitTypePermission;
 
 /**
  * Description:
@@ -92,6 +97,10 @@ public class RegistrationManager implements UserDataDeletable, UserDataExportabl
 	private static final XStream xmlXStream = XStreamHelper.createXStreamInstance();
 	static {
 		XStream.setupDefaultSecurity(xmlXStream);
+		Class<?>[] types = new Class[] {
+				HashMap.class
+			};
+		xmlXStream.addPermission(new ExplicitTypePermission(types));
 	}
 
 	private static final int VALID_UNTIL_30_DAYS = 30*24;
@@ -202,9 +211,17 @@ public class RegistrationManager implements UserDataDeletable, UserDataExportabl
 	 * @return the newly created subject or null
 	 */
 	public Identity createNewUserAndIdentityFromTemporaryKey(String login, String pwd, User user, TemporaryKey tk) {
+		Date expirationDate = null;
+		Integer expiration = registrationModule.getAccountExpirationInDays();
+		if(expiration != null && expiration.intValue() > 0) {
+			expirationDate = DateUtils.addDays(new Date(), expiration.intValue());
+			expirationDate = CalendarUtils.endOfDay(expirationDate);
+		}
+		
 		Organisation organisation = getOrganisationForRegistration();
 		Identity identity = securityManager
-				.createAndPersistIdentityAndUserWithDefaultProviderAndUserGroup(login, null, pwd, user, organisation);
+				.createAndPersistIdentityAndUserWithOrganisation(null, login, null, user,
+						BaseSecurityModule.getDefaultAuthProviderIdentifier(), login, pwd,  organisation, expirationDate);
 		if(!OrganisationService.DEFAULT_ORGANISATION_IDENTIFIER.equals(organisation.getIdentifier())) {
 			Organisation defOrganisation = organisationService.getDefaultOrganisation();
 			organisationService.addMember(defOrganisation, identity, OrganisationRoles.user);
@@ -214,6 +231,8 @@ public class RegistrationManager implements UserDataDeletable, UserDataExportabl
 		} else if(pending(identity)) {
 			identity = securityManager.saveIdentityStatus(identity, Identity.STATUS_PENDING, identity);
 		}
+		
+		
 		deleteTemporaryKey(tk);
 		return identity;
 	}
@@ -304,7 +323,7 @@ public class RegistrationManager implements UserDataDeletable, UserDataExportabl
 		MimeMessage msg = mailManager.createMimeMessage(from, to, null, null, subject, decoratedBody, null, result);
 		mailManager.sendMessage(msg, result);
 		if (result.getReturnCode() != MailerResult.OK ) {
-			log.error("Could not send registration notification message, MailerResult was ::" + result.getReturnCode());			
+			log.error("Could not send registration notification message, MailerResult was ::{}", result.getReturnCode());			
 		}
 	}
 	
@@ -569,6 +588,10 @@ public class RegistrationManager implements UserDataDeletable, UserDataExportabl
 	@SuppressWarnings("unchecked")
 	public Map<String, String> readTemporaryValue(String value) {
 		return (Map<String, String>)xmlXStream.fromXML(value);
+	}
+	
+	public String temporaryValueToString(Map<String, String> map) {
+		return xmlXStream.toXML(map);
 	}
 
 	private String createRegistrationKey(String email, String ip) {

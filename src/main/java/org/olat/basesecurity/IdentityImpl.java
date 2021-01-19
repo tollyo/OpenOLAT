@@ -55,10 +55,17 @@ public class IdentityImpl implements Identity, IdentityRef, CreateInfo, Persista
 	private User user;
 	/** status=[activ|deleted|permanent] */
 	private int status;
+
+	private Date inactivationDate;
+	private Date inactivationEmailDate;
+	private Date reactivationDate;
+	private Date expirationDate;
+	private Date expirationEmailDate;
 	
 	private Date deletedDate;
 	private String deletedBy;
 	private String deletedRoles;
+	private Date deletionEmailDate;
 	
 	/**
 	 * Maximum length of an identity's name.
@@ -190,6 +197,57 @@ public class IdentityImpl implements Identity, IdentityRef, CreateInfo, Persista
 		this.deletedBy = deletedBy;
 	}
 
+	public Date getDeletionEmailDate() {
+		return deletionEmailDate;
+	}
+
+	public void setDeletionEmailDate(Date deletionEmailDate) {
+		this.deletionEmailDate = deletionEmailDate;
+	}
+
+	@Override
+	public Date getInactivationDate() {
+		return inactivationDate;
+	}
+
+	public void setInactivationDate(Date inactivationDate) {
+		this.inactivationDate = inactivationDate;
+	}
+
+	public Date getInactivationEmailDate() {
+		return inactivationEmailDate;
+	}
+
+	public void setInactivationEmailDate(Date inactivationEmailDate) {
+		this.inactivationEmailDate = inactivationEmailDate;
+	}
+
+	@Override
+	public Date getReactivationDate() {
+		return reactivationDate;
+	}
+
+	public void setReactivationDate(Date reactivationDate) {
+		this.reactivationDate = reactivationDate;
+	}
+
+	@Override
+	public Date getExpirationDate() {
+		return expirationDate;
+	}
+
+	public void setExpirationDate(Date expirationDate) {
+		this.expirationDate = expirationDate;
+	}
+
+	public Date getExpirationEmailDate() {
+		return expirationEmailDate;
+	}
+
+	public void setExpirationEmailDate(Date expirationEmailDate) {
+		this.expirationEmailDate = expirationEmailDate;
+	}
+
 	@Override
 	public int hashCode() {
 		int hash = 7;
@@ -219,9 +277,6 @@ public class IdentityImpl implements Identity, IdentityRef, CreateInfo, Persista
 		return equals(persistable);
 	}
 	
-	/**
-	 * @see java.lang.Object#toString()
-	 */
 	@Override
 	public String toString() {
 		return "Identity[key=" + key + "], " + super.toString();

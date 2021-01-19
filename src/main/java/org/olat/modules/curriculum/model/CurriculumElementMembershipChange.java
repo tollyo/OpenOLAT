@@ -21,6 +21,7 @@ package org.olat.modules.curriculum.model;
 
 import org.olat.core.gui.control.Event;
 import org.olat.core.id.Identity;
+import org.olat.core.util.StringHelper;
 import org.olat.modules.curriculum.CurriculumElement;
 
 /**
@@ -40,6 +41,7 @@ public class CurriculumElementMembershipChange extends Event {
 	private Boolean repositoryEntryOwner;
 	private Boolean coach;
 	private Boolean participant;
+	private Boolean masterCoach;
 	
 	public CurriculumElementMembershipChange(Identity member, CurriculumElement element) {
 		this(member, element.getKey());
@@ -52,6 +54,7 @@ public class CurriculumElementMembershipChange extends Event {
 		repositoryEntryOwner = origin.repositoryEntryOwner;
 		participant = origin.participant;
 		coach = origin.coach;
+		masterCoach = origin.masterCoach;
 	}
 	
 	public CurriculumElementMembershipChange(Identity member, Long groupKey) {
@@ -102,5 +105,35 @@ public class CurriculumElementMembershipChange extends Event {
 
 	public void setCoach(Boolean coach) {
 		this.coach = coach;
+	}
+	
+	public Boolean getMasterCoach() {
+		return masterCoach;
+	}
+
+	public void setMasterCoach(Boolean masterCoach) {
+		this.masterCoach = masterCoach;
+	}
+
+	public boolean addRole() {
+		return (getParticipant() != null && getParticipant().booleanValue())
+				|| (getCoach() != null && getCoach().booleanValue())
+				|| (getMasterCoach() != null && getMasterCoach().booleanValue())
+				|| (getCurriculumElementOwner() != null && getCurriculumElementOwner().booleanValue())
+				|| (getRepositoryEntryOwner() != null && getRepositoryEntryOwner().booleanValue());
+	}
+	
+	public int numOfSegments() {
+		String path = element.getMaterializedPathKeys();
+		int count = 0;
+		if(StringHelper.containsNonWhitespace(path)) {
+			char[] pathArr = path.toCharArray();
+			for(int i=pathArr.length; i-->1; ) {
+				if(pathArr[i] == '/') {
+					count++;
+				}
+			}
+		}
+		return count;
 	}
 }

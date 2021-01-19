@@ -62,7 +62,9 @@ import org.olat.core.util.resource.OresHelper;
 import org.olat.core.util.xml.XStreamHelper;
 import org.olat.course.condition.additionalconditions.AdditionalConditionManager;
 import org.olat.course.editor.EditorMainController;
+import org.olat.course.learningpath.manager.LearningPathNodeAccessProvider;
 import org.olat.course.nodeaccess.NodeAccessService;
+import org.olat.course.nodeaccess.NodeAccessType;
 import org.olat.course.nodes.AbstractAccessableCourseNode;
 import org.olat.course.nodes.CourseNode;
 import org.olat.course.nodes.CourseNodeFactory;
@@ -330,12 +332,18 @@ public class NavigationHandler implements Disposable {
 						controller.addControllerListener(listeningController);
 					}
 				} else {
-					// NOTE: we do not take into account what node caused the non-access by
-					// being !isAtLeastOneAccessible, but always state the
-					// NoAccessExplanation of the Node originally called by the user
-					String explan = courseNode.getNoAccessExplanation();
-					String sExplan = (explan == null ? "" : Formatter.formatLatexFormulas(explan));
-					 controller = MessageUIFactory.createInfoMessage(ureq, wControl, null, sExplan);
+					String sExplan;
+					if (LearningPathNodeAccessProvider.TYPE.equals(NodeAccessType.of(userCourseEnv).getType())) {
+						Translator translator = Util.createPackageTranslator(EditorMainController.class, ureq.getLocale());
+						sExplan = translator.translate("form.noAccessExplanation.default");
+					} else {
+						// NOTE: we do not take into account what node caused the non-access by
+						// being !isAtLeastOneAccessible, but always state the
+						// NoAccessExplanation of the Node originally called by the user
+						String explan = courseNode.getNoAccessExplanation();
+						sExplan = (explan == null ? "" : Formatter.formatLatexFormulas(explan));
+					}
+					controller = MessageUIFactory.createInfoMessage(ureq, wControl, null, sExplan);
 					// write log information
 					ThreadLocalUserActivityLogger.log(CourseLoggingAction.COURSE_NAVIGATION_NODE_NO_ACCESS, getClass(),
 							LoggingResourceable.wrap(courseNode));
@@ -446,6 +454,7 @@ public class NavigationHandler implements Disposable {
 				}
 				if (evaluateTree) {
 					treeModel = createTreeModel();
+					reattachExternalTreeModels(treeModel);
 				}
 				
 				if((TreeEvent.COMMAND_TREENODE_OPEN.equals(nodeSubCmd) || TreeEvent.COMMAND_TREENODE_CLOSE.equals(nodeSubCmd)) &&
@@ -554,10 +563,16 @@ public class NavigationHandler implements Disposable {
 	private void addSubTreeModel(TreeNode parent, TreeModel modelToAppend) {
 		// ignore root and directly add children.
 		// need to clone children so that are not detached from their original
-		parent.removeAllChildren();
+		int pChdCnt = parent.getChildCount();
+		for (int i = pChdCnt; i > 0; i--) {
+			INode node = parent.getChildAt(i-1);
+			if(!(node instanceof CourseTreeNode)) {
+				parent.remove(node);
+			}
+		}
+		
 		TreeNode root = modelToAppend.getRootNode();
 		int chdCnt = root.getChildCount();
-		
 		for (int i = chdCnt; i > 0; i--) {
 			INode chd = root.getChildAt(i-1);
 			INode chdc = (INode) XStreamHelper.xstreamClone(chd);
@@ -566,10 +581,6 @@ public class NavigationHandler implements Disposable {
 			}
 			// always insert before already existing course building block children
 			parent.insert(chdc, 0);
-		}
-		
-		if (parent instanceof GenericTreeNode) {
-			((GenericTreeNode)parent).setIdent(root.getIdent());
 		}
 	}
 	

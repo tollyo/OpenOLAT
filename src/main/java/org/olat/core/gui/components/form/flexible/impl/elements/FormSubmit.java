@@ -28,10 +28,12 @@ package org.olat.core.gui.components.form.flexible.impl.elements;
 import java.util.List;
 
 import org.olat.core.gui.UserRequest;
+import org.olat.core.gui.Windows;
 import org.olat.core.gui.components.Component;
 import org.olat.core.gui.components.Window;
 import org.olat.core.gui.components.form.flexible.elements.Submit;
 import org.olat.core.gui.components.form.flexible.impl.FormEvent;
+import org.olat.core.gui.control.winmgr.CommandFactory;
 import org.olat.core.logging.AssertException;
 import org.olat.core.util.StringHelper;
 import org.olat.core.util.ValidationStatus;
@@ -59,6 +61,11 @@ public class FormSubmit extends FormButton implements Submit{
 		this.action = FormEvent.ONCLICK;
 	}
 
+	public void setI18nKey(String i18nKey) {
+		this.i18nKey = i18nKey;
+		getComponent().setDirty(true);
+	}
+
 	@Override
 	protected void rootFormAvailable(){
 		String formItemId = getFormItemId();
@@ -70,6 +77,10 @@ public class FormSubmit extends FormButton implements Submit{
 		if(getRootForm().getAction() == FormEvent.ONCLICK){
 			getComponent().setDirty(true);
 			getRootForm().submit(ureq);
+			if(isNewWindowAfterDispatchUrl() && !getRootForm().isSubmittedAndValid()) {
+				Windows.getWindows(ureq).getWindow(ureq).getWindowBackOffice()
+					.sendCommandTo(CommandFactory.createNewWindowCancelRedirectTo());
+			}
 		}
 	}
 

@@ -25,6 +25,7 @@
 
 package org.olat.admin.user;
 
+import java.util.Collections;
 import java.util.List;
 
 import org.olat.admin.user.course.CourseOverviewController;
@@ -66,6 +67,7 @@ import org.olat.ldap.LDAPLoginManager;
 import org.olat.ldap.LDAPLoginModule;
 import org.olat.modules.curriculum.CurriculumModule;
 import org.olat.modules.curriculum.ui.CurriculumListController;
+import org.olat.modules.dcompensation.ui.UserDisadvantageCompensationListController;
 import org.olat.modules.grading.GradingModule;
 import org.olat.modules.grading.ui.GraderUserOverviewController;
 import org.olat.modules.lecture.LectureModule;
@@ -81,6 +83,9 @@ import org.olat.user.ProfileFormController;
 import org.olat.user.PropFoundEvent;
 import org.olat.user.UserManager;
 import org.olat.user.UserPropertiesController;
+import org.olat.user.ui.admin.authentication.UserAuthenticationsEditorController;
+import org.olat.user.ui.admin.lifecycle.ConfirmDeleteUserController;
+import org.olat.user.ui.admin.lifecycle.IdentityDeletedEvent;
 import org.olat.user.ui.data.UserDataExportController;
 import org.olat.user.ui.identity.UserRelationsController;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -110,6 +115,7 @@ public class UserAdminController extends BasicController implements Activateable
 	private static final String NLS_EDIT_UROLES			= "edit.uroles";
 	private static final String NLS_EDIT_RELATIONS		= "edit.urelations";
 	private static final String NLS_EDIT_UQUOTA			= "edit.uquota";
+	private static final String NLS_EDIT_DISADVANTAGE	= "edit.udisadvantage";
 	private static final String NLS_VIEW_GROUPS			= "view.groups";
 	private static final String NLS_VIEW_COURSES		= "view.courses";
 	private static final String NLS_VIEW_ACCESS			= "view.access";
@@ -130,6 +136,8 @@ public class UserAdminController extends BasicController implements Activateable
 	private final boolean allowedToManage;
 	private int rolesTab;
 
+	private Link deleteLink;
+	
 	// controllers used in tabbed pane
 	private TabbedPane userTabP;
 	private Controller prefsCtr;
@@ -152,6 +160,7 @@ public class UserAdminController extends BasicController implements Activateable
 	private CloseableModalController cmc;
 	private UserDataExportController exportDataCtrl;
 	private IdentityCompetencesController competencesCtrl;
+	private ConfirmDeleteUserController confirmDeleteUserCtlr;
 	private ParticipantLecturesOverviewController lecturesCtrl;
 	private CertificateAndEfficiencyStatementListController efficicencyCtrl;
 
@@ -226,6 +235,11 @@ public class UserAdminController extends BasicController implements Activateable
 			exportDataButton = LinkFactory.createToolLink("exportUserData", translate("export.user.data"), this, "o_icon_download");
 			stackPanel.addTool(exportDataButton, Align.left);
 		}
+		if(stackPanel != null && managerRoles.isAdministrator()) {
+			deleteLink = LinkFactory.createToolLink("delete", translate("delete"), this, "o_icon o_icon_delete_item");
+			deleteLink.setElementCssClass("o_sel_user_delete");
+			stackPanel.addTool(deleteLink, Align.left);
+		}
 	}
 
 	@Override
@@ -266,6 +280,8 @@ public class UserAdminController extends BasicController implements Activateable
 	public void event(UserRequest ureq, Component source, Event event) {
 		if (source == backLink) {
 			fireEvent(ureq, Event.BACK_EVENT);
+		} else if(deleteLink == source) {
+			doConfirmDelete(ureq);
 		} else if(exportDataButton == source) {
 			doExportData(ureq);
 		} else if (source == userTabP) {
@@ -285,27 +301,36 @@ public class UserAdminController extends BasicController implements Activateable
 			if (event == Event.DONE_EVENT) {
 				// rebuild authentication tab, could be wrong now
 				if (authenticationsCtr != null) {
-					authenticationsCtr.rebuildAuthenticationsTableDataModel();
+					authenticationsCtr.reloadModel();
 				}
 			}
-		} else if (source == userProfileCtr){
-			if (event == Event.DONE_EVENT){
+		} else if (userProfileCtr == source || authenticationsCtr == source) {
+			if (event == Event.DONE_EVENT) {
 				//reload profile data on top
 				editedIdentity = securityManager.loadIdentityByKey(editedIdentity.getKey());
 				exposeUserDataToVC(ureq, editedIdentity);
 				userProfileCtr.resetForm(ureq);
+				fireEvent(ureq, Event.CHANGED_EVENT);
 			}
 		} else if(source == exportDataCtrl) {
 			cmc.deactivate();
 			cleanUp();
+		} else if(source == confirmDeleteUserCtlr) {
+			cmc.deactivate();
+			cleanUp();
+			if(event == Event.DONE_EVENT) {
+				fireEvent(ureq, new IdentityDeletedEvent());
+			}
 		} else if(source == cmc) {
 			cleanUp();
 		}
 	}
 	
 	private void cleanUp() {
+		removeAsListenerAndDispose(confirmDeleteUserCtlr);
 		removeAsListenerAndDispose(exportDataCtrl);
 		removeAsListenerAndDispose(cmc);
+		confirmDeleteUserCtlr = null;
 		exportDataCtrl = null;
 		cmc = null;
 	}
@@ -323,13 +348,26 @@ public class UserAdminController extends BasicController implements Activateable
 		listenTo(cmc);
 		cmc.activate();
 	}
+	
+	private void doConfirmDelete(UserRequest ureq) {
+		if(guardModalController(confirmDeleteUserCtlr)) return;
+		
+		confirmDeleteUserCtlr = new ConfirmDeleteUserController(ureq, getWindowControl(),
+				Collections.singletonList(editedIdentity));
+		listenTo(confirmDeleteUserCtlr);
+		
+		String fullname = userManager.getUserDisplayName(editedIdentity);
+		String title = translate("delete.user.data.title", new String[] { fullname });
+		cmc = new CloseableModalController(getWindowControl(), translate("close"), confirmDeleteUserCtlr.getInitialComponent(),
+				true, title);
+		listenTo(cmc);
+		cmc.activate();
+	}
 
 	/**
 	 * Check if user allowed to modify this identity. Only modification of user
 	 * that have lower rights is allowed. No one exept admins can manage usermanager
 	 * and admins
-	 * @param ureq
-	 * @param identity
 	 * @return boolean
 	 */
 	private boolean allowedToManageUser() {
@@ -385,7 +423,7 @@ public class UserAdminController extends BasicController implements Activateable
 		}
 
 		if(isAdminOf || isUserManagerOf || isRolesManagerOf) {
-			userTabP.addTab(translate(NLS_EDIT_UPREFS), uureq -> {
+			userTabP.addTab(ureq, translate(NLS_EDIT_UPREFS), uureq -> {
 				prefsCtr = new ChangePrefsController(uureq, getWindowControl(), identity);
 				listenTo(prefsCtr);
 				return prefsCtr.getInitialComponent();
@@ -393,7 +431,7 @@ public class UserAdminController extends BasicController implements Activateable
 		}
 
 		if (isPasswordChangesAllowed(identity)) {
-			userTabP.addTab(translate(NLS_EDIT_UPCRED), uureq -> {
+			userTabP.addTab(ureq, translate(NLS_EDIT_UPCRED), uureq -> {
 				pwdCtr =  new UserChangePasswordController(uureq, getWindowControl(), identity);
 				listenTo(pwdCtr);
 				return pwdCtr.getInitialComponent();
@@ -401,13 +439,13 @@ public class UserAdminController extends BasicController implements Activateable
 		}
 
 		if (isAdminOf) {
-			userTabP.addTab(translate(NLS_EDIT_UAUTH),  uureq -> {
+			userTabP.addTab(ureq, translate(NLS_EDIT_UAUTH),  uureq -> {
 				authenticationsCtr =  new UserAuthenticationsEditorController(uureq, getWindowControl(), identity);
 				listenTo(authenticationsCtr);
 				return authenticationsCtr.getInitialComponent();
 			});
 
-			userTabP.addTab(translate(NLS_EDIT_UPROP), uureq -> {
+			userTabP.addTab(ureq, translate(NLS_EDIT_UPROP), uureq -> {
 				propertiesCtr = new UserPropertiesController(uureq, getWindowControl(), identity, editedRoles);
 				listenTo(propertiesCtr);
 				return propertiesCtr.getInitialComponent();
@@ -415,14 +453,14 @@ public class UserAdminController extends BasicController implements Activateable
 		}
 		
 		if(isAdminOf || isPrincipalOf || isUserManagerOf || isRolesManagerOf) {
-			userTabP.addTab(translate(NLS_VIEW_GROUPS),  uureq -> {
+			userTabP.addTab(ureq, translate(NLS_VIEW_GROUPS),  uureq -> {
 				boolean canModify = isAdminOf || isUserManagerOf || isRolesManagerOf;
-				grpCtr = new GroupOverviewController(uureq, getWindowControl(), identity, canModify);
+				grpCtr = new GroupOverviewController(uureq, getWindowControl(), identity, canModify, true);
 				listenTo(grpCtr);
 				return grpCtr.getInitialComponent();
 			});
 	
-			userTabP.addTab(translate(NLS_VIEW_COURSES), uureq -> {
+			userTabP.addTab(ureq, translate(NLS_VIEW_COURSES), uureq -> {
 				boolean canModify = isAdminOf || isUserManagerOf || isRolesManagerOf;
 				courseCtr = new CourseOverviewController(uureq, getWindowControl(), identity, canModify);
 				listenTo(courseCtr);
@@ -431,16 +469,16 @@ public class UserAdminController extends BasicController implements Activateable
 		}
 
 		if (isAdminOf || isPrincipalOf || isRolesManagerOf) {
-			userTabP.addTab(translate(NLS_VIEW_ACCESS), uureq -> {
+			userTabP.addTab(ureq, translate(NLS_VIEW_ACCESS), uureq -> {
 				Controller accessCtr = new UserOrderController(uureq, getWindowControl(), identity);
 				listenTo(accessCtr);
 				return accessCtr.getInitialComponent();
 			});
 
-			userTabP.addTab(translate(NLS_VIEW_EFF_STATEMENTS),  uureq -> {
+			userTabP.addTab(ureq, translate(NLS_VIEW_EFF_STATEMENTS),  uureq -> {
 				boolean canModify = isAdminOf || isRolesManagerOf;
 				efficicencyCtrl = new CertificateAndEfficiencyStatementListController(uureq, getWindowControl(),
-						identity, true, canModify);
+						identity, true, canModify, true);
 				listenTo(efficicencyCtrl);
 				BreadcrumbedStackedPanel efficiencyPanel = new BreadcrumbedStackedPanel("statements", getTranslator(), efficicencyCtrl);
 				efficiencyPanel.pushController(translate(NLS_VIEW_EFF_STATEMENTS), efficicencyCtrl);
@@ -448,10 +486,17 @@ public class UserAdminController extends BasicController implements Activateable
 				efficiencyPanel.setInvisibleCrumb(1);
 				return efficiencyPanel;
 			});
+			
+			userTabP.addTab(ureq, translate(NLS_EDIT_DISADVANTAGE), uureq -> {
+				boolean canModify = isAdminOf || isRolesManagerOf;
+				Controller compensationCtrl = new UserDisadvantageCompensationListController(uureq, getWindowControl(), identity, canModify);
+				listenTo(compensationCtrl);
+				return compensationCtrl.getInitialComponent();
+			});
 		}
 
 		if (isUserManagerOf || isRolesManagerOf || isAdminOf) {
-			userTabP.addTab(translate(NLS_VIEW_SUBSCRIPTIONS),  uureq -> {
+			userTabP.addTab(ureq, translate(NLS_VIEW_SUBSCRIPTIONS),  uureq -> {
 				Controller subscriptionsCtr = new NotificationSubscriptionController(uureq, getWindowControl(), identity, true, true);
 				listenTo(subscriptionsCtr);
 				return subscriptionsCtr.getInitialComponent();
@@ -459,14 +504,14 @@ public class UserAdminController extends BasicController implements Activateable
 		}
 
 		// the controller manager is read-write permissions
-		rolesTab = userTabP.addTab(translate(NLS_EDIT_UROLES), uureq -> {
+		rolesTab = userTabP.addTab(ureq, translate(NLS_EDIT_UROLES), uureq -> {
 			rolesCtr = new SystemRolesAndRightsController(getWindowControl(), uureq, identity);
 			listenTo(rolesCtr);
 			return rolesCtr.getInitialComponent();
 		});
 		
 		if (securityModule.isRelationRoleEnabled() && (isUserManagerOf || isRolesManagerOf || isAdminOf || isPrincipalOf)) {
-			userTabP.addTab(translate(NLS_EDIT_RELATIONS),  uureq -> {
+			userTabP.addTab(ureq, translate(NLS_EDIT_RELATIONS),  uureq -> {
 				boolean canModify = isUserManagerOf || isRolesManagerOf || isAdminOf;
 				relationsCtrl = new UserRelationsController(uureq, getWindowControl(), identity, canModify);
 				listenTo(relationsCtrl);
@@ -475,7 +520,7 @@ public class UserAdminController extends BasicController implements Activateable
 		}
 
 		if (isUserManagerOf || isRolesManagerOf || isAdminOf) {
-			userTabP.addTab(translate(NLS_EDIT_UQUOTA),  uureq -> {
+			userTabP.addTab(ureq, translate(NLS_EDIT_UQUOTA),  uureq -> {
 				String relPath = FolderConfig.getUserHomes() + "/" + identity.getName();
 				quotaCtr = quotaManager.getQuotaEditorInstance(uureq, getWindowControl(), relPath, true, false);
 				return quotaCtr.getInitialComponent();
@@ -483,7 +528,7 @@ public class UserAdminController extends BasicController implements Activateable
 		}
 
 		if(lectureModule.isEnabled() && (isUserManagerOf || isRolesManagerOf || isAdminOf || isPrincipalOf)) {
-			userTabP.addTab(translate(NLS_VIEW_LECTURES),  uureq -> {
+			userTabP.addTab(ureq, translate(NLS_VIEW_LECTURES),  uureq -> {
 				lecturesCtrl = new ParticipantLecturesOverviewController(uureq, getWindowControl(), identity, null,
 						true, true, true, true, true, false);
 				listenTo(lecturesCtrl);
@@ -496,7 +541,7 @@ public class UserAdminController extends BasicController implements Activateable
 		}
 		
 		if(taxonomyModule.isEnabled() && (isUserManagerOf || isRolesManagerOf || isAdminOf || isPrincipalOf)) {
-			userTabP.addTab(translate(NLS_VIEW_COMPETENCES),  uureq -> {
+			userTabP.addTab(ureq, translate(NLS_VIEW_COMPETENCES),  uureq -> {
 				boolean canModify = isUserManagerOf || isRolesManagerOf || isAdminOf;
 				competencesCtrl = new IdentityCompetencesController(uureq, getWindowControl(), identity, canModify);
 				listenTo(competencesCtrl);
@@ -509,7 +554,7 @@ public class UserAdminController extends BasicController implements Activateable
 		}
 		
 		if(curriculumModule.isEnabled() && (isUserManagerOf || isRolesManagerOf || isAdminOf || isPrincipalOf)) {
-			userTabP.addTab(translate(NLS_VIEW_CURRICULUM),  uureq -> {
+			userTabP.addTab(ureq, translate(NLS_VIEW_CURRICULUM),  uureq -> {
 				curriculumCtr = new CurriculumListController(uureq, getWindowControl(), identity);
 				listenTo(curriculumCtr);
 				BreadcrumbedStackedPanel curriculumPanel = new BreadcrumbedStackedPanel("curriculums", getTranslator(), curriculumCtr);
@@ -521,7 +566,7 @@ public class UserAdminController extends BasicController implements Activateable
 		}
 		
 		if(gradingModule.isEnabled()) {
-			userTabP.addTab(translate(NLS_VIEW_GRADER),  uureq -> {
+			userTabP.addTab(ureq, translate(NLS_VIEW_GRADER),  uureq -> {
 				graderOverviewCtrl = new GraderUserOverviewController(uureq, getWindowControl(), identity);
 				listenTo(graderOverviewCtrl);
 				BreadcrumbedStackedPanel gradingPanel = new BreadcrumbedStackedPanel("curriculums", getTranslator(), graderOverviewCtrl);

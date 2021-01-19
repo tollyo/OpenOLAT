@@ -25,7 +25,6 @@ import java.util.List;
 import org.olat.core.gui.UserRequest;
 import org.olat.core.gui.components.Component;
 import org.olat.core.gui.components.tabbedpane.TabbedPane;
-import org.olat.core.gui.components.velocity.VelocityContainer;
 import org.olat.core.gui.control.Controller;
 import org.olat.core.gui.control.Event;
 import org.olat.core.gui.control.WindowControl;
@@ -39,9 +38,11 @@ import org.olat.ims.qti21.model.xml.AssessmentTestBuilder;
 import org.olat.ims.qti21.ui.AssessmentTestDisplayController;
 import org.olat.ims.qti21.ui.editor.events.AssessmentTestEvent;
 import org.olat.ims.qti21.ui.editor.events.SelectEvent.SelectionTarget;
+import org.olat.repository.RepositoryEntry;
 
 import uk.ac.ed.ph.jqtiplus.node.test.AssessmentTest;
 import uk.ac.ed.ph.jqtiplus.node.test.TestPart;
+import uk.ac.ed.ph.jqtiplus.resolution.ResolvedAssessmentTest;
 
 /**
  * 
@@ -52,7 +53,6 @@ import uk.ac.ed.ph.jqtiplus.node.test.TestPart;
 public class AssessmentTestEditorController extends BasicController implements Activateable2 {
 
 	private final TabbedPane tabbedPane;
-	private final VelocityContainer mainVC;
 	
 	private AssessmentTestOptionsEditorController optionsCtrl;
 	private AssessmentTestPartEditorController testPartOptionsCtrl;
@@ -62,31 +62,31 @@ public class AssessmentTestEditorController extends BasicController implements A
 	private final File rootDirectory;
 	private final VFSContainer rootContainer;
 	
+	private final RepositoryEntry testEntry;
 	private final boolean restrictedEdit;
 	private final TestPart testPart;
 	private final AssessmentTest assessmentTest;
 	private final AssessmentTestBuilder testBuilder;
+	private final ResolvedAssessmentTest resolvedAssessmentTest;
 	
 	public AssessmentTestEditorController(UserRequest ureq, WindowControl wControl,
-			AssessmentTestBuilder testBuilder, TestPart testPart,
-			File rootDirectory, VFSContainer rootContainer, File testFile,boolean restrictedEdit) {
+			RepositoryEntry testEntry, AssessmentTestBuilder testBuilder, ResolvedAssessmentTest resolvedAssessmentTest,
+			TestPart testPart, File rootDirectory, VFSContainer rootContainer, File testFile, boolean restrictedEdit) {
 		super(ureq, wControl, Util.createPackageTranslator(AssessmentTestDisplayController.class, ureq.getLocale()));
+		this.testEntry = testEntry;
 		this.testBuilder = testBuilder;
 		this.testPart = testPart;
 		this.assessmentTest = testBuilder.getAssessmentTest();
+		this.resolvedAssessmentTest = resolvedAssessmentTest;
 		this.testFile = testFile;
 		this.rootDirectory = rootDirectory;
 		this.rootContainer = rootContainer;
 		this.restrictedEdit = restrictedEdit;
 		
-		mainVC = createVelocityContainer("assessment_test_editor");
-		mainVC.contextPut("restrictedEdit", restrictedEdit);
 		tabbedPane = new TabbedPane("testTabs", getLocale());
 		tabbedPane.addListener(this);
-		mainVC.put("tabbedpane", tabbedPane);
-		
 		initTestEditor(ureq);
-		putInitialPanel(mainVC);
+		putInitialPanel(tabbedPane);
 	}
 	
 	@Override
@@ -96,12 +96,14 @@ public class AssessmentTestEditorController extends BasicController implements A
 	
 	private void initTestEditor(UserRequest ureq) {
 		if(testPart != null) {//combined test and single part editor
-			optionsCtrl = new AssessmentTestOptionsEditorController(ureq, getWindowControl(), assessmentTest, testBuilder, restrictedEdit);
+			optionsCtrl = new AssessmentTestOptionsEditorController(ureq, getWindowControl(), testEntry,
+					assessmentTest, resolvedAssessmentTest, testBuilder, restrictedEdit);
 			testPartOptionsCtrl = new AssessmentTestPartEditorController(ureq, getWindowControl(), testPart, restrictedEdit, testBuilder.isEditable());
 			testPartOptionsCtrl.setFormTitle(null);
 			listenTo(testPartOptionsCtrl);
 		} else {
-			optionsCtrl = new AssessmentTestOptionsEditorController(ureq, getWindowControl(), assessmentTest, testBuilder, restrictedEdit);
+			optionsCtrl = new AssessmentTestOptionsEditorController(ureq, getWindowControl(), testEntry,
+					assessmentTest, resolvedAssessmentTest, testBuilder, restrictedEdit);
 		}
 		listenTo(optionsCtrl);
 		

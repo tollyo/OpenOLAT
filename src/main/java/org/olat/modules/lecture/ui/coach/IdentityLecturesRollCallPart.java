@@ -54,8 +54,7 @@ public class IdentityLecturesRollCallPart implements RollCallItem {
 
 	@Override
 	public AbsenceNotice getAbsenceNotice() {
-		// TODO absences notice Auto-generated method stub
-		return null;
+		return null;// not implemented
 	}
 
 	@Override
@@ -65,7 +64,7 @@ public class IdentityLecturesRollCallPart implements RollCallItem {
 
 	@Override
 	public int getPlannedLecturesNumber() {
-		return lectureBlock.getPlannedLecturesNumber();
+		return lectureBlock.getCalculatedLecturesNumber();
 	}
 
 	@Override

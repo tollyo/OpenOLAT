@@ -130,8 +130,8 @@ public class STRootPassedEvaluatorTest {
 	}
 
 	private AssessmentEvaluation createEvalaution(Boolean passed, Boolean fullyAssessed) {
-		return new AssessmentEvaluation(null, passed, null, null, null, null, fullyAssessed, null, null, null, null,
-				null, null, 0, null, null, null, null, null, null, null, null, null, null);
+		return new AssessmentEvaluation(null, passed, null, null, null, null, null, null, fullyAssessed, null, null,
+				null, null, null, null, null, 0, null, null, null, null, null, null, null, null, null, null);
 	}
 	
 	@Test
@@ -213,7 +213,7 @@ public class STRootPassedEvaluatorTest {
 		courseNode.getModuleConfiguration().setBooleanEntry(STCourseNode.CONFIG_PASSED_ALL, true);
 		ScoreAccounting scoreAccounting = new MappedScoreAccounting();
 		
-		Counts counts = new CountsImpl(3, 2, 1);
+		Counts counts = new CountsImpl(3, 1, 1);
 		PassCounter passCounter = mock(PassCounter.class);
 		when(passCounter.getCounts(any(), any())).thenReturn(counts);
 		STRootPassedEvaluator sut = new STRootPassedEvaluator(passCounter);

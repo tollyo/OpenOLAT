@@ -43,6 +43,7 @@ public class TransientIdentity implements Identity, User {
 	private String login;
 	private String password;
 	private String language;
+	private Date expirationDate;
 	
 	private Map<String, String> properties = new HashMap<>();
 
@@ -78,6 +79,11 @@ public class TransientIdentity implements Identity, User {
 	@Override
 	public String getLastName() {
 		return properties.get(UserConstants.LASTNAME);
+	}
+	
+	@Override
+	public String getNickName() {
+		return properties.get(UserConstants.NICKNAME);
 	}
 
 	@Override
@@ -124,6 +130,25 @@ public class TransientIdentity implements Identity, User {
 	@Override
 	public Integer getStatus() {
 		return null;
+	}
+
+	@Override
+	public Date getInactivationDate() {
+		return null;
+	}
+
+	@Override
+	public Date getReactivationDate() {
+		return null;
+	}
+	
+	@Override
+	public Date getExpirationDate() {
+		return expirationDate;
+	}
+	
+	public void setExpirationDate(Date expirationDate) {
+		this.expirationDate = expirationDate;
 	}
 
 	@Override

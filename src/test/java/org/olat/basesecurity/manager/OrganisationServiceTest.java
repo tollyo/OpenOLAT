@@ -304,8 +304,8 @@ public class OrganisationServiceTest extends OlatTestCase {
 	private Identity createRandomUser(String login) {
 		login += UUID.randomUUID().toString();
 		User user = userManager.createUser("first" + login, "last" + login, login + "@openolat.com");
-		return securityManager.createAndPersistIdentityAndUser(login, null, user,
-				BaseSecurityModule.getDefaultAuthProviderIdentifier(), login, JunitTestHelper.PWD);
+		return securityManager.createAndPersistIdentityAndUser(null, login, null, user,
+				BaseSecurityModule.getDefaultAuthProviderIdentifier(), login, JunitTestHelper.PWD, null);
 	}
 
 }

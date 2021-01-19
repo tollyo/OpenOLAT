@@ -111,7 +111,6 @@ public class TeacherRollCallController extends FormBasicController {
 	private int counter = 0;
 	private final boolean withBack;
 	private LectureBlock lectureBlock;
-	private final boolean isAdministrativeUser;
 	private List<UserPropertyHandler> userPropertyHandlers;
 	private RollCallSecurityCallback secCallback;
 	private final boolean authorizedAbsenceEnabled;
@@ -139,13 +138,10 @@ public class TeacherRollCallController extends FormBasicController {
 		this.withBack = withBack;
 		setTranslator(userManager.getPropertyHandlerTranslator(getTranslator()));
 		
-		numOfLectures = lectureBlock.getEffectiveLecturesNumber();
-		if(numOfLectures <= 0 && lectureBlock.getStatus() != LectureBlockStatus.cancelled) {
-			numOfLectures = lectureBlock.getPlannedLecturesNumber();
-		}
-		
+		numOfLectures = lectureBlock.getCalculatedLecturesNumber();
+
 		Roles roles = ureq.getUserSession().getRoles();
-		isAdministrativeUser = securityModule.isUserAllowedAdminProps(roles);
+		boolean isAdministrativeUser = securityModule.isUserAllowedAdminProps(roles);
 		userPropertyHandlers = userManager.getUserPropertyHandlersFor(USER_PROPS_ID, isAdministrativeUser);
 
 		authorizedAbsenceEnabled = lectureModule.isAuthorizedAbsenceEnabled();
@@ -200,6 +196,8 @@ public class TeacherRollCallController extends FormBasicController {
 			layoutCont.contextPut("lectureBlockOptional", !lectureBlock.isCompulsory());
 			layoutCont.setFormTitle(translate("lecture.block", args));
 			layoutCont.setFormDescription(StringHelper.escapeJavaScript(lectureBlock.getDescription()));
+			String i18nInfos = lectureBlock.getPlannedLecturesNumber() == 1 ? "rollcall.coach.hint" : "rollcall.coach.hints";
+			layoutCont.contextPut("lecturesInfos", translate(i18nInfos, new String[] { Integer.toString(lectureBlock.getPlannedLecturesNumber())}));
 		}
 		
 		if(withBack) {
@@ -209,11 +207,7 @@ public class TeacherRollCallController extends FormBasicController {
 		// table
 		FlexiTableSortOptions options = new FlexiTableSortOptions();
 		FlexiTableColumnModel columnsModel = FlexiTableDataModelFactory.createFlexiTableColumnModel();
-		if(isAdministrativeUser) {
-			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(RollCols.username));
-			options.setDefaultOrderBy(new SortKey(RollCols.username.sortKey(), true));
-		}
-		
+
 		int colPos = USER_PROPS_OFFSET;
 		for (UserPropertyHandler userPropertyHandler : userPropertyHandlers) {
 			if (userPropertyHandler == null) continue;
@@ -234,7 +228,10 @@ public class TeacherRollCallController extends FormBasicController {
 			columnsModel.addFlexiColumnModel(new DefaultFlexiColumnModel(RollCols.status));
 			
 			for(int i=0; i<numOfLectures; i++) {
-				DefaultFlexiColumnModel col = new DefaultFlexiColumnModel("table.header.lecture." + (i+1), i + CHECKBOX_OFFSET, true, "lecture." + (i+1));
+				String lecture = Integer.toString(i + 1);
+				DefaultFlexiColumnModel col = new DefaultFlexiColumnModel("table.header.lecture.".concat(lecture), i + CHECKBOX_OFFSET, true, "lecture.".concat(lecture));
+				col.setHeaderLabel(translate("table.header.lecture.number", new String[] { lecture }));
+				col.setHeaderTooltip(translate("table.header.lecture.number.tooltip", new String[] { lecture }));
 				col.setAlwaysVisible(true);
 				columnsModel.addFlexiColumnModel(col);
 			}
@@ -256,7 +253,7 @@ public class TeacherRollCallController extends FormBasicController {
 		tableEl = uifactory.addTableElement(getWindowControl(), "table", tableModel, 20, false, getTranslator(), formLayout);
 		tableEl.setCustomizeColumns(true);
 		tableEl.setSortSettings(options);
-		tableEl.setAndLoadPersistedPreferences(ureq, "teacher-roll-call");
+		tableEl.setAndLoadPersistedPreferences(ureq, "teacher-roll-call-v2");
 		
 		//buttons
 		uifactory.addFormCancelButton("cancel", formLayout, ureq, getWindowControl());

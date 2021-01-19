@@ -19,6 +19,7 @@
  */
 package org.olat.course.assessment.ui.tool;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -53,6 +54,7 @@ public class IdentityListCourseNodeTableModel extends DefaultFlexiTableDataModel
 	implements SortableFlexiTableDataModel<AssessedIdentityElementRow>, FilterableFlexiTableModel {
 	
 	private static final Logger log = Tracing.createLoggerFor(IdentityListCourseNodeTableModel.class);
+	private static final IdentityCourseElementCols[] COLS = IdentityCourseElementCols.values();
 
 	private final Locale locale;
 	
@@ -80,7 +82,7 @@ public class IdentityListCourseNodeTableModel extends DefaultFlexiTableDataModel
 			}
 		}
 	}
-	
+
 	public void setCertificateMap(ConcurrentMap<Long, CertificateLight> certificateMap) {
 		this.certificateMap = certificateMap;
 	}
@@ -104,7 +106,8 @@ public class IdentityListCourseNodeTableModel extends DefaultFlexiTableDataModel
 				}
 			} else if(AssessmentEntryStatus.isValueOf(key)) {
 				for(AssessedIdentityElementRow row:backups) {
-					if(row.getAssessmentStatus() != null && key.equals(row.getAssessmentStatus().name())) {
+					if(row.getAssessmentStatus() != null
+							&& key != null && key.equals(row.getAssessmentStatus().name())) {
 						filteredRows.add(row);
 					}
 				}
@@ -143,15 +146,15 @@ public class IdentityListCourseNodeTableModel extends DefaultFlexiTableDataModel
 	@Override
 	public Object getValueAt(AssessedIdentityElementRow row, int col) {
 		if(col >= 0 && col < IdentityCourseElementCols.values().length) {
-			switch(IdentityCourseElementCols.values()[col]) {
-				case username: return row.getIdentityName();
+			switch(COLS[col]) {
 				case attempts: return row.getAttempts();
 				case userVisibility: return row.getUserVisibility();
 				case score: return row.getScore();
 				case min: return minScore;
-				case max: return maxScore;
+				case max: return getMaxScore(row);
 				case cut: return cutValue;
 				case status: return "";
+				case passedOverriden: return row.getPassedOverriden();
 				case passed: return row.getPassed();
 				case numOfAssessmentDocs: {
 					if(row.getNumOfAssessmentDocs() <= 0) {
@@ -161,6 +164,7 @@ public class IdentityListCourseNodeTableModel extends DefaultFlexiTableDataModel
 				}
 				case assessmentStatus: return row.getAssessmentStatus();
 				case currentCompletion: return row.getCurrentCompletion();
+				case currentRunStart: return row.getCurrentRunStart();
 				case certificate: return certificateMap.get(row.getIdentityKey());
 				case recertification: {
 					CertificateLight certificate = certificateMap.get(row.getIdentityKey());
@@ -173,10 +177,19 @@ public class IdentityListCourseNodeTableModel extends DefaultFlexiTableDataModel
 				case externalGrader: return row.getGraderFullName();
 				case tools: return row.getToolsLink();
 				case details: return row.getDetails();
+				default: return "ERROR";
 			}
 		}
 		int propPos = col - AssessmentToolConstants.USER_PROPS_OFFSET;
 		return row.getIdentityProp(propPos);
+	}
+	
+	private Float getMaxScore(AssessedIdentityElementRow row) {
+		if(row == null || row.getMaxScore() == null) {
+			return maxScore;
+		}
+		BigDecimal ms = row.getMaxScore();
+		return Float.valueOf(ms.floatValue());
 	}
 
 	@Override
@@ -185,13 +198,13 @@ public class IdentityListCourseNodeTableModel extends DefaultFlexiTableDataModel
 	}
 	
 	public enum IdentityCourseElementCols implements FlexiSortableColumnDef {
-		username("table.header.name"),
 		attempts("table.header.attempts"),
 		userVisibility("table.header.userVisibility", "o_icon o_icon-fw o_icon_results_hidden"),
 		score("table.header.score"),
 		min("table.header.min"),
 		max("table.header.max"),
 		status("table.header.status"),
+		passedOverriden("table.header.passed.overriden"),
 		passed("table.header.passed"),
 		assessmentStatus("table.header.assessmentStatus"),
 		certificate("table.header.certificate"),
@@ -205,7 +218,8 @@ public class IdentityListCourseNodeTableModel extends DefaultFlexiTableDataModel
 		tools("table.header.tools"),
 		details("table.header.details"),
 		cut("table.header.cut"),
-		externalGrader("table.header.external.grader");
+		externalGrader("table.header.external.grader"),
+		currentRunStart("table.header.run.start");
 		
 		private final String i18nKey;
 		private final String icon;

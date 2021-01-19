@@ -49,28 +49,23 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
-import org.olat.basesecurity.BaseSecurity;
 import org.olat.core.CoreSpringFactory;
 import org.olat.core.commons.services.notifications.NotificationsManager;
 import org.olat.core.commons.services.notifications.Subscriber;
 import org.olat.core.gui.UserRequest;
-import org.olat.core.id.Identity;
 import org.olat.core.util.StringHelper;
 import org.olat.course.ICourse;
 import org.olat.course.nodes.CourseNode;
 import org.olat.course.nodes.FOCourseNode;
 import org.olat.course.properties.CoursePropertyManager;
 import org.olat.course.run.userview.CourseTreeVisitor;
-import org.olat.course.tree.CourseEditorTreeNode;
 import org.olat.modules.ModuleConfiguration;
 import org.olat.modules.fo.Forum;
-import org.olat.modules.fo.Message;
 import org.olat.modules.fo.manager.ForumManager;
 import org.olat.properties.Property;
 import org.olat.restapi.repository.course.AbstractCourseNodeWebService;
 import org.olat.restapi.repository.course.CourseWebService;
 import org.olat.restapi.repository.course.CoursesWebService;
-import org.olat.restapi.security.RestSecurityHelper;
 import org.olat.restapi.support.vo.CourseNodeVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -80,7 +75,6 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
@@ -100,35 +94,25 @@ public class ForumCourseNodeWebService extends AbstractCourseNodeWebService {
 	@Autowired
 	private ForumManager forumManager;
 	@Autowired
-	private BaseSecurity securityManager;
-	@Autowired
 	private NotificationsManager notificationsManager;
 	
 	/**
 	 * Retrieves metadata of the published course node
-	 * @response.representation.200.qname {http://www.example.com}forumVOes
-	 * @response.representation.200.mediaType application/xml, application/json
-	 * @response.representation.200.doc The course node metadatas
-	 * @response.representation.200.example {@link org.olat.modules.fo.restapi.Examples#SAMPLE_FORUMVOes}
-	 * @response.representation.401.doc The roles of the authenticated user are not sufficient
-	 * @response.representation.404.doc The course or parentNode not found
+	 * 
 	 * @param courseId The course resourceable's id
 	 * @param httpRequest The HTTP request
 	 * @return The persisted structure element (fully populated)
 	 */
 	@GET
 	@Operation(summary = "Retrieves metadata of the published course node",
-	description = "Retrieves metadata of the published course node")
-	@ApiResponses(value = {
-			@ApiResponse(responseCode = "200", description = "The course node metadatas",
-					content = {
-							@Content(mediaType = "application/json", schema = @Schema(implementation = ForumVO.class)),
-							@Content(mediaType = "application/xml", schema = @Schema(implementation = ForumVO.class))
-						} 
-			),
-			@ApiResponse(responseCode = "401", description = "The roles of the authenticated user are not sufficient"),
-			@ApiResponse(responseCode = "404", description = "The course or parentNode not found")}
-		)
+		description = "Retrieves metadata of the published course node")
+	@ApiResponse(responseCode = "200", description = "The course node metadatas",
+			content = {
+					@Content(mediaType = "application/json", schema = @Schema(implementation = ForumVO.class)),
+					@Content(mediaType = "application/xml", schema = @Schema(implementation = ForumVO.class))
+				})
+	@ApiResponse(responseCode = "401", description = "The roles of the authenticated user are not sufficient")
+	@ApiResponse(responseCode = "404", description = "The course or parentNode not found")
 	@Produces({MediaType.APPLICATION_XML, MediaType.APPLICATION_JSON})
 	public Response getForums(@PathParam("courseId") Long courseId, @Context HttpServletRequest httpRequest) {
 		final ICourse course = CoursesWebService.loadCourse(courseId);
@@ -167,12 +151,7 @@ public class ForumCourseNodeWebService extends AbstractCourseNodeWebService {
 	/**
 	 * This attaches a Forum Element onto a given course. The element will be
 	 * inserted underneath the supplied parentNodeId.
-	 * @response.representation.200.qname {http://www.example.com}courseNodeVO
-	 * @response.representation.200.mediaType application/xml, application/json
-	 * @response.representation.200.doc The course node metadatas
-	 * @response.representation.200.example {@link org.olat.restapi.support.vo.Examples#SAMPLE_COURSENODEVO}
-	 * @response.representation.401.doc The roles of the authenticated user are not sufficient
-	 * @response.representation.404.doc The course or parentNode not found
+	 * 
 	 * @param courseId The course resourceable's id
 	 * @param parentNodeId The node's id which will be the parent of this single
 	 *          page
@@ -187,18 +166,15 @@ public class ForumCourseNodeWebService extends AbstractCourseNodeWebService {
 	 */
 	@POST
 	@Operation(summary = "attach a Forum Element onto a given course",
-	description = "This attaches a Forum Element onto a given course. The element will be\n" + 
-			"	 inserted underneath the supplied parentNodeId")
-	@ApiResponses(value = {
-			@ApiResponse(responseCode = "200", description = "The course node metadatas",
-					content = {
-							@Content(mediaType = "application/json", schema = @Schema(implementation = CourseNodeVO.class)),
-							@Content(mediaType = "application/xml", schema = @Schema(implementation = CourseNodeVO.class))
-						} 
-			),
-			@ApiResponse(responseCode = "401", description = "The roles of the authenticated user are not sufficient"),
-			@ApiResponse(responseCode = "404", description = "The course or parentNode not found")}
-		)
+		description = "This attaches a Forum Element onto a given course. The element will be\n" + 
+			" inserted underneath the supplied parentNodeId")
+	@ApiResponse(responseCode = "200", description = "The course node metadatas",
+			content = {
+					@Content(mediaType = "application/json", schema = @Schema(implementation = CourseNodeVO.class)),
+					@Content(mediaType = "application/xml", schema = @Schema(implementation = CourseNodeVO.class))
+				})
+	@ApiResponse(responseCode = "401", description = "The roles of the authenticated user are not sufficient")
+	@ApiResponse(responseCode = "404", description = "The course or parentNode not found")
 	@Consumes(MediaType.APPLICATION_FORM_URLENCODED)
 	@Produces({MediaType.APPLICATION_XML, MediaType.APPLICATION_JSON})
 	public Response attachForumPost(@PathParam("courseId") Long courseId, @FormParam("parentNodeId") String parentNodeId,
@@ -214,12 +190,7 @@ public class ForumCourseNodeWebService extends AbstractCourseNodeWebService {
 	/**
 	 * This attaches a Forum Element onto a given course. The element will be
 	 * inserted underneath the supplied parentNodeId.
-	 * @response.representation.200.qname {http://www.example.com}courseNodeVO
-	 * @response.representation.200.mediaType application/xml, application/json
-	 * @response.representation.200.doc The course node metadatas
-	 * @response.representation.200.example {@link org.olat.restapi.support.vo.Examples#SAMPLE_COURSENODEVO}
-	 * @response.representation.401.doc The roles of the authenticated user are not sufficient
-	 * @response.representation.404.doc The course or parentNode not found
+	 * 
 	 * @param courseId The course resourceable id
 	 * @param parentNodeId The node's id which will be the parent of this single
 	 *          page
@@ -234,18 +205,15 @@ public class ForumCourseNodeWebService extends AbstractCourseNodeWebService {
 	 */
 	@PUT
 	@Operation(summary = "attach a Forum Element onto a given course",
-	description = "This attaches a Forum Element onto a given course. The element will be\n" + 
-			"	 inserted underneath the supplied parentNodeId")
-	@ApiResponses(value = {
-			@ApiResponse(responseCode = "200", description = "The course node metadatas",
-					content = {
-							@Content(mediaType = "application/json", schema = @Schema(implementation = CourseNodeVO.class)),
-							@Content(mediaType = "application/xml", schema = @Schema(implementation = CourseNodeVO.class))
-						} 
-			),
-			@ApiResponse(responseCode = "401", description = "The roles of the authenticated user are not sufficient"),
-			@ApiResponse(responseCode = "404", description = "The course or parentNode not found")}
-		)
+		description = "This attaches a Forum Element onto a given course. The element will be\n" + 
+			" inserted underneath the supplied parentNodeId")
+	@ApiResponse(responseCode = "200", description = "The course node metadatas",
+			content = {
+					@Content(mediaType = "application/json", schema = @Schema(implementation = CourseNodeVO.class)),
+					@Content(mediaType = "application/xml", schema = @Schema(implementation = CourseNodeVO.class))
+				})
+	@ApiResponse(responseCode = "401", description = "The roles of the authenticated user are not sufficient")
+	@ApiResponse(responseCode = "404", description = "The course or parentNode not found")
 	@Produces({MediaType.APPLICATION_XML, MediaType.APPLICATION_JSON})
 	public Response attachForum(@PathParam("courseId") Long courseId, @QueryParam("parentNodeId")  @Parameter(description = "The node's id which will be the parent of this single page") String parentNodeId,
 			@QueryParam("position")  @Parameter(description = "The node's position relative to its sibling nodes (optional)") Integer position, @QueryParam("shortTitle")  @Parameter(description = "The node short title") @DefaultValue("undefined") String shortTitle,
@@ -259,12 +227,7 @@ public class ForumCourseNodeWebService extends AbstractCourseNodeWebService {
 	
 	/**
 	 * Retrieves metadata of the published course node
-	 * @response.representation.200.qname {http://www.example.com}forumVO
-	 * @response.representation.200.mediaType application/xml, application/json
-	 * @response.representation.200.doc The course node metadatas
-	 * @response.representation.200.example {@link org.olat.modules.fo.restapi.Examples#SAMPLE_FORUMVO}
-	 * @response.representation.401.doc The roles of the authenticated user are not sufficient
-	 * @response.representation.404.doc The course or parentNode not found
+	 * 
 	 * @param courseId The course resourceable's id
 	 * @param nodeId The node's id
 	 * @param httpRequest The HTTP request
@@ -273,17 +236,14 @@ public class ForumCourseNodeWebService extends AbstractCourseNodeWebService {
 	@GET
 	@Path("{nodeId}")
 	@Operation(summary = "Retrieve metadata of the published course node",
-	description = "Retrieves metadata of the published course node")
-	@ApiResponses(value = {
-			@ApiResponse(responseCode = "200", description = "The course node metadatas",
-					content = {
-							@Content(mediaType = "application/json", schema = @Schema(implementation = ForumVO.class)),
-							@Content(mediaType = "application/xml", schema = @Schema(implementation = ForumVO.class))
-						} 
-			),
-			@ApiResponse(responseCode = "401", description = "The roles of the authenticated user are not sufficient"),
-			@ApiResponse(responseCode = "404", description = "The course or parentNode not found")}
-		)
+		description = "Retrieves metadata of the published course node")
+	@ApiResponse(responseCode = "200", description = "The course node metadatas",
+			content = {
+					@Content(mediaType = "application/json", schema = @Schema(implementation = ForumVO.class)),
+					@Content(mediaType = "application/xml", schema = @Schema(implementation = ForumVO.class))
+				})
+	@ApiResponse(responseCode = "401", description = "The roles of the authenticated user are not sufficient")
+	@ApiResponse(responseCode = "404", description = "The course or parentNode not found")
 	@Produces({MediaType.APPLICATION_XML, MediaType.APPLICATION_JSON})
 	public Response getForum(@PathParam("courseId") Long courseId, @PathParam("nodeId") String nodeId, @Context HttpServletRequest httpRequest) {
 		ICourse course = CoursesWebService.loadCourse(courseId);
@@ -344,179 +304,6 @@ public class ForumCourseNodeWebService extends AbstractCourseNodeWebService {
 		} else {
 			throw new WebApplicationException(Response.serverError().status(Status.UNAUTHORIZED).build());
 		}
-	}
-	
-	/**
-	 * Creates a new thread in the forum of the course node
-	 * @response.representation.200.qname {http://www.example.com}messageVO
-	 * @response.representation.200.mediaType application/xml, application/json
-	 * @response.representation.200.doc The root message of the thread
-	 * @response.representation.200.example {@link org.olat.modules.fo.restapi.Examples#SAMPLE_MESSAGEVO}
-	 * @response.representation.401.doc The roles of the authenticated user are not sufficient
-	 * @response.representation.404.doc The author, forum or message not found
-	 * @param courseId The id of the course.
-	 * @param nodeId The id of the course node.
-	 * @param title The title for the first post in the thread
-	 * @param body The body for the first post in the thread
-	 * @param identityName The author identity name (optional)
-	 * @param sticky Creates sticky thread.
-	 * @param request The HTTP request
-	 * @return The new thread
-	 * 
-	 * @deprecated use the {nodeId}/forum/threads instead
-	 */
-	@Deprecated
-	@PUT
-	@Path("{nodeId}/thread")
-	@Operation(summary = "Create a new thread in the forum of the course node",
-	description = "Creates a new thread in the forum of the course node")
-	@ApiResponses(value = {
-			@ApiResponse(responseCode = "200", description = "The course node metadatas",
-					content = {
-							@Content(mediaType = "application/json", schema = @Schema(implementation = MessageVO.class)),
-							@Content(mediaType = "application/xml", schema = @Schema(implementation = MessageVO.class))
-						} 
-			),
-			@ApiResponse(responseCode = "401", description = "The roles of the authenticated user are not sufficient"),
-			@ApiResponse(responseCode = "404", description = "The course or parentNode not found")}
-		)
-	@Produces({MediaType.APPLICATION_XML, MediaType.APPLICATION_JSON})
-	public Response newThreadToForum(@PathParam("courseId") Long courseId, @PathParam("nodeId") String nodeId, @QueryParam("title")@Parameter(description = "The title for the first post in the thread") String title,
-			@QueryParam("body") @Parameter(description = "The body for the first post in the thread") String body, @QueryParam("identityName") @Parameter(description = "The author identity name (optional)")String identityName, @QueryParam("sticky")@Parameter(description = "Creates sticky thread.") Boolean isSticky,
-			@Context HttpServletRequest request) {
-		
-		return addMessage(courseId, nodeId, null, title, body, identityName, isSticky, request);
-	}
-	
-	/**
-	 * Creates a new forum message in the forum of the course node
-	 * @response.representation.200.qname {http://www.example.com}messageVO
-	 * @response.representation.200.mediaType application/xml, application/json
-	 * @response.representation.200.doc The root message of the thread
-	 * @response.representation.200.example {@link org.olat.modules.fo.restapi.Examples#SAMPLE_MESSAGEVO}
-	 * @response.representation.401.doc The roles of the authenticated user are not sufficient
-	 * @response.representation.404.doc The author, forum or message not found
-	 * @param courseId The id of the course.
-	 * @param nodeId The id of the course node.
-	 * @param parentMessageId The id of the parent message.
-	 * @param title The title for the first post in the thread
-	 * @param body The body for the first post in the thread
-	 * @param identityName The author identity name (optional)
-	 * @param request The HTTP request
-	 * @return The new thread
-	 * 
-	 * @deprecated use the {nodeId}/forum/messages instead
-	 */
-	@Deprecated
-	@PUT
-	@Path("{nodeId}/message")
-	@Operation(summary = "Creates a new forum message",
-	description = "Creates a new forum message in the forum of the course node")
-	@ApiResponses(value = {
-			@ApiResponse(responseCode = "200", description = "The root message of the thread",
-					content = {
-							@Content(mediaType = "application/json", schema = @Schema(implementation = MessageVO.class)),
-							@Content(mediaType = "application/xml", schema = @Schema(implementation = MessageVO.class))
-						} 
-			),
-			@ApiResponse(responseCode = "401", description = "The roles of the authenticated user are not sufficient"),
-			@ApiResponse(responseCode = "404", description = "The author, forum or message not found")}
-		)
-	@Produces({MediaType.APPLICATION_XML, MediaType.APPLICATION_JSON})
-	public Response newMessageToForum(@PathParam("courseId") Long courseId, @PathParam("nodeId") String nodeId, @QueryParam("parentMessageId") @Parameter(description = "The id of the parent message") Long parentMessageId, @QueryParam("title") @Parameter(description = "The title for the first post in the thread") String title,
-			@QueryParam("body") @Parameter(description = "The body for the first post in the thread") String body, @QueryParam("identityName") @Parameter(description = "The author identity name (optional)") String identityName, @Context HttpServletRequest request) {
-		
-		if(parentMessageId == null || parentMessageId == 0L) {
-			return Response.serverError().status(Status.NOT_FOUND).build();
-		}
-		
-		return addMessage(courseId, nodeId, parentMessageId, title, body, identityName, false, request);
-	}
-	
-	/**
-	 * Internal helper method to add a message to a forum.
-	 * @param courseId
-	 * @param nodeId
-	 * @param parentMessageId can be null (will lead to new thread)
-	 * @param title
-	 * @param body
-	 * @param identityName
-	 * @param isSticky only necessary when adding new thread
-	 * @param request
-	 * @return
-	 */
-	private Response addMessage(Long courseId, String nodeId, Long parentMessageId, String title, String body, String identityName, Boolean isSticky, HttpServletRequest request) {
-		//load forum
-		ICourse course = CoursesWebService.loadCourse(courseId);
-		if(course == null) {
-			return Response.serverError().status(Status.NOT_FOUND).build();
-		} else if (!isAuthorEditor(course, request)) {
-			return Response.serverError().status(Status.UNAUTHORIZED).build();
-		}
-
-		Identity identity;
-		if (identityName != null) {
-			identity = securityManager.findIdentityByName(identityName);
-		} else {
-			identity = RestSecurityHelper.getIdentity(request);
-		}
-		
-		if(identity == null) {
-			return Response.serverError().status(Status.NOT_FOUND).build();
-		}
-
-		CourseEditorTreeNode parentNode = getParentNode(course, nodeId);
-		if(parentNode == null) {
-			return Response.serverError().status(Status.NOT_FOUND).build();
-		}
-		
-		CoursePropertyManager cpm = course.getCourseEnvironment().getCoursePropertyManager();
-		Property forumKeyProp = cpm.findCourseNodeProperty(parentNode.getCourseNode(), null, null, FOCourseNode.CONFIG_FORUM_KEY);
-		Forum forum = null;
-		if(forumKeyProp!=null) {
-      // Forum does already exist, load forum with key from properties
-		  Long forumKey = forumKeyProp.getLongValue();
-		  forum = forumManager.loadForum(forumKey);
-		}
-		
-		if(forum == null) {
-			return Response.serverError().status(Status.NOT_FOUND).build();
-		}
-		
-		MessageVO vo;
-		
-		if(parentMessageId == null || parentMessageId == 0L) {
-			// creating the thread (a message without a parent message)
-			Message newThread = forumManager.createMessage(forum, identity, false);
-			if (isSticky != null && isSticky.booleanValue()) {
-				// set sticky
-				org.olat.modules.fo.Status status = new org.olat.modules.fo.Status();
-				status.setSticky(true);
-				newThread.setStatusCode(org.olat.modules.fo.Status.getStatusCode(status));
-			}
-			newThread.setTitle(title);
-			newThread.setBody(body);
-			// open a new thread
-			forumManager.addTopMessage(newThread);
-			
-			vo = new MessageVO(newThread);
-		} else {
-			// adding response message (a message with a parent message)
-			Message threadMessage = forumManager.loadMessage(parentMessageId);
-			
-			if(threadMessage == null) {
-				return Response.serverError().status(Status.NOT_FOUND).build();
-			}
-			// create new message
-			Message message = forumManager.createMessage(forum, identity, false);
-			message.setTitle(title);
-			message.setBody(body);
-			forumManager.replyToMessage(message, threadMessage);
-			
-			vo = new MessageVO(message);
-		}
-		
-		return Response.ok(vo).build();
 	}
 	
 	private class ForumCustomConfig implements CustomConfigDelegate {
